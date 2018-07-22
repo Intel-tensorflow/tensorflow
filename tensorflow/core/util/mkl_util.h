@@ -1893,9 +1893,9 @@ class MklPrimitive {
  public:
   virtual ~MklPrimitive() {}
 
-  // Dummy data. Its size, hard-coded as 256 here, does
-  // not matter since MKL should never operate on this buffer.
-  unsigned char DummyData[256];
+  // Dummy data.
+  // does not matter since MKL should never operate on this buffer.
+  unsigned char *DummyData = nullptr;
 };
 
 const mkldnn::memory::dims NONE_DIMS = {};
