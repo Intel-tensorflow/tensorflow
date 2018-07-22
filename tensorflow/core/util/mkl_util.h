@@ -39,7 +39,7 @@ limitations under the License.
 #include "tensorflow/core/platform/macros.h"
 #include "tensorflow/core/util/padding.h"
 #include "tensorflow/core/util/tensor_format.h"
-
+#include "tensorflow/core/platform/cpu_info.h"
 #ifndef INTEL_MKL_ML
 #include "mkldnn.hpp"
 #include "tensorflow/core/lib/core/stringpiece.h"
@@ -1504,7 +1504,8 @@ class MklDnnData {
 
   /// Operations memory descriptor
   memory::desc* op_md_;
-
+  /// Operations temp buffer
+  void* allocated_buffer_;
   /// CPU engine on which operation will be executed
   const engine* cpu_engine_;
 
@@ -1513,6 +1514,7 @@ class MklDnnData {
       : user_memory_(nullptr),
         reorder_memory_(nullptr),
         op_md_(nullptr),
+        allocated_buffer_(nullptr),
         cpu_engine_(e) {}
 
   ~MklDnnData() {
@@ -1651,6 +1653,14 @@ class MklDnnData {
     CHECK_NOTNULL(user_memory_);
     CHECK_NOTNULL(tensor);
     user_memory_->set_data_handle(GetTensorBuffer(tensor));
+  }
+
+  /// allocate function for data buffer
+  inline void AllocateBuffer(size_t size) {
+    allocated_buffer_ =  cpu_allocator()->AllocateRaw(64, size);
+  }
+  inline void* GetAllocatedBuffer() {
+    return allocated_buffer_;
   }
 
   /// Get the memory primitive for input and output of an op. If inputs
@@ -1883,9 +1893,9 @@ class MklPrimitive {
  public:
   virtual ~MklPrimitive() {}
 
-  // Dummy data. Its size, hard-coded as 256 here, does
-  // not matter since MKL should never operate on this buffer.
-  unsigned char DummyData[256];
+  // Dummy data.
+  // does not matter since MKL should never operate on this buffer.
+  unsigned char *DummyData = nullptr;
 };
 
 const mkldnn::memory::dims NONE_DIMS = {};
@@ -1897,8 +1907,9 @@ class MklPrimitiveFactory {
   ~MklPrimitiveFactory() {}
 
   MklPrimitive* GetOp(const std::string& key) {
-    auto stream_iter = MklPrimitiveFactory<T>::GetHashMap().find(key);
-    if (stream_iter == MklPrimitiveFactory<T>::GetHashMap().end()) {
+    auto &map = MklPrimitiveFactory<T>::GetHashMap();
+    auto stream_iter = map.find(key);
+    if (stream_iter == map.end()) {
       return nullptr;
     } else {
       return stream_iter->second;
@@ -1906,11 +1917,12 @@ class MklPrimitiveFactory {
   }
 
   void SetOp(const std::string& key, MklPrimitive* op) {
-    auto stream_iter = MklPrimitiveFactory<T>::GetHashMap().find(key);
+    auto &map = MklPrimitiveFactory<T>::GetHashMap();
+    auto stream_iter = map.find(key);
 
-    CHECK(stream_iter == MklPrimitiveFactory<T>::GetHashMap().end());
+    CHECK(stream_iter == map.end());
 
-    MklPrimitiveFactory<T>::GetHashMap()[key] = op;
+    map[key] = op;
   }
 
  private:
@@ -1956,6 +1968,21 @@ class FactoryKeyCreator {
     key_.append(1, delimiter);
   }
 };
+
+static inline memory::format get_desired_format(int channel) {
+    memory::format fmt_desired = memory::format::any;
+
+    if (port::TestCPUFeature(port::CPUFeature::AVX512F)
+        && (channel % 16) == 0) {
+      fmt_desired = memory::format::nChw16c;
+    } else if (port::TestCPUFeature(port::CPUFeature::AVX2)
+        && (channel % 8) == 0) {
+      fmt_desired = memory::format::nChw8c;
+    } else {
+        fmt_desired = memory::format::nchw;
+    }
+    return fmt_desired;
+}
 
 class MklReorderPrimitive : public MklPrimitive {
   public:
@@ -2059,7 +2086,7 @@ class MklReorderPrimitiveFactory : public MklPrimitiveFactory<T> {
       MklReorderPrimitiveFactory<T>::Get(from, to); 
     return *reorder_prim->GetPrimitive();
   }
- 
+
 #endif  // INTEL_MKL_DNN
 
 }  // namespace tensorflow
