@@ -2086,7 +2086,7 @@ class MklReorderPrimitiveFactory : public MklPrimitiveFactory<T> {
       MklReorderPrimitiveFactory<T>::Get(from, to); 
     return *reorder_prim->GetPrimitive();
   }
- 
+
 #endif  // INTEL_MKL_DNN
 
 }  // namespace tensorflow
