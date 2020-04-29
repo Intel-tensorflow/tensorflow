@@ -176,13 +176,15 @@ struct FillPhiloxRandomTask<Distribution, false> {
     }
 
     // If there are any remaining elements that need to be filled, process them
+    int64 remaining_size = 0;
     if (limit_group_full < limit_group) {
-      int64 remaining_size = size - limit_group_full * kGroupSize;
+      remaining_size = size - limit_group_full * kGroupSize;
       auto samples = dist_vec(&gen);
       std::copy(&samples[0], &samples[0] + remaining_size, data + offset);
     }
-    dist_vec.VecCopy(data + start_group * kGroupSize,
-                     limit_group - start_group);
+    dist_vec.VecCopy(
+        data + start_group * kGroupSize,
+        (limit_group_full - start_group) * kGroupSize + remaining_size);
   }
 };
 
@@ -223,17 +225,19 @@ struct FillPhiloxRandomTask<Distribution, true> {
     }
 
     // If there are any remaining elements that need to be filled, process them
+    int64 remaining_size = 0;
     if (limit_group_full < limit_group) {
       PhiloxRandom gen = base_gen;
       gen.Skip(group_index * kGeneratorSkipPerOutputGroup);
       SingleSampleAdapter<PhiloxRandom> single_samples(&gen);
 
-      int64 remaining_size = size - limit_group_full * kGroupSize;
+      remaining_size = size - limit_group_full * kGroupSize;
       auto samples = dist_vec(&single_samples);
       std::copy(&samples[0], &samples[0] + remaining_size, data + offset);
     }
-    dist_vec.VecCopy(data + start_group * kGroupSize,
-                     limit_group - start_group);
+    dist_vec.VecCopy(
+        data + start_group * kGroupSize,
+        (limit_group_full - start_group) * kGroupSize + remaining_size);
   }
 };
 
