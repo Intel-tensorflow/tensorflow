@@ -23,9 +23,9 @@ limitations under the License.
 #include <algorithm>
 #include <type_traits>
 
-#include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 #include "tensorflow/core/lib/bfloat16/bfloat16.h"
 #include "tensorflow/core/lib/random/philox_random.h"
+#include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 
 namespace tensorflow {
 namespace random {
@@ -33,9 +33,13 @@ namespace random {
 // Helper function to convert a 16-bit integer to a half between [0..1).
 PHILOX_DEVICE_INLINE Eigen::half Uint16ToHalf(uint16 x);
 // Helper function to convert a 16-bit integer to a bfloat16 between [0..1).
-PHILOX_DEVICE_INLINE bfloat16 Uint16ToGfloat16(uint16 x);
+PHILOX_DEVICE_INLINE bfloat16 Uint16ToBfloat16(uint16 x);
+// Helper function to convert a 16-bit integer to a bfloat16 between [1..2).
+PHILOX_DEVICE_INLINE bfloat16 InternalUint16ToBfloat16(uint16 x);
 // Helper function to convert a 32-bit integer to a float between [0..1).
 PHILOX_DEVICE_INLINE float Uint32ToFloat(uint32 x);
+// Helper function to convert a 32-bit integer to a float between [1..2).
+PHILOX_DEVICE_INLINE float InternalUint32ToFloat(uint32 x);
 // Helper function to convert two 32-bit integers to a double between [0..1).
 PHILOX_DEVICE_INLINE double Uint64ToDouble(uint32 x0, uint32 x1);
 
@@ -108,9 +112,11 @@ class UniformDistribution<Generator, bfloat16> {
   ResultType operator()(Generator* gen) {
     typename Generator::ResultType sample = (*gen)();
     ResultType result;
+
     for (int i = 0; i < kResultElementCount; ++i) {
-      result[i] = Uint16ToGfloat16(sample[i]);
+      result[i] = Uint16ToBfloat16(sample[i]);
     }
+
     return result;
   }
 };
@@ -764,9 +770,9 @@ PHILOX_DEVICE_INLINE Eigen::half Uint16ToHalf(uint16 x) {
   return result - Eigen::half(1.0);
 }
 
-// Helper function to convert an 16-bit integer to a bfloat16 between [0..1).
-// This can create a uniform distribution of values between [0..1).
-PHILOX_DEVICE_INLINE bfloat16 Uint16ToGfloat16(uint16 x) {
+// Helper function to convert an 16-bit integer to a bfloat16 between [1..2).
+// This can create a uniform distribution of values between [1..2).
+PHILOX_DEVICE_INLINE bfloat16 InternalUint16ToBfloat16(uint16 x) {
   // bfloat are formatted as follows (MSB first):
   //    sign(1) exponent(8) mantissa(7)
   // Conceptually construct the following:
@@ -780,13 +786,20 @@ PHILOX_DEVICE_INLINE bfloat16 Uint16ToGfloat16(uint16 x) {
   bfloat16 result;
   memcpy(&result, &val, sizeof(val));
   // The mantissa has an implicit leading 1, so the above code creates a value
-  // in [1, 2). The minus will not cause a rounding that makes the result 1.
-  // Instead it will just be close to 1.
-  return result - bfloat16(1.0);
+  // in [1, 2).
+  return result;
 }
 
-// Helper function to convert an 32-bit integer to a float between [0..1).
-PHILOX_DEVICE_INLINE float Uint32ToFloat(uint32 x) {
+// Helper function to convert an 16-bit integer to a bfloat16 between [0..1).
+// This can create a uniform distribution of values between [0..1).
+PHILOX_DEVICE_INLINE bfloat16 Uint16ToBfloat16(uint16 x) {
+  // The minus will not cause a rounding that makes the result 1.
+  // Instead it will just be close to 1.
+  return InternalUint16ToBfloat16(x) - bfloat16(1.0);
+}
+
+// Helper function to convert an 32-bit integer to a float between [1..2).
+PHILOX_DEVICE_INLINE float InternalUint32ToFloat(uint32 x) {
   // IEEE754 floats are formatted as follows (MSB first):
   //    sign(1) exponent(8) mantissa(23)
   // Conceptually construct the following:
@@ -800,7 +813,12 @@ PHILOX_DEVICE_INLINE float Uint32ToFloat(uint32 x) {
   // Assumes that endian-ness is same for float and uint32.
   float result;
   memcpy(&result, &val, sizeof(val));
-  return result - 1.0f;
+  return result;
+}
+
+// Helper function to convert an 32-bit integer to a float between [0..1).
+PHILOX_DEVICE_INLINE float Uint32ToFloat(uint32 x) {
+  return InternalUint32ToFloat(x) - 1.0f;
 }
 
 // Helper function to convert two 32-bit integers to a double between [0..1).

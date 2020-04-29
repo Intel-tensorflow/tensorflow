@@ -56,6 +56,83 @@ namespace functor {
 using random::PhiloxRandom;
 using random::SingleSampleAdapter;
 
+template <class Generator, typename RealType, class Distribution>
+class DistributionVec {
+ public:
+  explicit DistributionVec(Distribution* dist) { this->dist = dist; }
+
+  typename Distribution::ResultType operator()(Generator* gen) {
+    return (*dist)(gen);
+  }
+
+  void VecCopy(RealType* data, int64 length) {}
+
+ private:
+  Distribution* dist;
+};
+
+template <>
+class DistributionVec<
+    random::PhiloxRandom, bfloat16,
+    random::UniformDistribution<random::PhiloxRandom, bfloat16>> {
+ public:
+  typedef random::UniformDistribution<random::PhiloxRandom, bfloat16>
+      Distribution;
+
+  explicit DistributionVec(Distribution* dist) { this->dist = dist; }
+
+  typename Distribution::ResultType operator()(random::PhiloxRandom* gen) {
+    typename random::PhiloxRandom::ResultType sample = (*gen)();
+    typename Distribution::ResultType result;
+
+    for (int i = 0; i < Distribution::kResultElementCount; ++i) {
+      result[i] = tensorflow::random::InternalUint16ToBfloat16(sample[i]);
+    }
+
+    return result;
+  }
+
+  void VecCopy(bfloat16* data, int64 length) {
+    // The mantissa has an implicit leading 1, so the above code creates a value
+    // in [1, 2). The minus will not cause a rounding that makes the result 1.
+    // Instead it will just be close to 1.
+    auto result_t = typename TTypes<bfloat16>::Tensor(data, length);
+    result_t = result_t - bfloat16(1.0);
+  }
+
+ private:
+  Distribution* dist;
+};
+
+template <>
+class DistributionVec<
+    random::PhiloxRandom, float,
+    random::UniformDistribution<random::PhiloxRandom, float>> {
+ public:
+  typedef random::UniformDistribution<random::PhiloxRandom, float> Distribution;
+
+  explicit DistributionVec(Distribution* dist) { this->dist = dist; }
+
+  typename Distribution::ResultType operator()(random::PhiloxRandom* gen) {
+    typename random::PhiloxRandom::ResultType sample = (*gen)();
+    typename Distribution::ResultType result;
+
+    for (int i = 0; i < Distribution::kResultElementCount; ++i) {
+      result[i] = tensorflow::random::InternalUint32ToFloat(sample[i]);
+    }
+
+    return result;
+  }
+
+  void VecCopy(float* data, int64 length) {
+    auto result_t = typename TTypes<float>::Tensor(data, length);
+    result_t = result_t - 1.0f;
+  }
+
+ private:
+  Distribution* dist;
+};
+
 // The default implementation of the functor, which should never be invoked
 // But we still need to provide implementation for now for the linker to work,
 // since we do not support all the distributions yet.
@@ -91,8 +168,9 @@ struct FillPhiloxRandomTask<Distribution, false> {
 
     // First fill all the full-size groups
     int64 limit_group_full = std::min(limit_group, size / kGroupSize);
+    DistributionVec<random::PhiloxRandom, T, Distribution> dist_vec(&dist);
     for (int64 index = start_group; index < limit_group_full; ++index) {
-      auto samples = dist(&gen);
+      auto samples = dist_vec(&gen);
       std::copy(&samples[0], &samples[0] + kGroupSize, data + offset);
       offset += kGroupSize;
     }
@@ -100,9 +178,11 @@ struct FillPhiloxRandomTask<Distribution, false> {
     // If there are any remaining elements that need to be filled, process them
     if (limit_group_full < limit_group) {
       int64 remaining_size = size - limit_group_full * kGroupSize;
-      auto samples = dist(&gen);
+      auto samples = dist_vec(&gen);
       std::copy(&samples[0], &samples[0] + remaining_size, data + offset);
     }
+    dist_vec.VecCopy(data + start_group * kGroupSize,
+                     limit_group - start_group);
   }
 };
 
@@ -126,6 +206,8 @@ struct FillPhiloxRandomTask<Distribution, true> {
     // First fill all the full-size groups
     int64 limit_group_full = std::min(limit_group, size / kGroupSize);
     int64 group_index;
+    DistributionVec<SingleSampleAdapter<PhiloxRandom>, T, Distribution>
+        dist_vec(&dist);
     for (group_index = start_group; group_index < limit_group_full;
          ++group_index) {
       // Reset the generator to the beginning of the output group region
@@ -135,7 +217,7 @@ struct FillPhiloxRandomTask<Distribution, true> {
       gen.Skip(group_index * kGeneratorSkipPerOutputGroup);
       SingleSampleAdapter<PhiloxRandom> single_samples(&gen);
 
-      auto samples = dist(&single_samples);
+      auto samples = dist_vec(&single_samples);
       std::copy(&samples[0], &samples[0] + kGroupSize, data + offset);
       offset += kGroupSize;
     }
@@ -147,9 +229,11 @@ struct FillPhiloxRandomTask<Distribution, true> {
       SingleSampleAdapter<PhiloxRandom> single_samples(&gen);
 
       int64 remaining_size = size - limit_group_full * kGroupSize;
-      auto samples = dist(&single_samples);
+      auto samples = dist_vec(&single_samples);
       std::copy(&samples[0], &samples[0] + remaining_size, data + offset);
     }
+    dist_vec.VecCopy(data + start_group * kGroupSize,
+                     limit_group - start_group);
   }
 };
 
