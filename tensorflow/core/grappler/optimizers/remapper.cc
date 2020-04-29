@@ -393,7 +393,11 @@ bool IsDeviceCompatible(const RemapperContext& ctx, Pattern& matched) {
 }
 
 bool IsSupportedActivation(const NodeDef& node) {
+#ifdef INTEL_MKL
+  return IsRelu(node) || IsRelu6(node) || IsElu(node) || IsGelu(node);
+#else
   return IsRelu(node) || IsRelu6(node) || IsElu(node);
+#endif
 }
 
 inline bool HasControlFaninOrFanout(const utils::MutableNodeView& node_view) {
