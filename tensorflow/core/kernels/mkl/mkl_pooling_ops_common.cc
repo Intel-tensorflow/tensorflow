@@ -127,6 +127,7 @@ template class MklPoolingFwdPrimitive<float>;
 template class MklPoolingFwdPrimitive<quint8>;
 template class MklPoolingFwdPrimitive<qint8>;
 template class MklPoolingFwdPrimitive<bfloat16>;
+template class MklPoolingFwdPrimitive<Eigen::half>;
 
 template <typename T>
 void MklPoolingBwdPrimitive<T>::Setup(const MklPoolingParams& bwdParams) {

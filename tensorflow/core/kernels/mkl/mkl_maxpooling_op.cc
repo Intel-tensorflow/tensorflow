@@ -417,6 +417,15 @@ TF_CALL_bfloat16(REGISTER_MKL_MAXPOOL3D_KERNELS);
 TF_CALL_float(REGISTER_MKL_MAXPOOL_KERNELS);
 TF_CALL_bfloat16(REGISTER_MKL_MAXPOOL_KERNELS);
 
+#define REGISTER_MKL_MAXPOOL_KERNELS_half(T)                                  \
+  REGISTER_KERNEL_BUILDER(Name("_MklNativeMaxPool")                           \
+                              .Device(DEVICE_CPU)                             \
+                              .TypeConstraint<T>("T")                         \
+                              .Label(mkl_op_registry::kMklNameChangeOpLabel), \
+                          MklMaxPoolingOp<CPUDevice, T, true>);
+
+TF_CALL_half(REGISTER_MKL_MAXPOOL_KERNELS_half);
+
 REGISTER_KERNEL_BUILDER(Name("_MklQuantizedMaxPool")
                             .Device(DEVICE_CPU)
                             .TypeConstraint<quint8>("T")

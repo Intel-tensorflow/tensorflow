@@ -2643,6 +2643,17 @@ TF_CALL_bfloat16(REGISTER_NO_OP_CPU_2D_DEPTHWISE);
 TF_CALL_float(REGISTER_MKL_CPU_2D);
 TF_CALL_bfloat16(REGISTER_MKL_CPU_2D);
 
+#define REGISTER_MKL_CPU_2D_half(T)                       \
+  REGISTER_KERNEL_BUILDER(                                \
+      Name("_MklNativePadWithConv2D")                     \
+          .Device(DEVICE_CPU)                             \
+          .TypeConstraint<T>("T")                         \
+          .TypeConstraint<int32>("Tpaddings")             \
+          .Label(mkl_op_registry::kMklNameChangeOpLabel), \
+      MklConvOp<CPUDevice, T, T, T, T, T, int32, false, true, false, true>);
+
+TF_CALL_half(REGISTER_MKL_CPU_2D_half)
+
 #define REGISTER_MKL_CPU_2D_DEPTHWISE(T)                                      \
   REGISTER_KERNEL_BUILDER(                                                    \
       Name("_MklDepthwiseConv2dNative")                                       \
@@ -2727,6 +2738,7 @@ TF_CALL_bfloat16(REGISTER_MKL_CPU_2D_DEPTHWISE);
 
 TF_CALL_float(REGISTER_MKL_CPU_2D_FUSED);
 TF_CALL_bfloat16(REGISTER_MKL_CPU_2D_FUSED);
+TF_CALL_half(REGISTER_MKL_CPU_2D_FUSED);
 
 // Register 3D operations
 #define REGISTER_MKL_CPU_3D(T)                                                 \
