@@ -332,9 +332,9 @@ bool IsCpuCompatibleDataType(const NodeDef* contraction,
                                 : true;
     }
     return (IsConv2D(*contraction) || IsDepthwiseConv2dNative(*contraction) ||
-            IsConv3D(*contraction) || IsAnyBatchMatMul(*contraction) ||
-            is_supported_matmul) &&
-           (dtype == DT_FLOAT || dtype == DT_BFLOAT16);
+            IsMatMul(*contraction) || IsConv3D(*contraction) ||
+            IsAnyBatchMatMul(*contraction) || is_supported_matmul) &&
+           (dtype == DT_FLOAT || dtype == DT_BFLOAT16 || dtype == DT_HALF);
   }
   if (IsConv2D(*contraction)) {
     return dtype == DT_FLOAT || dtype == DT_DOUBLE;
