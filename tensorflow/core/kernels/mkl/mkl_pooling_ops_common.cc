@@ -139,6 +139,7 @@ void MklPoolingFwdPrimitive<T>::Execute(const T* src_data, T* dst_data,
 
 template class MklPoolingFwdPrimitive<float>;
 template class MklPoolingFwdPrimitive<bfloat16>;
+template class MklPoolingFwdPrimitive<Eigen::half>;
 
 template class MklPoolingFwdPrimitive<quint8>;
 template class MklPoolingFwdPrimitive<qint8>;
