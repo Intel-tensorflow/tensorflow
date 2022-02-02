@@ -3241,6 +3241,7 @@ TF_CALL_bfloat16(REGISTER_MKL_CPU_2D_DEPTHWISE);
 
 TF_CALL_float(REGISTER_MKL_CPU_2D_FUSED);
 TF_CALL_bfloat16(REGISTER_MKL_CPU_2D_FUSED);
+TF_CALL_half(REGISTER_MKL_CPU_2D_FUSED);
 
 // Register 3D operations
 #define REGISTER_MKL_CPU_3D(T)                                                 \

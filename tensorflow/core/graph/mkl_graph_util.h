@@ -225,7 +225,7 @@ static inline bool IsMklOp(const string& op_name, DataType T,
       kernel_registered = is_native_op
                               ? (T == DT_COMPLEX128 || T == DT_COMPLEX64 ||
                                  T == DT_DOUBLE || T == DT_FLOAT || T == DT_HALF)
-                              : T == DT_FLOAT;
+                              : (T == DT_FLOAT || T == DT_HALF);
       if (!kernel_registered) {
         if (T == DT_BFLOAT16) {
           if (IsBF16SupportedByOneDNNOnThisCPU()) {
