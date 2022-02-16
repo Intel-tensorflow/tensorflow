@@ -1917,7 +1917,7 @@ REGISTER_OP("_MklLayerNorm")
     .Input("scale: T")
     .Input("offset: T")
     .Output("y: T")
-    .Attr("T: {float, bfloat16}")
+    .Attr("T: {float, bfloat16, half}")
     .Attr("epsilon: float = 0.001")
     .SetShapeFn(shape_inference::UnchangedShape);
 
