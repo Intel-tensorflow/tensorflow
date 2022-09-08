@@ -1,0 +1,128 @@
+/*
+This job:
+1. Clones tensorflow/tensorflow at a given commit
+2. Calls the 'ci_run_build_test.sh' script
+
+This job accepts params:
+- String Type :: CHECKOUT_BRANCH :: A string branch name to clone tensorflow/tensorflow from
+
+The original  tf-pr-win pipeline
+*/
+
+import jenkins.model.*
+
+static final ArrayList buildLabels = [ 'winh' ]
+
+String branchName = params.get('CHECKOUT_BRANCH')
+latestMasterCommitTested = "master"
+String strTFGithubLabel = "Intel community CI build - Windows CPU"
+
+// Remove the training new line char that appears to be added by Jenkins from commit ID
+branchName = branchName.trim()
+
+@NonCPS
+String readFileLineByLine(java.io.File filePath) {
+    def line;
+    def content = "";
+    filePath.withReader { reader ->
+        while ((line = reader.readLine()) != null) {
+            content = content + line
+            content = content + "\n"
+        }
+    }
+    content = content.trim()
+    return content
+}
+
+void getLatestPostMergeBuildDetails(String jobName) {
+
+  def lastBuild
+  buildDetail = Jenkins.instance.getItemByFullName(jobName)
+  lastBuild = buildDetail.getLastCompletedBuild()
+  // Alternatively the last sucessfull build can be used also
+  // lastBuild = buildDetail.getLastSuccessfulBuild()
+
+  if (lastBuild) {
+    changeSetObj = lastBuild.getChangeSets()[0]
+    if(changeSetObj) {
+        changeSets = changeSetObj.getLogs()
+        citr = changeSets.listIterator()
+        while (citr.hasNext()) {
+          changeSet = citr.next()
+        }
+        latestMasterCommitTested = changeSet.getCommitId()
+    }
+  }
+}
+
+getLatestPostMergeBuildDetails("tf-test-win2")
+
+Map parallelBuild = [:]
+buildLabels.each { l ->
+    parallelBuild += [
+        "${l}": {
+            node(l) {
+                githubNotify status: "PENDING", credentialsId: "tensorflow-jenkins", account: "tensorflow", repo: "tensorflow", context: strTFGithubLabel, targetUrl: env.BUILD_URL, sha: branchName, description: "build started"
+                stage('Checkout') {
+                    try {
+                        echo "PR commit for testing: $branchName"
+                        echo "Latest master commit: $latestMasterCommitTested"
+                        sh """
+                            if [[ -f "./tensorflow/.git/HEAD" ]]; then
+                                #cd tensorflow
+                                #git checkout
+                                rm -rf ./tensorflow
+                            fi
+                            git clone https://github.com/tensorflow/tensorflow
+                            cd tensorflow
+                            git config  user.email "ag.ramesh@intel.com" # Need to set this otherwise merge fails
+                            git fetch --tags --progress -- https://github.com/tensorflow/tensorflow +refs/pull/*/head:refs/remotes/origin/pr/*
+                            git checkout $latestMasterCommitTested
+                            git merge $branchName
+                        """
+                    }
+                    catch(e) {
+                        echo "Failed to merge PR with latest master. Post error to the PR"
+                        githubNotify status: "FAILURE", credentialsId: "tensorflow-jenkins", account: "tensorflow", repo: "tensorflow", context: strTFGithubLabel, targetUrl: env.BUILD_URL, sha: branchName, description: "code merge failed"
+                        currentBuild.result = 'FAILURE'
+                    }
+                }
+                if (currentBuild.result == 'FAILURE') {
+                    echo "Caught a failure while merging source branch of PR with destination. Exit job."
+                    return
+                }
+                stage('Build') {
+                    catchError {
+                        bat '''
+                            echo Workspace is %WORKSPACE%
+                            cd %WORKSPACE%
+                            wget https://raw.githubusercontent.com/Intel-tensorflow/tensorflow/bani/win_ci_scripts/tensorflow/tools/ci_build/windows/cpu/pip/ci_run_build_test.sh -O ci_run_build_test.sh
+                        '''
+                        get_job_retval = sh(returnStatus: true, script: "bash ./ci_run_build_test.sh --skip_test")
+                        if (get_job_retval != 0) {
+                            currentBuild.result = 'FAILURE'
+                        } else {
+                            currentBuild.result = 'SUCCESS'
+                        }                        
+                    }
+                }
+                stage('Archive') {
+                    dir("$WORKSPACE" + "/artifact") {
+                        archiveArtifacts artifacts: ' *.log', excludes: null
+                    }
+                } // stage Archive
+            }
+        }
+    ]
+}
+
+parallel parallelBuild
+if (currentBuild.result == "SUCCESS") {
+    echo "Build status is SUCCESS. Post status to github"
+    githubNotify status: "SUCCESS", credentialsId: "tensorflow-jenkins-new", account: "tensorflow", repo: "tensorflow", context: strTFGithubLabel, targetUrl: env.BUILD_URL, sha: branchName, description: "build successful"
+}
+
+else {
+    echo "Build status is FAILURE. Post status to github"
+    githubNotify status: "FAILURE", credentialsId: "tensorflow-jenkins-new", account: "tensorflow", repo: "tensorflow", context: strTFGithubLabel, targetUrl: env.BUILD_URL, sha: branchName, description: "build failed"
+}

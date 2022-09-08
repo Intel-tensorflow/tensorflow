@@ -1,0 +1,81 @@
+//The tf-test-win2-a pipeline 
+
+static final ArrayList buildLabels = [ 'a-win' ]
+static final String branchName = params.get('CHECKOUT_BRANCH', 'master')
+static final String python_version = params.get('PYTHON_VERSION', '38')
+
+String strTFGithubLabel = "Intel community CI build - Windows CPU"
+String strCommitID = ""
+
+Map parallelBuild = [:]
+buildLabels.each { l ->
+    parallelBuild += [
+        "${l}": {
+            node(l) {
+                stage('Checkout') {
+                    if (fileExists('./tensorflow/.git/HEAD')) {
+                        sh 'cd tensorflow && git checkout .'
+                    }
+                    checkout([$class: 'GitSCM',
+                    branches: [[name: branchName]],
+                    doGenerateSubmoduleConfigurations: false, 
+                    extensions: [[$class           : 'RelativeTargetDirectory',
+                                  relativeTargetDir: 'tensorflow']],
+                    submoduleCfg: [],
+                    userRemoteConfigs: [[url: 'https://github.com/tensorflow/tensorflow']]])
+                    
+                    dir("tensorflow") {
+                        strCommitID = sh(returnStdout: true, script: 'git rev-parse HEAD').trim()
+                    }
+                    echo "strCommitID=" + strCommitID
+                } // stage Checkout
+                
+                // Build TensorFlow, create wheel, run unit tests
+                stage('Build') {
+                    catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                        withEnv(["WORKSPACE=$WORKSPACE","PYTHON_VERSION=$python_version"]) {
+                        
+                            echo "----- Build TF Windows Wheels & Unit Tests -----"
+                            bat'''
+                                echo Workspace is %WORKSPACE%
+                                cd %WORKSPACE%
+                                wget https://raw.githubusercontent.com/Intel-tensorflow/tensorflow/bani/win_ci_scripts/tensorflow/tools/ci_build/windows/cpu/pip/ci_run_build_test.sh -O ci_run_build_test.sh
+                                bash ./ci_run_build_test.sh
+                            '''
+                        }
+                    }
+
+                } // stage Build
+                
+                stage('Archive') {
+                    /* withEnv(["WORKSPACE=$WORKSPACE"]) {
+                        bat '''
+                            mkdir %WORKSPACE%\\artifact
+                            del  %WORKSPACE%\\artifact\\*.*
+                            rem xcopy /y %WORKSPACE%\\tensorflow\\py_test_dir\\tensorflow-*.whl %WORKSPACE%\\artifact
+                            rem xcopy /y %WORKSPACE%\\tensorflow\\*.log %WORKSPACE%\\artifact
+                            xcopy /y %WORKSPACE%\\*.log %WORKSPACE%\\artifact
+                        '''
+                    } */
+                    dir("$WORKSPACE" + "/artifact") {
+                        // archiveArtifacts artifacts: 'tensorflow*.whl, *.log', excludes: null
+                        archiveArtifacts artifacts: ' *.log', excludes: null
+                    }
+
+                } // stage Archive
+
+            }
+        }
+    ]
+}
+
+parallel parallelBuild
+
+// if (currentBuild.result == "FAILURE") {
+//     echo "Build status is FAILURE. Post status to github"
+//     githubNotify status: "FAILURE", credentialsId: "tensorflow-jenkins-new", account: "tensorflow", repo: "tensorflow", context: strTFGithubLabel, targetUrl: env.BUILD_URL, sha: strCommitID, description: "build failed"
+// }
+// else {
+//     echo "Build status is SUCCESS. Post status to github"
+//     githubNotify status: "SUCCESS", credentialsId: "tensorflow-jenkins-new", account: "tensorflow", repo: "tensorflow", context: strTFGithubLabel, targetUrl: env.BUILD_URL, sha: strCommitID, description: "build successful"
+// }
