@@ -1,8 +1,7 @@
-// The tf-whl-win pipeline
-
 static final ArrayList buildLabels = [ 'winh' ]
 static final String branchName = params.get('CHECKOUT_BRANCH', 'master')
 static final String python_version = params.get('PYTHON_VERSION', '38')
+static final String timeout_hours = params.get('TIMEOUT_HOURS', '10')
 
 def runBuild(pyVer) {
     catchError {
@@ -67,7 +66,7 @@ buildLabels.each { l ->
     parallelBuild += [
         "${l}": {
             node(l) {
-                timeout(unit: 'HOURS', time: 10) {
+                timeout(unit: 'HOURS', time: timeout_hours) {
                     stage('Checkout') {
                         if (fileExists('./tensorflow/.git/HEAD')) {
                             sh 'cd tensorflow && git checkout .'
