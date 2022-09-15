@@ -8,6 +8,8 @@ https://wiki.ith.intel.com/display/intelnervana/BKM%3A+Public+CI+Monitoring+on+W
 
 import tensorflow as tf
 
+print("Sanity test start.")
+
 print("Validate keras")
 assert "_v2.keras" in tf.keras.__name__, "Test _v2.keras in tf.keras.__name__"
 
@@ -18,3 +20,5 @@ assert tf.add(t1, t2).shape == (4,), "Test array shape after adding two arrays"
 
 print("Validate tf.estimator")
 assert "_v2.estimator" in tf.estimator.__name__, "Test _v2.estimator in tf.estimator.__name__"
+
+print("Sanity test completed.")
