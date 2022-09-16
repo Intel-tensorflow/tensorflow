@@ -6,7 +6,7 @@ This job:
 This job accepts params:
 - String Type :: CHECKOUT_BRANCH :: A string branch name to clone tensorflow/tensorflow from
 
-The original  tf-pr-win pipeline
+The tf-pr-win pipeline
 */
 
 import jenkins.model.*
