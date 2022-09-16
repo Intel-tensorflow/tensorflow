@@ -1,4 +1,4 @@
-// The original tf-rel-win pipeline
+// The tf-rel-win pipeline
 
 static final ArrayList buildLabels = [ 'winhrel' ]
 static final String branchName = params.get('CHECKOUT_BRANCH', 'master')
