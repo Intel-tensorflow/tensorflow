@@ -18,7 +18,8 @@ import argparse
 import os
 import subprocess
 
-BASIC_BUILD_OPTS = ["--cxxopt=-D_GLIBCXX_USE_CXX11_ABI=0", "--copt=-O3"]
+# BASIC_BUILD_OPTS = ["--cxxopt=-D_GLIBCXX_USE_CXX11_ABI=0", "--copt=-O3"]
+BASIC_BUILD_OPTS = ["--copt=-O3"]
 
 SECURE_BUILD_OPTS = [
     "--copt=-Wformat", "--copt=-Wformat-security", "--copt=-fstack-protector",
