@@ -118,9 +118,9 @@ buildLabels.each { l ->
                     stage('Upload_PyPI') {
                         // Now upload the wheels to PyPI under tf_nightly_intel namespace
                         if(python_version == "all") {
-                            uploadPyPI("310")
+                            //uploadPyPI("310")
                         } else {
-                            uploadPyPI(python_version)
+                            //uploadPyPI(python_version)
                         }
                     }
                 }
