@@ -156,7 +156,7 @@ buildLabels.each { l ->
 
                     stage('Upload_PyPI') {
                         // Now upload the wheels to PyPI under tf_nightly_intel namespace
-                        //uploadPyPI()
+                        uploadPyPI()
                     }
                 }
             }
