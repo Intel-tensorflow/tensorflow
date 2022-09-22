@@ -59,7 +59,7 @@ def replace_pypi_description(path, description):
     >>> f.close()
     >>> open(path).read()
     '# abc\\n\"\"\" def\\n\"\"\"\\nend'
-    >>> replace_pypi_description(path, b" ghi")
+    >>> replace_pypi_description(path, " ghi")
     >>> open(path).read()
     '# abc\\n\"\"\" ghi\"\"\"\\nend'
     >>> remove(path)
@@ -83,11 +83,11 @@ def replace_pypi_description(path, description):
                 f.write(lines[i])
             elif not is_replaced:
                 is_replaced = True
-                f.write(f'"""{description.decode("UTF-8")}"""\n')
+                f.write(f'"""{description}"""\n')
 
 
 def main(path, base64Description):
-    description = base64.b64decode(base64Description)
+    description = base64.b64decode(base64Description).decode("UTF-8")
     replace_pypi_description(path, description)
 
 
