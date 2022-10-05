@@ -349,6 +349,7 @@ TF_CALL_bfloat16(REGISTER_FUSEDMATMUL_MKL_SUPPORTED_KERNELS_TYPES);
           .TypeConstraint<type>("T")                                \
           .Label(mkl_op_registry::kMklNameChangeOpLabel),           \
       MklFusedMatMulOp<CPUDevice, type, true>);
+      //MklFusedMatMulOp<CPUDevice, type, type, type, type, type, true>);
 TF_CALL_half(REGISTER_FUSEDMATMUL_MKL_SUPPORTED_KERNELS_TYPES_half);
 #undef REGISTER_FUSEDMATMUL_MKL_SUPPORTED_KERNELS_TYPES_half(type)  \
 
