@@ -222,8 +222,8 @@ def update_tensorflow_bzl(old_version, new_version):
   #new_mmp = "%s.%s.%s" % (new_version.major, new_version.minor,
                           #new_version.patch)
   
-  testing_new_mmp = "%s.%s.%s.%s" % (new_version.major, new_version.minor,
-                          new_version.patch, new_version.identifer_string)
+  testing_new_mmp = "%s.%s.%s-%s" % (new_version.major, new_version.minor,
+                          new_version.patch, "dev20221007")
   print("tf-bzl - old_mmp: {}".format(old_mmp))
   print("tf-bzl - new_mmp: {}".format(new_mmp))
   replace_string_in_line('VERSION = "%s"' % old_mmp,
