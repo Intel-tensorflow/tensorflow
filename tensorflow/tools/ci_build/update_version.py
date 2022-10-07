@@ -58,11 +58,11 @@ def check_all_files():
 
 def replace_string_in_line(search, replace, filename):
   """Replace with sed when regex is required."""
-  print("filename, search, replace: %s, %s, %s", filename, search, replace)
+  print("filename, search, replace: {}, {}, {}".format(filename, search, replace))
   with open(filename, "r") as source:
     content = source.read()
   with open(filename, "w") as source:
-    print("number of matching occurences: %d", len(re.findall(search, content)))
+    print("number of matching occurences: {}".format(len(re.findall(search, content))))
     source.write(re.sub(search, replace, content))
 
 
@@ -201,8 +201,8 @@ def update_version_h(old_version, new_version):
 
 def update_setup_dot_py(old_version, new_version):
   """Update setup.py."""
-  print("setup py - old version: %s", old_version.string)
-  print("setup py - new version: %s", new_version.string)
+  print("setup py - old version: {}".format(old_version.string))
+  print("setup py - new version: {}".format(new_version.string))
   replace_string_in_line("_VERSION = '%s'" % old_version.string,
                          "_VERSION = '%s'" % new_version.string, SETUP_PY)
 
@@ -221,8 +221,8 @@ def update_tensorflow_bzl(old_version, new_version):
                           old_version.patch)
   new_mmp = "%s.%s.%s" % (new_version.major, new_version.minor,
                           new_version.patch)
-  print("tf-bzl - old_mmp: %s", old_mmp)
-  print("tf-bzl - new_mmp: %s", new_mmp)
+  print("tf-bzl - old_mmp: {}".format(old_mmp))
+  print("tf-bzl - new_mmp: {}".format(new_mmp))
   replace_string_in_line('VERSION = "%s"' % old_mmp,
                          'VERSION = "%s"' % new_mmp, TENSORFLOW_BZL)
 
@@ -239,10 +239,13 @@ def major_minor_change(old_version, new_version):
 def check_for_lingering_string(lingering_string):
   """Check for given lingering strings."""
   formatted_string = lingering_string.replace(".", r"\.")
+  print("lingering formatted string: {}".format(formatted_string))
   try:
     linger_str_output = subprocess.check_output(
         ["grep", "-rnoH", formatted_string, TF_SRC_DIR])
+    print("linger_str_output: {}".format(linger_str_output))
     linger_strs = linger_str_output.decode("utf8").split("\n")
+    print("linger_strs: {}".format(linger_strs))
   except subprocess.CalledProcessError:
     linger_strs = []
 
@@ -260,8 +263,8 @@ def check_for_lingering_string(lingering_string):
 
 def check_for_old_version(old_version, new_version):
   """Check for old version references."""
-  print("lingering str old version: %s", old_version.string)
-  print("lingering str new version: %s", new_version.string)
+  print("lingering str old version: {}".format(old_version.string))
+  print("lingering str new version: {}".format(new_version.string))
   for old_ver in [old_version.string, old_version.pep_440_str]:
     check_for_lingering_string(old_ver)
 
@@ -307,6 +310,7 @@ def main():
                             old_version.patch,
                             "-dev" + time.strftime("%Y%m%d"),
                             NIGHTLY_VERSION)
+      print("new version: {}".format(new_version.string))
   else:
     new_version = Version.parse_from_string(args.version, REGULAR_VERSION)
 
