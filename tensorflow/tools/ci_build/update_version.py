@@ -219,12 +219,15 @@ def update_tensorflow_bzl(old_version, new_version):
   """Update tensorflow.bzl."""
   old_mmp = "%s.%s.%s" % (old_version.major, old_version.minor,
                           old_version.patch)
-  new_mmp = "%s.%s.%s" % (new_version.major, new_version.minor,
-                          new_version.patch)
+  #new_mmp = "%s.%s.%s" % (new_version.major, new_version.minor,
+                          #new_version.patch)
+  
+  testing_new_mmp = "%s.%s.%s.%s" % (new_version.major, new_version.minor,
+                          new_version.patch, new_version.identifer_string)
   print("tf-bzl - old_mmp: {}".format(old_mmp))
   print("tf-bzl - new_mmp: {}".format(new_mmp))
   replace_string_in_line('VERSION = "%s"' % old_mmp,
-                         'VERSION = "%s"' % new_mmp, TENSORFLOW_BZL)
+                         'VERSION = "%s"' % testing_new_mmp, TENSORFLOW_BZL)
 
 
 def major_minor_change(old_version, new_version):
