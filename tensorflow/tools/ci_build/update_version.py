@@ -58,9 +58,11 @@ def check_all_files():
 
 def replace_string_in_line(search, replace, filename):
   """Replace with sed when regex is required."""
+  print("filename, search, replace: %s, %s, %s", filename, search, replace)
   with open(filename, "r") as source:
     content = source.read()
   with open(filename, "w") as source:
+    print("number of matching occurences: %d", len(re.findall(search, content)))
     source.write(re.sub(search, replace, content))
 
 
