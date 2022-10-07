@@ -199,6 +199,8 @@ def update_version_h(old_version, new_version):
 
 def update_setup_dot_py(old_version, new_version):
   """Update setup.py."""
+  print("setup py - old version: %s", old_version.string)
+  print("setup py - new version: %s", new_version.string)
   replace_string_in_line("_VERSION = '%s'" % old_version.string,
                          "_VERSION = '%s'" % new_version.string, SETUP_PY)
 
@@ -217,6 +219,8 @@ def update_tensorflow_bzl(old_version, new_version):
                           old_version.patch)
   new_mmp = "%s.%s.%s" % (new_version.major, new_version.minor,
                           new_version.patch)
+  print("tf-bzl - old_mmp: %s", old_mmp)
+  print("tf-bzl - new_mmp: %s", new_mmp)
   replace_string_in_line('VERSION = "%s"' % old_mmp,
                          'VERSION = "%s"' % new_mmp, TENSORFLOW_BZL)
 
@@ -254,6 +258,8 @@ def check_for_lingering_string(lingering_string):
 
 def check_for_old_version(old_version, new_version):
   """Check for old version references."""
+  print("lingering str old version: %s", old_version.string)
+  print("lingering str new version: %s", new_version.string)
   for old_ver in [old_version.string, old_version.pep_440_str]:
     check_for_lingering_string(old_ver)
 
