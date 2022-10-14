@@ -72,8 +72,8 @@ echo ""
 echo "Bazel will test with CONFIG=${CONFIG}, ENABLE_ONEDNN=${ENABLE_ONEDNN}"
 echo ""
 #Bazel test command with two option eigencuda or dnllcuda
-
-bazel --output_user_root="${WORKSPACE}" test \
+pwd
+bazel  test \
     --test_tag_filters=gpu,-no_gpu,-benchmark-test,-no_gpu_presubmit,-no_cuda11,-v1only,-no_oss,-oss_serial \
     --build_tag_filters=gpu,-no_gpu,-benchark-test,-no_oss,-oss_serial,-no_gpu_presubmit,-no_cuda11,-v1only \
     --test_lang_filters=cc,py \
