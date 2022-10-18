@@ -315,16 +315,19 @@ static std::wstring GetUncPathName(const std::wstring& path) {
 
   // boundary case check
   if (path.size() >= MAX_LONGPATH_LENGTH) {
-    string context = "ERROR: GetUncPathName cannot handle path size >= " + std::to_string(MAX_LONGPATH_LENGTH) + ", " + WideCharToUtf8(path);
+    string context = "ERROR: GetUncPathName cannot handle path size >= " +
+                     std::to_string(MAX_LONGPATH_LENGTH) + ", " +
+                     WideCharToUtf8(path);
     LOG(ERROR) << context;
     return std::wstring(path);
   }
 
-  auto rcode = GetFullPathNameW(path.c_str(), MAX_LONGPATH_LENGTH, wcPath, NULL);
-  LOG(INFO) << "GetUncPathName GetFullPathNameW for " << WideCharToUtf8(path) << " => rcode=" << rcode << " , " << WideCharToUtf8(std::wstring(wcPath));
+  auto rcode =
+      GetFullPathNameW(path.c_str(), MAX_LONGPATH_LENGTH, wcPath, NULL);
   std::wstring ws_final_path(wcPath);
   std::wstring uncPath;
-  if (wcPath[0] == '\\' && wcPath[1] == '\\' && wcPath[2] == '?' && wcPath[3] == '\\') {
+  if (wcPath[0] == '\\' && wcPath[1] == '\\' && wcPath[2] == '?' &&
+      wcPath[3] == '\\') {
     uncPath = ws_final_path;
   } else {
     uncPath = L"\\\\?\\" + ws_final_path;
@@ -338,28 +341,27 @@ static std::wstring GetUncPathName(const std::string& path) {
 }
 
 static std::wstring GetSymbolicLinkTarget(const std::wstring& linkPath) {
-
   WCHAR path[MAX_LONGPATH_LENGTH];
 
   std::wstring uncLinkPath = GetUncPathName(linkPath);
 
-  HANDLE hFile = ::CreateFileW( uncLinkPath.c_str(),
-    GENERIC_READ,
-    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-    0,
-    OPEN_EXISTING,
-    FILE_ATTRIBUTE_READONLY | FILE_FLAG_OVERLAPPED,
-    0);
+  HANDLE hFile = ::CreateFileW(
+      uncLinkPath.c_str(), GENERIC_READ,
+      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 0, OPEN_EXISTING,
+      FILE_ATTRIBUTE_READONLY | FILE_FLAG_OVERLAPPED, 0);
 
   if (INVALID_HANDLE_VALUE != hFile) {
-    auto rcode = GetFinalPathNameByHandleW(hFile, path, MAX_LONGPATH_LENGTH, FILE_NAME_NORMALIZED);
+    auto rcode = GetFinalPathNameByHandleW(hFile, path, MAX_LONGPATH_LENGTH,
+                                           FILE_NAME_NORMALIZED);
     ::CloseHandle(hFile);
     if (rcode) {
       return std::wstring(path, path + rcode);
     }
   } else {
     DWORD dwErr = GetLastError();
-    LOG(ERROR) << "ERROR: GetSymbolicLinkTarget cannot open file for " << WideCharToUtf8(uncLinkPath).c_str() << " GetLastError: " << dwErr << "\n";
+    LOG(ERROR) << "ERROR: GetSymbolicLinkTarget cannot open file for "
+               << WideCharToUtf8(uncLinkPath).c_str()
+               << " GetLastError: " << dwErr << "\n";
   }
 
   return uncLinkPath;
@@ -381,9 +383,8 @@ Status WindowsFileSystem::NewRandomAccessFile(
   // almost all tests would work with a possible exception of fault_injection.
   DWORD share_mode = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
 
-  HANDLE hfile =
-      ::CreateFileW(ws_final_fname.c_str(), GENERIC_READ, share_mode, NULL,
-                    OPEN_EXISTING, file_flags, NULL);
+  HANDLE hfile = ::CreateFileW(ws_final_fname.c_str(), GENERIC_READ, share_mode,
+                               NULL, OPEN_EXISTING, file_flags, NULL);
 
   if (INVALID_HANDLE_VALUE == hfile) {
     string context = "NewRandomAccessFile failed to Create/Open: " + fname;
@@ -402,8 +403,8 @@ Status WindowsFileSystem::NewWritableFile(
 
   DWORD share_mode = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
   HANDLE hfile =
-      ::CreateFileW(ws_final_fname.c_str(), GENERIC_WRITE, share_mode,
-                    NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+      ::CreateFileW(ws_final_fname.c_str(), GENERIC_WRITE, share_mode, NULL,
+                    CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
 
   if (INVALID_HANDLE_VALUE == hfile) {
     string context = "Failed to create a NewWriteableFile: " + fname;
@@ -549,7 +550,8 @@ Status WindowsFileSystem::GetChildren(const string& dir,
   WIN32_FIND_DATAW find_data;
   HANDLE find_handle = ::FindFirstFileW(pattern.c_str(), &find_data);
   if (find_handle == INVALID_HANDLE_VALUE) {
-    string context = "FindFirstFile failed for: " + WideCharToUtf8(ws_fname_final);
+    string context =
+        "FindFirstFile failed for: " + WideCharToUtf8(ws_fname_final);
     return IOErrorFromWindowsError(context);
   }
 
@@ -599,7 +601,7 @@ Status WindowsFileSystem::DeleteDir(const string& name,
   LARGE_INTEGER filesize;
 
   std::wstring ws_name = GetUncPathName(TranslateName(name));
-  if (RemoveDirectoryW (ws_name.c_str()) == 0) {
+  if (RemoveDirectoryW(ws_name.c_str()) == 0) {
     DWORD lastError = ::GetLastError();
     result = IOError("Failed to remove a directory: " + name, lastError);
   }
@@ -607,13 +609,14 @@ Status WindowsFileSystem::DeleteDir(const string& name,
 }
 
 Status WindowsFileSystem::DeleteRecursively(const std::string& dirname,
-                                        TransactionToken* token,
-                                        int64_t* undeleted_files,
-                                        int64_t* undeleted_dirs) {
+                                            TransactionToken* token,
+                                            int64_t* undeleted_files,
+                                            int64_t* undeleted_dirs) {
   Status result;
   std::wstring ws1 = GetUncPathName(TranslateName(dirname));
-  std::string dirname_final( ws1.begin(), ws1.end() );
-  return FileSystem::DeleteRecursively(dirname_final, token, undeleted_files, undeleted_dirs);
+  std::string dirname_final(ws1.begin(), ws1.end());
+  return FileSystem::DeleteRecursively(dirname_final, token, undeleted_files,
+                                       undeleted_dirs);
 }
 
 Status WindowsFileSystem::GetFileSize(const string& fname,
@@ -640,7 +643,7 @@ Status WindowsFileSystem::IsDirectory(const string& fname,
                                       TransactionToken* token) {
   std::wstring ws_translated_fname = Utf8ToWideChar(TranslateName(fname));
   std::wstring ws_final_fname = GetSymbolicLinkTarget(ws_translated_fname);
-  std::string str_final_fname( ws_final_fname.begin(), ws_final_fname.end() );
+  std::string str_final_fname(ws_final_fname.begin(), ws_final_fname.end());
   TF_RETURN_IF_ERROR(FileExists(str_final_fname));
   if (PathIsDirectoryW(ws_final_fname.c_str())) {
     return OkStatus();
