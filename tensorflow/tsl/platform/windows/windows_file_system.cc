@@ -641,8 +641,7 @@ Status WindowsFileSystem::GetFileSize(const string& fname,
 
 Status WindowsFileSystem::IsDirectory(const string& fname,
                                       TransactionToken* token) {
-  std::wstring ws_translated_fname = Utf8ToWideChar(TranslateName(fname));
-  std::wstring ws_final_fname = GetSymbolicLinkTarget(ws_translated_fname);
+  std::wstring ws_final_fname = GetUncPathName(TranslateName(fname));
   std::string str_final_fname(ws_final_fname.begin(), ws_final_fname.end());
   TF_RETURN_IF_ERROR(FileExists(str_final_fname));
   if (PathIsDirectoryW(ws_final_fname.c_str())) {
