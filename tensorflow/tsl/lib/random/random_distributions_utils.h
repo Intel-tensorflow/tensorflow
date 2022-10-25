@@ -28,9 +28,8 @@ limitations under the License.
 
 namespace tsl {
 namespace random {
-
-// Helper function to convert an 32-bit integer to a float between [0..1).
-PHILOX_DEVICE_INLINE float Uint32ToFloat(uint32_t x) {
+// Helper function to convert an 32-bit integer to a float between [1..2).
+PHILOX_DEVICE_INLINE float InternalUint32ToFloat(uint32_t x) {
   // IEEE754 floats are formatted as follows (MSB first):
   //    sign(1) exponent(8) mantissa(23)
   // Conceptually construct the following:
@@ -44,7 +43,13 @@ PHILOX_DEVICE_INLINE float Uint32ToFloat(uint32_t x) {
   // Assumes that endian-ness is same for float and uint32_t.
   float result;
   memcpy(&result, &val, sizeof(val));
-  return result - 1.0f;
+  return result;
+}
+
+
+// Helper function to convert an 32-bit integer to a float between [0..1).
+PHILOX_DEVICE_INLINE float Uint32ToFloat(uint32_t x) {
+  return InternalUint32ToFloat(x) - 1.0f;
 }
 
 // Helper function to convert two 32-bit integers to a double between [0..1).

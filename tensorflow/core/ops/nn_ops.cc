@@ -418,7 +418,7 @@ REGISTER_OP("_FusedConv2D")
     .Input("args: TArgs")
     .Input("host_args : num_host_args * float")
     .Output("output: T")
-    .Attr("T: {half, float, double, int8, qint8}")
+    .Attr("T: {bfloat16, half, float, double, int8, qint8}")
     .Attr("TArgs: list(type)")
     .Attr("num_args: int >= 0")
     .Attr("num_host_args: int >= 0 =0")
@@ -1116,6 +1116,21 @@ REGISTER_OP("Dilation2DBackpropFilter")
     });
 
 // --------------------------------------------------------------------------
+
+REGISTER_OP("Gelu")
+    .Input("features: T")
+    .Output("activations: T")
+    .Attr("T: {half, float, double, bfloat16}")
+    .Attr("approximate: bool = false")
+    .SetShapeFn(shape_inference::UnchangedShape);
+
+REGISTER_OP("GeluGrad")
+    .Input("gradients: T")
+    .Input("features: T")
+    .Output("backprops: T")
+    .Attr("T: {half, float, double, bfloat16}")
+    .Attr("approximate: bool = false")
+    .SetShapeFn(shape_inference::MergeBothInputsShapeFn);
 
 REGISTER_OP("Relu")
     .Input("features: T")
@@ -2202,6 +2217,68 @@ NOTE Do not invoke this operator directly in Python. Graph rewrite pass is
 expected to invoke these operators.
 )doc");
 
+REGISTER_OP("_MklGelu")
+    .Input("features: T")
+    .Input("mkl_features: uint8")
+    .Output("activations: T")
+    .Output("mkl_activations: uint8")
+    .Attr("T: {float, bfloat16} = DT_FLOAT")
+    .Attr("approximate: bool = false")
+    .SetShapeFn(shape_inference::UnchangedShape)
+    .Doc(R"doc(
+MKL version of Gelu operator. Uses MKL DNN APIs to implement
+Gelu operator.
+
+NOTE Do not invoke this operator directly in Python. Graph rewrite pass is
+expected to invoke these operators.
+)doc");
+
+REGISTER_OP("_MklGeluGrad")
+    .Input("gradients: T")
+    .Input("features: T")
+    .Input("mkl_gradients: uint8")
+    .Input("mkl_features: uint8")
+    .Output("backprops: T")
+    .Output("mkl_backprops: uint8")
+    .Attr("T: {float, bfloat16} = DT_FLOAT")
+    .Attr("approximate: bool = false")
+    .SetShapeFn(shape_inference::MergeBothInputsShapeFn)
+    .Doc(R"doc(
+MKL version of GeluGrad operator. Uses MKL DNN APIs to compute the
+gradients for GeluGrad operation.
+
+NOTE Do not invoke this operator directly in Python. Graph rewrite pass is
+expected to invoke these operators.
+)doc");
+
+REGISTER_OP("_MklNativeGelu")
+    .Input("features: T")
+    .Output("activations: T")
+    .Attr("T: {float, bfloat16} = DT_FLOAT")
+    .Attr("approximate: bool = false")
+    .SetShapeFn(shape_inference::UnchangedShape)
+    .Doc(R"doc(
+MKL version of Gelu operator. Uses MKL DNN APIs to implement
+Gelu operator.
+
+NOTE Do not invoke this operator directly in Python. Graph rewrite pass is
+expected to invoke these operators.
+)doc");
+
+REGISTER_OP("_MklNativeGeluGrad")
+    .Input("gradients: T")
+    .Input("features: T")
+    .Output("backprops: T")
+    .Attr("T: {float, bfloat16} = DT_FLOAT")
+    .Attr("approximate: bool = false")
+    .SetShapeFn(shape_inference::MergeBothInputsShapeFn)
+    .Doc(R"doc(
+MKL version of GeluGrad operator. Uses MKL DNN APIs to compute the
+gradients for GeluGrad operation.
+
+NOTE Do not invoke this operator directly in Python. Graph rewrite pass is
+expected to invoke these operators.
+)doc");
 REGISTER_OP("_MklRelu")
     .Input("features: T")
     .Input("mkl_features: uint8")
@@ -2325,20 +2402,6 @@ MKL version of EluGrad operator. Uses MKL DNN APIs to compute Elu
 gradients for Elu operation.
 NOTE Do not invoke this operator directly in Python. Graph rewrite pass is
 expected to invoke these operators.
-)doc");
-
-REGISTER_OP("_MklSoftmax")
-    .Input("logits: T")
-    .Input("mkl_logits: uint8")
-    .Output("softmax: T")
-    .Output("mkl_softmax: uint8")
-    .Attr("T: {bfloat16, half, float, double}")
-    .SetShapeFn([](InferenceContext* c) {
-      return shape_inference::UnchangedShapeWithRankAtLeast(c, 1);
-    })
-    .Doc(R"doc(
-MKL version of ReluGrad operator. Uses MKL DNN APIs to compute rectified
-linear gradients for Relu operation.
 )doc");
 
 REGISTER_OP("_MklTanh")
@@ -3237,8 +3300,8 @@ REGISTER_OP("QuantizedMatMulWithBiasAndDequantize")
     .Output("out: Toutput")
     .Attr("T1: quantizedtype")
     .Attr("T2: quantizedtype")
-    .Attr("Tbias: {float, qint32}")
-    .Attr("Toutput: {float}")
+    .Attr("Tbias: {float, bfloat16, qint32}")
+    .Attr("Toutput: {float, bfloat16}")
     .Attr("transpose_a: bool = false")
     .Attr("transpose_b: bool = false")
     .Attr("input_quant_mode: {'MIN_FIRST', 'SCALED'} = 'MIN_FIRST'")

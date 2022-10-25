@@ -18,9 +18,18 @@ limitations under the License.
 
 #include "tensorflow/tsl/platform/platform.h"
 #include "tensorflow/tsl/platform/types.h"
+#include <unordered_map>
+#include <vector>
 
 namespace tsl {
 namespace port {
+typedef typename std::unordered_map<int, std::unordered_map<int, std::vector<int>>> CPUTopology;
+string OneDNNThreadPinningMode();
+int NumPhysCores(CPUTopology topology);
+CPUTopology GetTopology();
+void GetPinningCoreList(CPUTopology topology, std::vector<int>& pinning_list);
+void PinThread(int cpu);
+void PrintTopology(CPUTopology topology);
 
 // Returns true iff NUMA functions are supported.
 bool NUMAEnabled();

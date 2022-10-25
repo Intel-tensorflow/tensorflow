@@ -27,8 +27,8 @@ namespace random {
 // NOLINTBEGIN(misc-unused-using-decls)
 using tsl::random::Array;
 using tsl::random::PhiloxRandom;
+using tsl::random::PCGRandom;
 // NOLINTEND(misc-unused-using-decls)
-
 }  // namespace random
 }  // namespace tensorflow
 

@@ -30,7 +30,7 @@ using tsl::random::NormalDistribution;
 using tsl::random::SignedAdd;
 using tsl::random::SingleSampleAdapter;
 using tsl::random::TruncatedNormalDistribution;
-using tsl::random::Uint16ToGfloat16;
+using tsl::random::Uint16ToBfloat16;
 using tsl::random::Uint16ToHalf;
 using tsl::random::UniformDistribution;
 using tsl::random::UniformFullIntDistribution;

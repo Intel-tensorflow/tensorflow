@@ -374,8 +374,13 @@ class AutoMixedPrecisionListsMkl : public AutoMixedPrecisionLists {
                                      "DepthwiseConv2dNativeBackpropFilter",
                                      "DepthwiseConv2dNativeBackpropInput",
                                      "MatMul",
+				     "GRUBlockCell",
+                                     "AUGRUBlockCell",
+                                     "MklGRU",
+                                     "MklAUGRU",
                                      "BatchMatMul",
-                                     "BatchMatMulV2"};
+                                     "BatchMatMulV2",
+                                     "Einsum"};
 
     UpdateList("ALLOWLIST", &list);
     // For backwards compatibility, keeping the original env variable here.
@@ -395,12 +400,14 @@ class AutoMixedPrecisionListsMkl : public AutoMixedPrecisionLists {
                                      "BiasAdd",
                                      "BiasAddGrad",
                                      "BiasAddV1",
+                                     "Erf",
                                      "FusedBatchNormV2",
                                      "FusedBatchNormGradV2",
                                      "FusedBatchNormV3",
                                      "FusedBatchNormGradV3",
                                      "LeakyRelu",
                                      "LeakyReluGrad",
+                                     "Mean",
                                      "Mul",
                                      "Sub",
                                      "Elu",
@@ -413,6 +420,7 @@ class AutoMixedPrecisionListsMkl : public AutoMixedPrecisionLists {
                                      "Prod",
                                      "RealDiv",
                                      "Reciprocal",
+                                     "Rsqrt",
                                      "Selu",
                                      "SeluGrad",
                                      "Sigmoid",
@@ -423,6 +431,7 @@ class AutoMixedPrecisionListsMkl : public AutoMixedPrecisionLists {
                                      "Softsign",
                                      "SoftsignGrad",
                                      "Sqrt",
+                                     "SquaredDifference",
                                      "Tanh",
                                      "TanhGrad"};
     UpdateList("INFERLIST", &list);
@@ -437,7 +446,6 @@ class AutoMixedPrecisionListsMkl : public AutoMixedPrecisionLists {
         "Exp",
         "Expm1",
         "L2Loss",
-        "Mean",
         "Pow",
         "SaveV2",
         "SoftmaxCrossEntropyWithLogits",
@@ -516,6 +524,7 @@ class AutoMixedPrecisionListsMkl : public AutoMixedPrecisionLists {
         "Reshape",
         "ResizeNearestNeighbor",
         "ResizeNearestNeighborGrad",
+        "ResizeBilinear",
         "Reverse",
         "ReverseSequence",
         "ReverseV2",

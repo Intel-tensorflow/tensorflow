@@ -32,6 +32,20 @@ using shape_inference::DimensionHandle;
 using shape_inference::InferenceContext;
 using shape_inference::ShapeHandle;
 
+REGISTER_OP("_MklNativeReluGrad")
+    .Input("gradients: T")
+    .Input("features: T")
+    .Output("backprops: T")
+    .Attr("T: {float, bfloat16} = DT_FLOAT")
+    .SetShapeFn(shape_inference::MergeBothInputsShapeFn)
+    .Doc(R"doc(
+MKL version of ReluGrad operator. Uses MKL DNN APIs to compute rectified
+linear gradients for Relu operation.
+
+NOTE Do not invoke this operator directly in Python. Graph rewrite pass is
+expected to invoke these operators.
+)doc");
+
 REGISTER_OP("_MklNativeConv3D")
     .Input("input: T")
     .Input("filter: T")
@@ -235,9 +249,10 @@ REGISTER_OP("_MklFusedConv2D")
 REGISTER_OP("_MklNativeFusedConv2D")
     .Input("input: T")
     .Input("filter: T")
-    .Input("args: num_args * T")
+    .Input("args: TArgs")
     .Output("output: T")
-    .Attr("T: {bfloat16, float}")
+    .Attr("T: {float, bfloat16}")
+    .Attr("TArgs: list(type)")
     .Attr("num_args: int >= 0")
     .Attr("strides: list(int)")
     .Attr("is_filter_const: bool = false")
@@ -251,6 +266,9 @@ REGISTER_OP("_MklNativeFusedConv2D")
     .Attr("epsilon: float = 0.0001")
     // Attributes for the LeakyRelu ----------------------------------------- //
     .Attr("leakyrelu_alpha: float = 0.2")
+    // Attributes for the Depthwise post op --------------------------------- //
+    .Attr("fuseddepthwise_filtersize: int = 3")
+    .Attr("fuseddepthwise_stride: int = 1")
     // ---------------------------------------------------------------------- //
     .SetShapeFn(shape_inference::Conv2DShapeWithExplicitPadding)
     .Doc(R"doc(
@@ -404,13 +422,14 @@ expected to invoke this one.
 REGISTER_OP("__MklDummyPadWithFusedConv2D")
     .Input("input: T")
     .Input("filter: T")
-    .Input("args: num_args * T")
+    .Input("args: TArgs")
     .Input("paddings: Tpaddings")
     .Output("output: T")
     .Output("filter_output: T")
     .Output("mkl_output: uint8")
     .Output("mkl_filter_output: uint8")
     .Attr("T: {bfloat16, float}")
+    .Attr("TArgs: list(type)")
     .Attr("num_args: int >= 0")
     .Attr("strides: list(int)")
     .Attr(GetPaddingAttrString())
@@ -465,10 +484,11 @@ REGISTER_OP("_MklPadWithFusedConv2D")
 REGISTER_OP("_MklNativePadWithFusedConv2D")
     .Input("input: T")
     .Input("filter: T")
-    .Input("args: num_args * T")
+    .Input("args: TArgs")
     .Input("paddings: Tpaddings")
     .Output("output: T")
     .Attr("T: {bfloat16, float}")
+    .Attr("TArgs: list(type)")
     .Attr("num_args: int >= 0")
     .Attr("strides: list(int)")
     .Attr("is_filter_const: bool = false")
@@ -585,14 +605,14 @@ REGISTER_OP("_MklNativeMaxPool")
     .Attr("T: {float, half, bfloat16} = DT_FLOAT")
     .Attr("ksize: list(int) >= 4")
     .Attr("strides: list(int) >= 4")
-    .Attr(GetPaddingAttrString())
-    .Attr(GetConvnetDataFormatAttrString())
+    .Attr(GetPaddingAttrStringWithExplicit())
     .Attr(GetExplicitPaddingsAttrString())
+    .Attr(GetConvnetDataFormatAttrString())
     .Attr("workspace_enabled: bool = false")
     .Input("input: T")
     .Output("output: T")
     .Output("workspace: uint8")
-    .SetShapeFn(shape_inference::MaxPoolShape)
+    .SetShapeFn(shape_inference::MaxPoolShapeWithExplicitPadding)
     .Doc(R"doc(
 oneDNN version of MaxPool operator that does not depend
 on layout propagation. Uses oneDNN APIs to perform max pooling
@@ -671,14 +691,29 @@ REGISTER_OP("_MklQuantizedMaxPool")
     .Attr("T: quantizedtype")
     .Attr("ksize: list(int) >= 4")
     .Attr("strides: list(int) >= 4")
-    .Attr(GetPaddingAttrString())
-    .SetShapeFn(shape_inference::MaxPoolShape)
+    .Attr(GetPaddingAttrStringWithExplicit())
+    .Attr(GetExplicitPaddingsAttrString())
+    .SetShapeFn(shape_inference::MaxPoolShapeWithExplicitPadding)
     .Doc(R"doc(
 MKL version of QuantizedMaxPool operator. Uses MKL DNN APIs to perform max pooling
 on the quantized input.
 *NOTE*: Do not invoke this operator directly in Python. Graph rewrite pass is
 expected to invoke these operators.
 )doc");
+
+REGISTER_OP("_QuantizedMaxPool3D")
+    .Input("input: T")
+    .Input("min_input: float")
+    .Input("max_input: float")
+    .Output("output: T")
+    .Output("min_output: float")
+    .Output("max_output: float")
+    .Attr("ksize: list(int) >= 5")
+    .Attr("strides: list(int) >= 5")
+    .Attr(GetPaddingAttrString())
+    .Attr(GetConvnet3dDataFormatAttrString())
+    .Attr("T: quantizedtype")
+    .SetShapeFn(shape_inference::Pool3DShape);
 
 REGISTER_OP("_MklQuantizedAvgPool")
     .Input("input:           T")
@@ -707,8 +742,8 @@ REGISTER_OP("_FusedQuantizedConv2D")
     .Attr("Tinput: quantizedtype = DT_QUINT8")
     .Attr("Tfilter: quantizedtype = DT_QINT8")
     .Attr("Tbias: {float, qint32} = DT_QINT32")
-    .Attr("Tsummand: {float, quint8, qint8, qint32}")
-    .Attr("out_type: quantizedtype = DT_QINT32")
+    .Attr("Tsummand: {float, bfloat16, quint8, qint8, qint32}")
+    .Attr("out_type: {float, bfloat16, quint8, qint8, qint32} = DT_QINT32")
     .Attr("Tdevice_inputs: list(type) >= 0 = []")
     .Attr("Thost_inputs: list(type) >= 0")
     .Attr("Tdevice_outputs: list(type) >= 0 = []")
@@ -732,8 +767,8 @@ REGISTER_OP("_FusedQuantizedDepthwiseConv2D")
     .Attr("Tinput: quantizedtype = DT_QUINT8")
     .Attr("Tfilter: quantizedtype = DT_QINT8")
     .Attr("Tbias: {float, qint32} = DT_QINT32")
-    .Attr("Tsummand: {float, quint8, qint8, qint32}")
-    .Attr("out_type: quantizedtype = DT_QINT32")
+    .Attr("Tsummand: {float, bfloat16, quint8, qint8, qint32}")
+    .Attr("out_type: {float, bfloat16, quint8, qint8, qint32} = DT_QINT32")
     .Attr("Tdevice_inputs: list(type) >= 0 = []")
     .Attr("Thost_inputs: list(type) >= 0")
     .Attr("Tdevice_outputs: list(type) >= 0 = []")
@@ -748,6 +783,79 @@ REGISTER_OP("_FusedQuantizedDepthwiseConv2D")
     .Attr("fused_ops: list(string) = []")
     .Attr("alpha: float = 0.0")
     .SetShapeFn(shape_inference::FusedQuantizedDepthwiseConv2D);
+
+REGISTER_OP("_FusedQuantizedConv3D")
+    .Input("device_inputs: Tdevice_inputs")
+    .Input("host_inputs: Thost_inputs")
+    .Output("device_outputs: Tdevice_outputs")
+    .Output("host_outputs: Thost_outputs")
+    .Attr("Tinput: quantizedtype = DT_QUINT8")
+    .Attr("Tfilter: quantizedtype = DT_QINT8")
+    .Attr("Tbias: {float, qint32} = DT_QINT32")
+    .Attr("Tsummand: {qint8, quint8, qint32, float, bfloat16}")
+    .Attr("out_type: {qint8, quint8, qint32, float, bfloat16}")
+    .Attr("Tdevice_inputs: list(type) >= 0 = []")
+    .Attr("Thost_inputs: list(type) >= 0")
+    .Attr("Tdevice_outputs: list(type) >= 0 = []")
+    .Attr("Thost_outputs: list(type) >= 0")
+    .Attr("data_format: string = 'NDHWC'")
+    .Attr("strides: list(int)")
+    .Attr("is_filter_const: bool = true")
+    .Attr("is_bias_const: bool = true")
+    .Attr(GetPaddingAttrStringWithExplicit())
+    .Attr("dilations: list(int) = [1, 1, 1, 1, 1]")
+    .Attr(GetExplicitPaddingsAttrString())
+    .Attr("fused_ops: list(string) = []")
+    .Attr("alpha: float = 0.0")
+    .SetShapeFn(shape_inference::FusedQuantizedConv3DShape);
+
+REGISTER_OP("_FusedQuantizedDeconv2D")
+    .Input("device_inputs: Tdevice_inputs")
+    .Input("host_inputs: Thost_inputs")
+    .Output("device_outputs: Tdevice_outputs")
+    .Output("host_outputs: Thost_outputs")
+    .Attr("Tinput: quantizedtype = DT_QUINT8")
+    .Attr("Tfilter: quantizedtype = DT_QINT8")
+    .Attr("Tbias: {float, qint32} = DT_QINT32")
+    .Attr("out_type: {qint8, quint8, float, bfloat16}")
+    .Attr("Tdevice_inputs: list(type) >= 0 = []")
+    .Attr("Thost_inputs: list(type) >= 0")
+    .Attr("Tdevice_outputs: list(type) >= 0 = []")
+    .Attr("Thost_outputs: list(type) >= 0")
+    .Attr("data_format: string = 'NHWC'")
+    .Attr("strides: list(int)")
+    .Attr("is_filter_const: bool = true")
+    .Attr("is_bias_const: bool = true")
+    .Attr(GetPaddingAttrStringWithExplicit())
+    .Attr(GetExplicitPaddingsAttrString())
+    .Attr("dilations: list(int) = [1, 1, 1, 1]")
+    .Attr("fused_ops: list(string) = []")
+    .Attr("alpha: float = 0.0")
+    .SetShapeFn(shape_inference::FusedQuantizedDeconv2DShape);
+
+REGISTER_OP("_FusedQuantizedDeconv3D")
+    .Input("device_inputs: Tdevice_inputs")
+    .Input("host_inputs: Thost_inputs")
+    .Output("device_outputs: Tdevice_outputs")
+    .Output("host_outputs: Thost_outputs")
+    .Attr("Tinput: quantizedtype = DT_QUINT8")
+    .Attr("Tfilter: quantizedtype = DT_QINT8")
+    .Attr("Tbias: {float, qint32} = DT_QINT32")
+    .Attr("out_type: {qint8, quint8, float, bfloat16}")
+    .Attr("Tdevice_inputs: list(type) >= 0 = []")
+    .Attr("Thost_inputs: list(type) >= 0")
+    .Attr("Tdevice_outputs: list(type) >= 0 = []")
+    .Attr("Thost_outputs: list(type) >= 0")
+    .Attr("data_format: string = 'NHWC'")
+    .Attr("strides: list(int)")
+    .Attr("is_filter_const: bool = true")
+    .Attr("is_bias_const: bool = true")
+    .Attr(GetPaddingAttrStringWithExplicit())
+    .Attr(GetExplicitPaddingsAttrString())
+    .Attr("dilations: list(int) = [1, 1, 1, 1, 1]")
+    .Attr("fused_ops: list(string) = []")
+    .Attr("alpha: float = 0.0")
+    .SetShapeFn(shape_inference::FusedQuantizedDeconv3DShape);
 
 REGISTER_OP("_MklQuantizedConv2D")
     .Input("input: Tinput")
@@ -1343,8 +1451,8 @@ REGISTER_OP("_MklQuantizedMatMulWithBiasAndDequantize")
     .Output("out: Toutput")
     .Attr("T1: quantizedtype")
     .Attr("T2: quantizedtype")
-    .Attr("Tbias: {float, qint32}")
-    .Attr("Toutput: {float}")
+    .Attr("Tbias: {float, bfloat16, qint32}")
+    .Attr("Toutput: {float, bfloat16}")
     .Attr("transpose_a: bool = false")
     .Attr("transpose_b: bool = false")
     .Attr("input_quant_mode: {'MIN_FIRST', 'SCALED'} = 'MIN_FIRST'")
@@ -1556,6 +1664,38 @@ MKL-DNN implementation of quantized depthwise Conv2D with Bias, Relu and Requant
 *NOTE*: Do not invoke this operator directly in Python. Graph rewrite pass is
 expected to invoke this operator.
 )doc");
+
+REGISTER_OP("_QuantizedFusedBatchNorm")
+    .Input("input: input_types")
+    .Output("output: out_types")
+    .Attr("T: {qint8}")
+    .Attr("U: {float}")
+    .Attr("Tout: {qint8}")
+    .Attr("input_types: list(type)")
+    .Attr("out_types: list(type)")
+    .Attr("epsilon: float = 0.0001")
+    .Attr("exponential_avg_factor: float = 1.0")
+    .Attr("activation_mode: string = \"Identity\"")
+    .Attr(GetConvnetDataFormatAttrString())
+    .Attr("is_training: bool = false")
+    .Attr("is_offset_const: bool = true")
+    .Attr("is_mean_const: bool = true")
+    .SetShapeFn(shape_inference::FusedBatchNormShape);
+
+REGISTER_OP("_QuantizedFusedInstanceNorm")
+    .Input("input: input_types")
+    .Output("output: out_types")
+    .Attr("T: {qint8}")
+    .Attr("U: {float}")
+    .Attr("Tout: {qint8}")
+    .Attr("input_types: list(type)")
+    .Attr("out_types: list(type)")
+    .Attr("epsilon: float = 0.0001")
+    .Attr("activation_mode: string = \"Identity\"")
+    .Attr("reduction_axes: list(int)")
+    .Attr("leakyrelu_alpha: float = 0.2")
+    .Attr(GetConvnetDataFormatAttrString())
+    .SetShapeFn(shape_inference::UnchangedShape);
 
 REGISTER_OP("_MklFusedBatchNormV3")
     .Input("x: T")
@@ -1830,6 +1970,25 @@ Uses oneDNN APIs to perform fused batch normalization and relu.
 expected to invoke these operators.
 )doc");
 
+REGISTER_OP("_MklFusedInstanceNorm")
+    .Input("x: T")
+    .Input("gamma: T")
+    .Input("beta: T")
+    .Input("mean: T")
+    .Input("variance: T")
+    .Output("y: T")
+    .Attr("T: {float, bfloat16}")
+    .Attr("activation_mode: string = \"Identity\"")
+    .Attr("epsilon: float = 0.0001")
+    .Attr("leakyrelu_alpha: float = 0.2")
+    .Attr("reduction_axes: list(int)")
+    .Attr("use_mean_variance: bool = false")
+    .SetShapeFn(shape_inference::UnchangedShape)
+    .Doc(
+        R"doc(oneDNN version of fused instance normalization operator.
+        Do not invoke this operator directly in Python.
+        Graph rewrite pass is expected to invoke this operator.)doc");
+
 REGISTER_OP("_MklFusedMish")
     .Input("features: T")
     .Output("activations: T")
@@ -1877,6 +2036,276 @@ REGISTER_OP("_MklLayerNorm")
     .Attr("T: {float, bfloat16}")
     .Attr("epsilon: float = 0.001")
     .SetShapeFn(shape_inference::UnchangedShape);
+
+REGISTER_OP("MklGRU")
+    .Attr("T: {float, bfloat16}")
+    .Attr("lbr: bool = false")
+    .Attr("training: bool = false")
+    .Attr("TimeDim: int >= 1")
+    .Attr("x_format: string = 'TNC'")
+    .Input("x: T")
+    .Input("h_prev: T")
+    .Input("w_ru: T")
+    .Input("w_c: T")
+    .Input("b_ru: T")
+    .Input("b_c: T")
+    .Output("h_out: T")
+    .Output("h_n: T")  // output of last gru cell
+    .SetShapeFn([](InferenceContext* c) {
+      ShapeHandle x, h_prev;
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 3, &x));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 2, &h_prev));
+
+      DimensionHandle time_dim = c->Dim(x, 0);
+      DimensionHandle batch_size = c->Dim(x, 1);
+      DimensionHandle cell_size = c->Dim(x, 2);
+      std::vector<DimensionHandle> dims1 = {time_dim, batch_size, cell_size};
+      std::vector<DimensionHandle> dims2 = {batch_size, cell_size};
+      c->set_output(0, c->MakeShape(dims1));
+      c->set_output(1, c->MakeShape(dims2));
+      return tensorflow::Status::OK();
+    });
+
+REGISTER_OP("MklAUGRU")
+    .Attr("T: {float, bfloat16}")
+    .Attr("lbr: bool = false")
+    .Attr("training: bool = false")
+    .Attr("TimeDim: int >= 1")
+    .Attr("x_format: string = 'TNC'")
+    .Attr("au_format: string = 'TNC'")
+    .Input("x: T")
+    .Input("h_prev: T")
+    .Input("au_x: T")
+    .Input("w_ru: T")
+    .Input("w_c: T")
+    .Input("b_ru: T")
+    .Input("b_c: T")
+    .Output("h_out: T")
+    .Output("h_n: T")  // output of last gru cell
+    .SetShapeFn([](InferenceContext* c) {
+      ShapeHandle x, h_prev, attn;
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 3, &x));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 2, &h_prev));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(2), 3, &attn));
+
+      DimensionHandle time_dim = c->Dim(x, 0);
+      DimensionHandle batch_size = c->Dim(x, 1);
+      DimensionHandle cell_size = c->Dim(x, 2);
+      std::vector<DimensionHandle> dims1 = {time_dim, batch_size, cell_size};
+      std::vector<DimensionHandle> dims2 = {batch_size, cell_size};
+      c->set_output(0, c->MakeShape(dims1));
+      c->set_output(1, c->MakeShape(dims2));
+      return tensorflow::Status::OK();
+    });
+
+REGISTER_OP("_MklSoftmax")
+    .Input("logits: T")
+    .Output("softmax: T")
+    .Attr("T: {bfloat16, float} = DT_FLOAT")
+    .SetShapeFn([](InferenceContext* c) {
+      return shape_inference::UnchangedShapeWithRankAtLeast(c, 1);
+    })
+    .Doc(R"doc(
+oneDNN version of Softmax operator. Uses oneDNN APIs to perform softmax
+operation.
+
+*NOTE*: Do not invoke this operator directly in Python. Graph rewrite pass is
+expected to invoke these operators.
+)doc");
+
+REGISTER_OP("_QuantizedMatMul")
+    // Variable number of inputs depending on fusion. The inputs contain
+    // quantized or real tensors. Some of the inputs carry min-max values for
+    // quantized tensors.
+    .Input("device_inputs: Tdevice_inputs")
+    .Input("host_inputs: Thost_inputs")
+    // Variable number of outputs depending on the main output type. For
+    // example, quantized output will need additional tensors to carry min-max
+    // values. If the output type is real tensor (e.g. Dequantize fusion), the
+    // op should produce only single output tensor.
+    .Output("device_outputs: Tdevice_outputs")
+    .Output("host_outputs: Thost_outputs")
+    .Attr("Tdevice_inputs: list(type) >= 0 = []")
+    .Attr("Thost_inputs: list(type) >= 0 = []")
+    .Attr("Tdevice_outputs: list(type) >= 0 = []")
+    .Attr("Thost_outputs: list(type) >= 0 = []")
+    // The following attributes T1, T2, U, and Tout are members of Tinputs
+    // and Toutputs, used here for type constraints in the templatized OpKernel
+    // registrations.
+    .Attr("T1: quantizedtype")  // 0-th input    
+    .Attr("T2: quantizedtype")  // 1st input
+    .Attr("Tbias: {bfloat16, float, quantizedtype} = DT_FLOAT")
+    // Additional inputs' type. Currently, restricting all to be of same type.
+    .Attr("U: {bfloat16, float, quantizedtype} = DT_FLOAT")
+    .Attr("Tout: {bfloat16, float, quantizedtype} = DT_FLOAT")  // 0-th output  
+    .Attr("transpose_a: bool = false")
+    .Attr("transpose_b: bool = false")
+    .Attr("is_weight_const: bool = true")
+    .Attr("is_bias_const: bool = true")
+    .Attr("fused_ops: list(string) = []")
+    // Attribute for quantization mode of all quantized input tensors.
+    // Currently restricting all operands using same quantization mode.
+    .Attr("input_quant_mode: {'MIN_FIRST', 'SCALED'} = 'SCALED'")
+    // Attribute for activation (0-th output) requnatization mode
+    .Attr("output_quant_mode: {'MIN_FIRST', 'SCALED'} = 'SCALED'")
+    // Attributes for the LeakyRelu ----------------------------------------- //
+    .Attr("leakyrelu_alpha: float = 0.2")
+    // ---------------------------------------------------------------------- //
+    .SetShapeFn(shape_inference::MatMulShape);
+
+template <typename T>
+std::vector<int64> AsInt64(const Tensor* tensor, int64 num_elements) {
+  std::vector<int64> ret(num_elements);
+  auto data = tensor->vec<T>();
+  for (int64 i = 0; i < num_elements; ++i) {
+    ret[i] = data(i);
+  }
+  return ret;
+}
+
+Status TransposeShapeFn(InferenceContext* c) {
+  ShapeHandle input = c->input(0);
+  ShapeHandle perm_shape = c->input(1);
+  const Tensor* perm = c->input_tensor(1);
+  DimensionHandle perm_elems = c->NumElements(perm_shape);
+  // If we don't have rank information on the input or value information on
+  // perm we can't return any shape information, otherwise we have enough
+  // information to at least find the rank of the output.
+  if (!c->RankKnown(input) && !c->ValueKnown(perm_elems) && perm == nullptr) {
+    c->set_output(0, c->UnknownShape());
+    return Status::OK();
+  }
+
+  // Find our value of the rank.
+  int64 rank;
+  if (c->RankKnown(input)) {
+    rank = c->Rank(input);
+  } else if (c->ValueKnown(perm_elems)) {
+    rank = c->Value(perm_elems);
+  } else {
+    rank = perm->NumElements();
+  }
+  if (!c->RankKnown(input) && rank < 2) {
+    // A permutation array containing a single element is ambiguous. It could
+    // indicate either a scalar or a 1-dimensional array, both of which the
+    // transpose op returns unchanged.
+    c->set_output(0, input);
+    return Status::OK();
+  }
+
+  std::vector<DimensionHandle> dims;
+  dims.resize(rank);
+  TF_RETURN_IF_ERROR(c->WithRank(input, rank, &input));
+  // Ensure that perm is a vector and has rank elements.
+  TF_RETURN_IF_ERROR(c->WithRank(perm_shape, 1, &perm_shape));
+  TF_RETURN_IF_ERROR(c->WithValue(perm_elems, rank, &perm_elems));
+
+  // If we know the rank of the input and the value of perm, we can return
+  // all shape information, otherwise we can only return rank information,
+  // but no information for the dimensions.
+  if (perm != nullptr) {
+    std::vector<int64> data;
+    if (perm->dtype() == DT_INT32) {
+      data = AsInt64<int32>(perm, rank);
+    } else {
+      data = AsInt64<int64>(perm, rank);
+    }
+
+    for (int32 i = 0; i < rank; ++i) {
+      int64 in_idx = data[i];
+      if (in_idx >= rank) {
+        return errors::InvalidArgument("perm dim ", in_idx,
+                                       " is out of range of input rank ", rank);
+      }
+      dims[i] = c->Dim(input, in_idx);
+    }
+  } else {
+    for (int i = 0; i < rank; ++i) {
+      dims[i] = c->UnknownDim();
+    }
+  }
+
+  c->set_output(0, c->MakeShape(dims));
+  return OkStatus();
+}
+
+REGISTER_OP("_QuantizedTranspose")
+    .Input("x: T")
+    .Input("perm: Tperm")
+    .Input("min_x: float")
+    .Input("max_x: float")
+    .Output("y: T")
+    .Output("min_y: float")
+    .Output("max_y: float")
+    .Attr("T: quantizedtype")
+    .Attr("Tperm: {int32, int64} = DT_INT32")
+    .SetShapeFn([](InferenceContext* c) {
+      TF_RETURN_IF_ERROR(TransposeShapeFn(c));
+      ShapeHandle scalar_shape_handle;
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(2), 0, &scalar_shape_handle));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(3), 0, &scalar_shape_handle));
+      c->set_output(1, scalar_shape_handle);
+      c->set_output(2, scalar_shape_handle);
+      return OkStatus();
+    });
+
+REGISTER_OP("_MklQuantizedTranspose")
+    .Input("x: T")
+    .Input("perm: Tperm")
+    .Input("min_x: float")
+    .Input("max_x: float")
+    .Output("y: T")
+    .Output("min_y: float")
+    .Output("max_y: float")
+    .Attr("T: quantizedtype")
+    .Attr("Tperm: {int32, int64} = DT_INT32")
+    .SetShapeFn([](InferenceContext* c) {
+      TF_RETURN_IF_ERROR(TransposeShapeFn(c));
+      ShapeHandle scalar_shape_handle;
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(2), 0, &scalar_shape_handle));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(3), 0, &scalar_shape_handle));
+      c->set_output(1, scalar_shape_handle);
+      c->set_output(2, scalar_shape_handle);
+      return OkStatus();
+    })
+    .Doc(R"doc(
+MKL version of _QuantizedTranspose. Graph rewrite pass is expected to invoke
+these operators.
+)doc");
+
+REGISTER_OP("_QuantizedBatchMatMul")
+    // Variable number of inputs depending on fusion. The inputs contain
+    // quantized or real tensors. Some of the inputs carry min-max values for
+    // quantized tensors.
+    .Input("device_inputs: Tdevice_inputs")
+    .Input("host_inputs: Thost_inputs")
+    // Variable number of outputs depending on the main output type. For
+    // example, quantized output will need additional tensors to carry min-max
+    // values. If the output type is real tensor (e.g. Dequantize fusion), the
+    // op should produce only single output tensor.
+    .Output("device_outputs: Tdevice_outputs")
+    .Output("host_outputs: Thost_outputs")
+    .Attr("Tdevice_inputs: list(type) >= 0 = []")
+    .Attr("Thost_inputs: list(type) >= 0 = []")
+    .Attr("Tdevice_outputs: list(type) >= 0 = []")
+    .Attr("Thost_outputs: list(type) >= 0 = []")
+    // The following attributes T1, T2, Tfusion, and Tout are members of Tinputs
+    // and Toutputs, used here for type constraints in the templatized OpKernel
+    // registrations.
+    .Attr("T1: quantizedtype")  // 0-th input
+    .Attr("T2: quantizedtype")  // 1st input
+    // Currently, restricting all additional inputs of same type.
+    .Attr("U: {bfloat16, float, quantizedtype} = DT_FLOAT")
+    .Attr("Tout: {bfloat16, float, quantizedtype} = DT_FLOAT")  // 0-th output
+    .Attr("adj_x: bool = false")
+    .Attr("adj_y: bool = false")
+    .Attr("fused_ops: list(string) = []")
+    // Attribute for quantization mode of all quantized input tensors.
+    // Currently restricting all operands using same quantization mode.
+    .Attr("input_quant_mode: {'MIN_FIRST', 'SCALED'} = 'SCALED'")
+    // Attribute for activation (0-th output) requnatization mode
+    .Attr("output_quant_mode: {'MIN_FIRST', 'SCALED'} = 'SCALED'")
+    .SetShapeFn(shape_inference::BatchMatMulV2Shape);
 
 }  // namespace tensorflow
 

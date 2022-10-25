@@ -36,6 +36,7 @@ cc_library(
         ":exact_uniform_int",
         ":philox_random",
         ":random_distributions_utils",
+        "//tensorflow/core/framework:numeric_types",
         "//tensorflow/core/lib/gtl:array_slice",
         "//tensorflow/core/platform:logging",
         "//tensorflow/core/platform:macros",

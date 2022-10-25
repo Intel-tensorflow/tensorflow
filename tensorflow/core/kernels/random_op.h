@@ -28,6 +28,8 @@ namespace functor {
 template <typename Device, class Distribution>
 struct FillPhiloxRandom;
 
+template <typename Device, class Distribution>
+struct FillPCGRandom;
 typedef Eigen::ThreadPoolDevice CPUDevice;
 // Declares the partially CPU-specialized functor struct.
 //
@@ -43,6 +45,12 @@ struct FillPhiloxRandom<CPUDevice, Distribution> {
   void operator()(OpKernelContext* ctx, const CPUDevice& d, const uint64* key,
                   const uint64* counter, random::PhiloxRandom gen,
                   typename Distribution::ResultElementType* data, int64_t size,
+                  Distribution dist);
+};
+template <class Distribution>
+struct FillPCGRandom<CPUDevice, Distribution> {
+  void operator()(OpKernelContext* ctx, const CPUDevice& d, random::PCGRandom gen,
+                  typename Distribution::ResultElementType* data, int64 size,
                   Distribution dist);
 };
 

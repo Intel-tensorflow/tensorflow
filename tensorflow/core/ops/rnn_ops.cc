@@ -23,7 +23,9 @@ using shape_inference::InferenceContext;
 using shape_inference::ShapeHandle;
 
 REGISTER_OP("GRUBlockCell")
-    .Attr("T: {float}")
+    .Attr("T: {float, bfloat16}")
+    .Attr("lbr: bool = false")
+    .Attr("training: bool = false")
     .Input("x: T")
     .Input("h_prev: T")
     .Input("w_ru: T")
@@ -45,8 +47,39 @@ REGISTER_OP("GRUBlockCell")
       for (int i = 0; i < 4; ++i) {
         c->set_output(i, output);
       }
+      return tensorflow::Status::OK();
+    });
+
+REGISTER_OP("AUGRUBlockCell")
+    .Attr("T: {float, bfloat16}")
+    .Attr("lbr: bool = false")
+    .Attr("training: bool = false")
+    .Input("x: T")
+    .Input("h_prev: T")
+    .Input("au_x: T")
+    .Input("w_ru: T")
+    .Input("w_c: T")
+    .Input("b_ru: T")
+    .Input("b_c: T")
+    .Output("r: T")
+    .Output("u: T")
+    .Output("c: T")
+    .Output("h: T")
+    .SetShapeFn([](InferenceContext* c) {
+      ShapeHandle x, h_prev;
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 2, &x));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 2, &h_prev));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(2), 2, &h_prev));
+
+      DimensionHandle batch_size = c->Dim(x, 0);
+      DimensionHandle cell_size = c->Dim(h_prev, 1);
+      ShapeHandle output = c->Matrix(batch_size, cell_size);
+      for (int i = 0; i < 4; ++i) {
+        c->set_output(i, output);
+      }
       return OkStatus();
     });
+
 
 REGISTER_OP("GRUBlockCellGrad")
     .Attr("T: {float}")

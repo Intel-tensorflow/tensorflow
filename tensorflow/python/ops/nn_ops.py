@@ -3693,56 +3693,25 @@ def leaky_relu(features, alpha=0.2, name=None):
     return gen_nn_ops.leaky_relu(features, alpha=alpha, name=name)
 
 
-@tf_export("nn.gelu", v1=[])
+@tf_export("nn.gelu")
 @dispatch.register_unary_elementwise_api
 @dispatch.add_dispatch_support
 def gelu(features, approximate=False, name=None):
   """Compute the Gaussian Error Linear Unit (GELU) activation function.
 
-  Gaussian error linear unit (GELU) computes
-  `x * P(X <= x)`, where `P(X) ~ N(0, 1)`.
-  The (GELU) nonlinearity weights inputs by their value, rather than gates
-  inputs by their sign as in ReLU.
-
-  For example:
-
-  >>> x = tf.constant([-3.0, -1.0, 0.0, 1.0, 3.0], dtype=tf.float32)
-  >>> y = tf.nn.gelu(x)
-  >>> y.numpy()
-  array([-0.00404951, -0.15865529,  0.        ,  0.8413447 ,  2.9959507 ],
-      dtype=float32)
-  >>> y = tf.nn.gelu(x, approximate=True)
-  >>> y.numpy()
-  array([-0.00363752, -0.15880796,  0.        ,  0.841192  ,  2.9963627 ],
-      dtype=float32)
+  Source: [Gaussian Error Linear Units (GELUs)](https://arxiv.org/abs/1606.08415).
 
   Args:
-    features: A `Tensor` representing preactivation values.
-    approximate: An optional `bool`. Defaults to `False`. Whether to enable
-      approximation.
+    features: A `Tensor` representing preactivation values. Must be one of
+    approximate: Whether to enable approximation.
     name: A name for the operation (optional).
 
   Returns:
     A `Tensor` with the same type as `features`.
-
-  References:
-    [Gaussian Error Linear Units (GELUs)](https://arxiv.org/abs/1606.08415).
   """
-  with ops.name_scope(name, "Gelu", [features]):
+  with ops.name_scope(name, "Gelu", [features, approximate]) as name:
     features = ops.convert_to_tensor(features, name="features")
-    if not features.dtype.is_floating:
-      raise ValueError(
-          "`features.dtype` must be a floating point tensor."
-          f"Received:features.dtype={features.dtype}")
-    if approximate:
-      coeff = math_ops.cast(0.044715, features.dtype)
-      return 0.5 * features * (
-          1.0 + math_ops.tanh(0.7978845608028654 *
-                              (features + coeff * math_ops.pow(features, 3))))
-    else:
-      return 0.5 * features * (1.0 + math_ops.erf(
-          features / math_ops.cast(1.4142135623730951, features.dtype)))
-
+    return gen_nn_ops.gelu(features, approximate=approximate, name=name)
 
 def _flatten_outer_dims(logits):
   """Flattens logits' outer dimensions and keep its last dimension."""
@@ -5728,8 +5697,7 @@ def _dropout(x, rate, noise_shape, uniform_sampler, dummy_rng_step, name,
     # than or equal to `rate`.
     random_tensor = uniform_sampler(shape=noise_shape, dtype=x_dtype)
     keep_mask = random_tensor >= rate
-    zero_tensor = constant_op.constant(0, dtype=x_dtype)
-    ret = array_ops.where_v2(keep_mask, ret, zero_tensor)
+    ret = gen_math_ops.mul(ret, gen_math_ops.cast(keep_mask, x_dtype))
     if not is_executing_eagerly:
       ret.set_shape(x.get_shape())
     return ret

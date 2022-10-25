@@ -21,6 +21,7 @@ limitations under the License.
 #include "tensorflow/core/framework/register_types.h"
 #include "tensorflow/core/kernels/mkl/mkl_pooling_ops_common.h"
 #include "tensorflow/core/lib/core/errors.h"
+#include "tensorflow/core/util/onednn_env_vars.h"
 
 using dnnl::algorithm;
 using dnnl::engine;
@@ -44,6 +45,9 @@ class MklMaxPoolingOp : public MklPoolingForwardOpBase<T> {
     // So we set workspace_enabled_ to true.
     this->workspace_enabled_ = true;
     this->native_format_ = native_format;
+    if (std::is_same<T, float>::value) {
+      (void)SetFPMathMode();
+    }
   }
 
   void Compute(OpKernelContext* context) override {
@@ -237,6 +241,9 @@ class MklMaxPoolingGradOp : public MklPoolingBackwardOpBase<T> {
   explicit MklMaxPoolingGradOp(OpKernelConstruction* context)
       : MklPoolingBackwardOpBase<T>(context) {
     this->native_format_ = native_format;
+    if (std::is_same<T, float>::value) {
+      (void)SetFPMathMode();
+    }
   }
   void Compute(OpKernelContext* context) override {
     try {
@@ -417,17 +424,30 @@ TF_CALL_bfloat16(REGISTER_MKL_MAXPOOL3D_KERNELS);
 TF_CALL_float(REGISTER_MKL_MAXPOOL_KERNELS);
 TF_CALL_bfloat16(REGISTER_MKL_MAXPOOL_KERNELS);
 
-REGISTER_KERNEL_BUILDER(Name("_MklQuantizedMaxPool")
-                            .Device(DEVICE_CPU)
-                            .TypeConstraint<quint8>("T")
-                            .Label(mkl_op_registry::kMklQuantizedOpLabel),
-                        MklMaxPoolingOp<CPUDevice, quint8, true>);
+REGISTER_KERNEL_BUILDER(
+    Name("_QuantizedMaxPool3D").Device(DEVICE_CPU).TypeConstraint<quint8>("T"),
+    MklMaxPoolingOp<CPUDevice, quint8, true>);
+REGISTER_KERNEL_BUILDER(
+    Name("_QuantizedMaxPool3D").Device(DEVICE_CPU).TypeConstraint<qint8>("T"),
+    MklMaxPoolingOp<CPUDevice, qint8, true>);
+#define REGISTER_MAXPOOL_KERNELS(T)                          \
+  REGISTER_KERNEL_BUILDER(Name("_MklQuantizedMaxPool")       \
+                              .Device(DEVICE_CPU)            \
+                              .TypeConstraint<T>("T") LABEL, \
+                          MklMaxPoolingOp<CPUDevice, T, true>);
 
-REGISTER_KERNEL_BUILDER(Name("_MklQuantizedMaxPool")
-                            .Device(DEVICE_CPU)
-                            .TypeConstraint<qint8>("T")
-                            .Label(mkl_op_registry::kMklQuantizedOpLabel),
-                        MklMaxPoolingOp<CPUDevice, qint8, true>);
+// Legacy ops that go through rewrite use labels. We are gradually removing
+// that label requirement. It is kept here for backward compatibility.
+#define LABEL .Label(mkl_op_registry::kMklQuantizedOpLabel)
+REGISTER_MAXPOOL_KERNELS(quint8)
+REGISTER_MAXPOOL_KERNELS(qint8)
+#undef LABEL
+
+#define LABEL
+REGISTER_MAXPOOL_KERNELS(quint8)
+REGISTER_MAXPOOL_KERNELS(qint8)
+#undef LABEL
+
 }  // namespace tensorflow
 
 #endif  // INTEL_MKL

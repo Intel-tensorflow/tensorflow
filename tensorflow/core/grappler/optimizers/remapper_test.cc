@@ -1346,6 +1346,69 @@ TEST_F(RemapperFuseSoftplusTanhMul, BF16) {
 }
 #endif
 
+TEST_F(RemapperTest, FuseMklLayerNorm) {
+  if (!IsMKLEnabled()) GTEST_SKIP() << "Test only applicable to MKL.";
+  using ::tensorflow::ops::Placeholder;
+  tensorflow::Scope s = tensorflow::Scope::NewRootScope();
+
+  TensorShape input_shape = TensorShape({2, 4});
+  auto input = Placeholder(s.WithOpName("input"), DT_FLOAT,
+                           ops::Placeholder::Shape(input_shape));
+  auto add_const = ops::Const(s.WithOpName("add_const"), 1.0f, {2, 4});
+  auto add = ops::Add(s.WithOpName("b_add"), add_const, input);
+  auto r_indices = ops::Const(s.WithOpName("r_indices"), {1}, {1});
+  ops::Mean::Attrs attrs;
+  attrs = attrs.KeepDims(true);
+  auto mean = ops::Mean(s.WithOpName("mean"), add, r_indices, attrs);
+  auto s_diff = ops::SquaredDifference(s.WithOpName("s_diff"), mean, add);
+  auto variance = ops::Mean(s.WithOpName("variance"), s_diff, r_indices, attrs);
+  auto e_const = ops::Const(s.WithOpName("e_const"), {0.001f}, {});
+  auto add_1 = ops::Add(s.WithOpName("add_1"), e_const, variance);
+  auto rsqrt = ops::Rsqrt(s.WithOpName("rsqrt"), add_1);
+  auto g_const = ops::Const(s.WithOpName("g_const"), 1.0f, {4});
+  auto mul = ops::Mul(s.WithOpName("mul"), rsqrt, g_const);
+  auto mul_1 = ops::Mul(s.WithOpName("mul_1"), mul, add);
+  auto mul_2 = ops::Mul(s.WithOpName("mul_2"), mul, mean);
+  auto b_const = ops::Const(s.WithOpName("b_const"), 0.0f, {4});
+  auto sub = ops::Sub(s.WithOpName("sub"), b_const, mul_2);
+  auto add_2 = ops::Add(s.WithOpName("add_2"), mul_1, sub);
+  auto fetch = ops::Identity(s.WithOpName("fetch"), add_2);
+
+  auto input_t = GenerateTensorWithSetRandom<DT_FLOAT>({2, 4});
+
+  GrapplerItem item;
+  item.fetch = {"fetch"};
+  item.feed = {{"input", input_t}};
+  TF_ASSERT_OK(s.ToGraphDef(&item.graph));
+
+  // Place all nodes on CPU.
+  for (int i = 0; i < item.graph.node_size(); ++i) {
+    item.graph.mutable_node(i)->set_device("/device:CPU:0");
+  }
+
+  Remapper optimizer(RewriterConfig::ON);
+  GraphDef output;
+  TF_ASSERT_OK(optimizer.Optimize(nullptr, item, &output));
+
+  int found = 0;
+  for (const NodeDef& node : output.node()) {
+    if (node.name() == "add_2") {
+      EXPECT_EQ(node.op(), "_MklLayerNorm");
+      ASSERT_GE(node.input_size(), 3);
+      EXPECT_EQ(node.input(0), "b_add");
+      EXPECT_EQ(node.input(1), "g_const");
+      EXPECT_EQ(node.input(2), "b_const");
+      found++;
+    }
+  }
+  EXPECT_EQ(found, 1);
+  auto tensors_expected = EvaluateNodes(item.graph, item.fetch, item.feed);
+  ASSERT_EQ(tensors_expected.size(), 1);
+  auto tensors = EvaluateNodes(output, item.fetch, item.feed);
+  ASSERT_EQ(tensors.size(), 1);
+  test::ExpectTensorNear<float>(tensors[0], tensors_expected[0], 1e-4);
+}
+
 class RemapperTensorToHashBucketTest : public RemapperTest {
  public:
   template <DataType DTYPE>
@@ -1795,6 +1858,91 @@ TEST_F(RemapperTest, FuseConv2DWithBatchNorm) {
   auto tensors = EvaluateNodes(output, item.fetch, item.feed);
   ASSERT_EQ(tensors.size(), 1);
   test::ExpectClose(tensors[0], tensors_expected[0], 1e-6, 1e-4);
+}
+
+TEST_F(RemapperTest, FuseConv2DWithBatchNorm_bf16) {
+  if (!IsMKLEnabled()) GTEST_SKIP() << "Test only applicable to oneDNN.";
+  using ops::Placeholder;
+
+  tensorflow::Scope s = tensorflow::Scope::NewRootScope();
+
+  const int N = 128;
+  const TensorShape in_shape({2, 8, 8, 24});
+  const TensorShape filt_shape({1, 1, 24, N});
+
+  auto input_shape = ops::Placeholder::Shape(in_shape);
+  auto filter_shape = ops::Placeholder::Shape(filt_shape);
+  auto scale_shape = ops::Placeholder::Shape({N});
+
+  auto input = Placeholder(s.WithOpName("input"), DT_BFLOAT16, input_shape);
+
+  auto filter = Placeholder(s.WithOpName("filter"), DT_BFLOAT16, filter_shape);
+
+  std::vector<int> strides = {1, 1, 1, 1};
+  auto conv = ops::Conv2D(s.WithOpName("conv"), input, filter, strides, "SAME");
+
+  auto scale = Placeholder(s.WithOpName("scale"), DT_FLOAT, scale_shape);
+  auto offset = Placeholder(s.WithOpName("offset"), DT_FLOAT, scale_shape);
+  auto mean = Placeholder(s.WithOpName("mean"), DT_FLOAT, scale_shape);
+  auto variance = Placeholder(s.WithOpName("variance"), DT_FLOAT, scale_shape);
+
+  ops::FusedBatchNormV3::Attrs attrs;
+  attrs = attrs.IsTraining(false);
+  auto batch_norm = ops::FusedBatchNormV3(s.WithOpName("batch_norm"), conv,
+                                          scale, offset, mean, variance, attrs);
+  auto fetch = ops::Identity(s.WithOpName("fetch"), batch_norm.y);
+
+  auto input_t = GenerateTensorWithSetRandom<DT_BFLOAT16>(in_shape);
+  auto filter_t = GenerateTensorWithSetRandom<DT_BFLOAT16>(filt_shape);
+  auto scale_t = GenerateTensorWithSetRandom<DT_FLOAT>({N});
+  auto offset_t = GenerateTensorWithSetRandom<DT_FLOAT>({N});
+  auto mean_t = GenerateTensorWithSetRandom<DT_FLOAT>({N});
+  auto variance_t = GenerateTensorWithSetRandom<DT_FLOAT>({N});
+
+  GrapplerItem item;
+  item.fetch = {"fetch"};
+  item.feed = {{"input", input_t}, {"filter", filter_t},
+               {"scale", scale_t}, {"offset", offset_t},
+               {"mean", mean_t},   {"variance", variance_t}};
+  TF_ASSERT_OK(s.ToGraphDef(&item.graph));
+
+  // Place all nodes on CPU.
+  for (int i = 0; i < item.graph.node_size(); ++i) {
+    item.graph.mutable_node(i)->set_device("/device:CPU:0");
+  }
+
+  Remapper optimizer(RewriterConfig::ON);
+  GraphDef output;
+  TF_ASSERT_OK(optimizer.Optimize(nullptr, item, &output));
+
+  int found = 0;
+  for (const NodeDef& node : output.node()) {
+    if (node.name() == "batch_norm") {
+      EXPECT_EQ(node.op(), "_FusedConv2D");
+      EXPECT_EQ(node.attr().at("T").type(), DT_BFLOAT16);
+      ASSERT_GE(node.input_size(), 6);
+      EXPECT_EQ(node.input(0), "input");
+      EXPECT_EQ(node.input(1), "filter");
+
+      EXPECT_EQ(node.attr().at("num_args").i(), 4);
+      EXPECT_EQ(node.input(2), "scale");
+      EXPECT_EQ(node.input(3), "offset");
+      EXPECT_EQ(node.input(4), "mean");
+      EXPECT_EQ(node.input(5), "variance");
+
+      const auto fused_ops = node.attr().at("fused_ops").list().s();
+      ASSERT_EQ(fused_ops.size(), 1);
+      EXPECT_EQ(fused_ops[0], "FusedBatchNorm");
+      found++;
+    }
+  }
+  EXPECT_EQ(found, 1);
+
+  auto tensors_expected = EvaluateNodes(item.graph, item.fetch, item.feed);
+  ASSERT_EQ(tensors_expected.size(), 1);
+  auto tensors = EvaluateNodes(output, item.fetch, item.feed);
+  ASSERT_EQ(tensors.size(), 1);
+  test::ExpectClose(tensors[0], tensors_expected[0], 1e-2, 5e-2);
 }
 
 TEST_F(RemapperTest, FuseConv2DWithBatchNormAndActivation) {
@@ -2506,5 +2654,356 @@ class RemapperLeakyReluTest : public GrapplerTest {
 TEST_F(RemapperLeakyReluTest, F32) { RunTest<DT_FLOAT>(); }
 TEST_F(RemapperLeakyReluTest, BF16) { RunTest<DT_BFLOAT16>(); }
 
+class RemapperFuseConvWithActivation : public RemapperTest {
+ public:
+  template <int dim, DataType DTYPE>
+  void RunTest() {
+    if (!IsMKLEnabled()) GTEST_SKIP() << "Test only applicable to oneDNN.";
+
+    using ::tensorflow::ops::Placeholder;
+
+    for (const string& activation : {"LeakyRelu", "Mish"}) {
+      tensorflow::Scope s = tensorflow::Scope::NewRootScope();
+
+      auto input_shape = ops::Placeholder::Shape({8, 32, 32, 3});
+      auto filter_shape = ops::Placeholder::Shape({1, 1, 3, 128});
+      auto bias_shape = ops::Placeholder::Shape({128});
+      std::vector<int> strides = {1, 1, 1, 1};
+
+      auto input_t = GenerateTensorWithSetRandom<DTYPE>({8, 32, 32, 3});
+      auto filter_t = GenerateTensorWithSetRandom<DTYPE>({1, 1, 3, 128});
+      auto bias_t = GenerateTensorWithSetRandom<DTYPE>({128});
+
+      if (dim == 3) {
+        input_shape = ops::Placeholder::Shape({8, 4, 32, 32, 3});
+        filter_shape = ops::Placeholder::Shape({1, 1, 1, 3, 128});
+        bias_shape = ops::Placeholder::Shape({128});
+        strides = {1, 1, 1, 1, 1};
+
+        input_t = GenerateTensorWithSetRandom<DTYPE>({8, 4, 32, 32, 3});
+        filter_t = GenerateTensorWithSetRandom<DTYPE>({1, 1, 1, 3, 128});
+        bias_t = GenerateTensorWithSetRandom<DTYPE>({128});
+      }
+
+      auto input = Placeholder(s.WithOpName("input"), DTYPE, input_shape);
+      auto filter = Placeholder(s.WithOpName("filter"), DTYPE, filter_shape);
+      auto bias = Placeholder(s.WithOpName("bias"), DTYPE, bias_shape);
+
+      float leakyrelu_alpha = 0.5;
+      if (dim == 2) {
+        auto conv =
+            ops::Conv2D(s.WithOpName("conv"), input, filter, strides, "SAME");
+        auto bias_add = ops::BiasAdd(s.WithOpName("bias_add"), conv, bias);
+
+        if (activation == "LeakyRelu") {
+          ops::Identity fetch = [&]() -> ops::Identity {
+            auto activate = s.WithOpName("activation");
+            auto fetch = s.WithOpName("fetch");
+            auto attr = ops::internal::LeakyRelu::Alpha(leakyrelu_alpha);
+            return ops::Identity(
+                fetch, ops::internal::LeakyRelu(activate, bias_add, attr));
+          }();
+        } else if (activation == "Mish") {
+          ops::Identity fetch = [&]() -> ops::Identity {
+            auto activate = s.WithOpName("activation");
+            auto fetch = s.WithOpName("fetch");
+            auto softplus = ops::Softplus(s.WithOpName("softplus"), bias_add);
+            auto tanh = ops::Tanh(s.WithOpName("tanh"), softplus);
+            return ops::Identity(fetch, ops::Mul(activate, bias_add, tanh));
+          }();
+        }
+      } else if (dim == 3) {
+        auto conv =
+            ops::Conv3D(s.WithOpName("conv"), input, filter, strides, "SAME");
+        auto bias_add = ops::BiasAdd(s.WithOpName("bias_add"), conv, bias);
+
+        if (activation == "LeakyRelu") {
+          ops::Identity fetch = [&]() -> ops::Identity {
+            auto activate = s.WithOpName("activation");
+            auto fetch = s.WithOpName("fetch");
+            auto attr = ops::internal::LeakyRelu::Alpha(leakyrelu_alpha);
+            return ops::Identity(
+                fetch, ops::internal::LeakyRelu(activate, bias_add, attr));
+          }();
+        } else if (activation == "Mish") {
+          ops::Identity fetch = [&]() -> ops::Identity {
+            auto activate = s.WithOpName("activation");
+            auto fetch = s.WithOpName("fetch");
+            auto softplus = ops::Softplus(s.WithOpName("softplus"), bias_add);
+            auto tanh = ops::Tanh(s.WithOpName("tanh"), softplus);
+            return ops::Identity(fetch, ops::Mul(activate, bias_add, tanh));
+          }();
+        }
+      }
+
+      GrapplerItem item;
+      item.fetch = {"fetch"};
+      item.feed = {{"input", input_t}, {"filter", filter_t}, {"bias", bias_t}};
+      TF_ASSERT_OK(s.ToGraphDef(&item.graph));
+
+      // Place all nodes on CPU.
+      for (int i = 0; i < item.graph.node_size(); ++i) {
+        item.graph.mutable_node(i)->set_device("/device:CPU:0");
+      }
+
+      Remapper optimizer(RewriterConfig::ON);
+      GraphDef output_1;
+      TF_ASSERT_OK(optimizer.Optimize(nullptr, item, &output_1));
+      item.graph = std::move(output_1);
+      GraphDef output;
+      TF_ASSERT_OK(optimizer.Optimize(nullptr, item, &output));
+
+      int found = 0;
+      for (const NodeDef& node : output.node()) {
+        if (node.name() == "activation") {
+          if (dim == 2) {
+            EXPECT_EQ(node.op(), "_FusedConv2D");
+          } else if (dim == 3) {
+            EXPECT_EQ(node.op(), "_FusedConv3D");
+          }
+
+          ASSERT_GE(node.input_size(), 3);
+          EXPECT_EQ(node.input(0), "input");
+          EXPECT_EQ(node.input(1), "filter");
+          EXPECT_EQ(node.attr().at("num_args").i(), 1);
+          EXPECT_EQ(node.input(2), "bias");
+
+          const auto fused_ops = node.attr().at("fused_ops").list().s();
+          ASSERT_EQ(fused_ops.size(), 2);
+          EXPECT_EQ(fused_ops[0], "BiasAdd");
+          EXPECT_EQ(fused_ops[1], activation);
+          if (activation == "LeakyRelu") {
+            EXPECT_EQ(node.attr().at("leakyrelu_alpha").f(), leakyrelu_alpha);
+          }
+
+          found++;
+        }
+      }
+      EXPECT_EQ(found, 1);
+
+      auto tensors_expected = EvaluateNodes(item.graph, item.fetch, item.feed);
+      ASSERT_EQ(tensors_expected.size(), 1);
+      auto tensors = EvaluateNodes(output, item.fetch, item.feed);
+      ASSERT_EQ(tensors.size(), 1);
+      if (DTYPE == DT_BFLOAT16)
+        test::ExpectClose(tensors[0], tensors_expected[0], 1e-2, 1e-2);
+      else
+        test::ExpectClose(tensors[0], tensors_expected[0], 1e-6);
+    }
+  }
+};
+
+TEST_F(RemapperFuseConvWithActivation, Conv2D_F32) { RunTest<2, DT_FLOAT>(); }
+TEST_F(RemapperFuseConvWithActivation, Conv2D_BF16) {
+  RunTest<2, DT_BFLOAT16>();
+}
+TEST_F(RemapperFuseConvWithActivation, Conv3D_F32) { RunTest<3, DT_FLOAT>(); }
+TEST_F(RemapperFuseConvWithActivation, Conv3D_BF16) {
+  RunTest<3, DT_BFLOAT16>();
+}
+
+class FusedCmpAndCastTest : public GrapplerTest {
+ protected:
+  template <DataType TYPE>
+  void TestFusedCmpAndCast() {
+    using ::tensorflow::ops::Placeholder;
+    tensorflow::Scope s = tensorflow::Scope::NewRootScope();
+    const int num_channels = 24;
+    TensorShape channel_shape({num_channels});
+    TensorShape empty_shape({0});
+    auto x = Placeholder(s.WithOpName("x"), TYPE,
+                         ops::Placeholder::Shape({2, 8, 8, num_channels}));
+    auto y = Placeholder(s.WithOpName("y"), TYPE,
+                         ops::Placeholder::Shape({2, 8, 8, num_channels}));
+    auto comparator = ops::Equal(s.WithOpName("equal"), x, y);
+    auto cast = ops::Cast(s.WithOpName("cast"), comparator.z, TYPE);
+    auto fetch = ops::Identity(s.WithOpName("fetch"), cast);
+    auto input1_t = GenerateRandomTensor<TYPE>({2, 8, 8, num_channels});
+    auto input2_t = GenerateRandomTensor<TYPE>({2, 8, 8, num_channels});
+    GrapplerItem item;
+    item.fetch = {"fetch"};
+    item.feed = {{"x", input1_t}, {"y", input2_t}};
+    TF_ASSERT_OK(s.ToGraphDef(&item.graph));
+    for (int i = 0; i < item.graph.node_size(); ++i) {
+      item.graph.mutable_node(i)->set_device("/device:CPU:0");
+    }
+    Remapper optimizer(RewriterConfig::AGGRESSIVE);
+    GraphDef output;
+    TF_ASSERT_OK(optimizer.Optimize(nullptr, item, &output));
+    int found = 0;
+    for (const NodeDef& node : output.node()) {
+      if (node.name() == "cast") {
+        EXPECT_EQ(node.op(), "_EqualWithCast");
+        ASSERT_EQ(node.input_size(), 2);
+        EXPECT_EQ(node.input(0), "x");
+        EXPECT_EQ(node.input(1), "y");
+        found++;
+      }
+    }
+    EXPECT_EQ(found, 1);
+    auto tensors_expected = EvaluateNodes(item.graph, item.fetch, item.feed);
+    ASSERT_EQ(tensors_expected.size(), 1);
+    auto tensors = EvaluateNodes(output, item.fetch, item.feed);
+    ASSERT_EQ(tensors.size(), 1);
+    test::ExpectClose(tensors[0], tensors_expected[0], 1e-2, 1e-2);
+  }
+};
+
+TEST_F(FusedCmpAndCastTest, FusedCmpAndCast) {
+  TestFusedCmpAndCast<DT_FLOAT>();
+  TestFusedCmpAndCast<DT_BFLOAT16>();
+}
+
+class FuseToDilatedConvTest : public GrapplerTest {
+ protected:
+  template <DataType DTYPE>
+  void TestFusable(const string& op_type) {
+    CHECK(op_type == "Conv2D" || op_type == "DepthwiseConv2dNative");
+
+    using ::tensorflow::ops::Placeholder;
+    tensorflow::Scope s = tensorflow::Scope::NewRootScope();
+
+    auto input_shape = Placeholder::Shape({2, 65, 65, 5});
+    auto filter_shape = Placeholder::Shape({3, 3, 5, 1});
+
+    auto input = Placeholder(s.WithOpName("input"), DTYPE, input_shape);
+    auto filter = Placeholder(s.WithOpName("filter"), DTYPE, filter_shape);
+    auto block_shape = ops::Const(s.WithOpName("block_shape"), {2, 2}, {2});
+    auto paddings = ops::Const(s.WithOpName("paddings"), {2, 3, 2, 3}, {2, 2});
+    auto crops = ops::Const(s.WithOpName("crops"), {0, 1, 0, 1}, {2, 2});
+
+    std::vector<int> strides = {1, 1, 1, 1};
+    auto space_to_batch_nd = ops::SpaceToBatchND(
+        s.WithOpName("space_to_batch_nd"), input, block_shape, paddings);
+    Output contraction;
+    if (op_type == "Conv2D") {
+      contraction = ops::Conv2D(s.WithOpName("contraction"), space_to_batch_nd,
+                                filter, strides, "VALID");
+    } else {
+      contraction = ops::DepthwiseConv2dNative(s.WithOpName("contraction"),
+                                               space_to_batch_nd, filter,
+                                               strides, "VALID");
+    }
+    auto batch_to_space_nd = ops::BatchToSpaceND(
+        s.WithOpName("batch_to_space_nd"), contraction, block_shape, crops);
+
+    auto input_t = GenerateTensorWithSetRandom<DTYPE>({2, 65, 65, 5});
+    auto filter_t = GenerateTensorWithSetRandom<DTYPE>({3, 3, 5, 1});
+
+    GrapplerItem item;
+    item.fetch = {"batch_to_space_nd"};
+    item.feed = {{"input", input_t}, {"filter", filter_t}};
+
+    TF_CHECK_OK(s.ToGraphDef(&item.graph));
+
+    for (int i = 0; i < item.graph.node_size(); i++) {
+      item.graph.mutable_node(i)->set_device("/device:CPU:0");
+    }
+
+    Remapper optimizer(RewriterConfig::ON);
+    GraphDef output;
+    TF_CHECK_OK(optimizer.Optimize(nullptr, item, &output));
+
+    int found = 0;
+    for (const NodeDef& node : output.node()) {
+      if (node.name() != "batch_to_space_nd") continue;
+
+      EXPECT_EQ(node.op(), op_type);
+      ASSERT_EQ(node.input_size(), 2);
+      EXPECT_EQ(node.input(0), "input");
+      EXPECT_EQ(node.input(1), "filter");
+
+      found++;
+    }
+    EXPECT_EQ(found, 1);
+
+    auto tensors_expected = EvaluateNodes(item.graph, item.fetch, item.feed);
+    ASSERT_EQ(tensors_expected.size(), 1);
+    auto tensors = EvaluateNodes(output, item.fetch, item.feed);
+    ASSERT_EQ(tensors.size(), 1);
+
+    if (DTYPE == DT_BFLOAT16) {
+      test::ExpectClose(tensors[0], tensors_expected[0], 1e-2, 1e-2);
+    } else {
+      test::ExpectClose(tensors[0], tensors_expected[0], 1e-6, 1e-6);
+    }
+  }
+
+  void TestNotFuseCandidate() {
+    using ::tensorflow::ops::Placeholder;
+
+    for (const string& op_type : {"Conv2D", "DepthwiseConv2dNative"}) {
+      tensorflow::Scope s = tensorflow::Scope::NewRootScope();
+      auto input_shape = Placeholder::Shape({2, 65, 65, 5});
+      auto filter_shape = Placeholder::Shape({3, 3, 5, 1});
+
+      auto input = Placeholder(s.WithOpName("input"), DT_FLOAT, input_shape);
+      auto filter = Placeholder(s.WithOpName("filter"), DT_FLOAT, filter_shape);
+      auto block_shape = ops::Const(s.WithOpName("block_shape"), {2, 2}, {2});
+      auto paddings =
+          ops::Const(s.WithOpName("paddings"), {2, 3, 2, 3}, {2, 2});
+      auto crops = ops::Const(s.WithOpName("crops"), {0, 1, 0, 1}, {2, 2});
+
+      std::vector<int> strides = {1, 1, 1, 1};
+      auto space_to_batch_nd = ops::SpaceToBatchND(
+          s.WithOpName("space_to_batch_nd"), input, block_shape, paddings);
+      Output contraction;
+      if (op_type == "Conv2D") {
+        contraction = ops::Conv2D(s.WithOpName("contraction"),
+                                  space_to_batch_nd, filter, strides, "VALID");
+      } else {
+        contraction = ops::DepthwiseConv2dNative(s.WithOpName("contraction"),
+                                                 space_to_batch_nd, filter,
+                                                 strides, "VALID");
+      }
+      auto batch_to_space_nd = ops::BatchToSpaceND(
+          s.WithOpName("batch_to_space_nd"), contraction, block_shape, crops);
+      auto sqrt = ops::Sqrt(s.WithOpName("sqrt"), contraction);
+
+      auto input_t = GenerateRandomTensor<DT_FLOAT>({2, 65, 65, 5});
+      auto filter_t = GenerateRandomTensor<DT_FLOAT>({3, 3, 5, 1});
+
+      GrapplerItem item;
+      item.fetch = {"batch_to_space_nd", "sqrt"};
+      item.feed = {{"input", input_t}, {"filter", filter_t}};
+
+      TF_CHECK_OK(s.ToGraphDef(&item.graph));
+
+      for (int i = 0; i < item.graph.node_size(); i++) {
+        item.graph.mutable_node(i)->set_device("/device:CPU:0");
+      }
+
+      Remapper optimizer(RewriterConfig::ON);
+      GraphDef output;
+      TF_CHECK_OK(optimizer.Optimize(nullptr, item, &output));
+
+      EXPECT_EQ(item.graph.node_size(), output.node_size());
+      int found = 0;
+      for (const NodeDef& node : output.node()) {
+        if (node.op() == op_type || node.op() == "SpaceToBatchND" ||
+            node.op() == "BatchToSpaceND") {
+          found++;
+        };
+      }
+      EXPECT_EQ(found, 3);
+    }
+  }
+};
+
+TEST_F(FuseToDilatedConvTest, FuseToDilatedConv2D_FP32) {
+  TestFusable<DT_FLOAT>("Conv2D");
+}
+TEST_F(FuseToDilatedConvTest, FuseToDilatedConv2D_BF16) {
+  TestFusable<DT_BFLOAT16>("Conv2D");
+}
+TEST_F(FuseToDilatedConvTest, FuseToDilatedDepthwiseConv2dNative_FP32) {
+  if (!IsMKLEnabled()) GTEST_SKIP() << "Fusion only applicable to oneDNN.";
+  TestFusable<DT_FLOAT>("DepthwiseConv2dNative");
+}
+TEST_F(FuseToDilatedConvTest, FuseToDilatedDepthwiseConv2dNative_BF16) {
+  if (!IsMKLEnabled()) GTEST_SKIP() << "Fusion only applicable to oneDNN.";
+  TestFusable<DT_BFLOAT16>("DepthwiseConv2dNative");
+}
+TEST_F(FuseToDilatedConvTest, NotToFuse) { TestNotFuseCandidate(); }
 }  // namespace grappler
 }  // namespace tensorflow

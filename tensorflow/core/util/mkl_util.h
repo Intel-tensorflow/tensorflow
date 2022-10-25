@@ -127,7 +127,7 @@ enum class MklQuantization {
   FP_VERSION,
 };
 
-static const int kSmallBatchSize = 32;
+static const int kSmallBatchSize = 128;
 
 inline void execute_primitives(
     std::vector<dnnl::primitive>& primitives, std::shared_ptr<stream> stream,
@@ -1051,6 +1051,30 @@ inline memory::format_tag MklTensorFormatToMklDnnDataFormat(
   if (format == MklTensorFormat::FORMAT_X) return memory::format_tag::x;
   if (format == MklTensorFormat::FORMAT_NC) return memory::format_tag::nc;
   if (format == MklTensorFormat::FORMAT_TNC) return memory::format_tag::tnc;
+  return memory::format_tag::undef;
+}
+
+// Map TensorFormat to oneDNN 2D format tag
+//
+// @input: TensorFlow data format
+// @return: oneDNN's memory format tag corresponding to TensorFormat.
+//          Fails with an error if invalid data format.
+inline memory::format_tag TFDataFormatToOneDnn2DDataFormat(
+                              TensorFormat format) {
+  if (format == FORMAT_NHWC) return memory::format_tag::nhwc;
+  if (format == FORMAT_NCHW) return memory::format_tag::nchw;
+  return memory::format_tag::undef;
+}
+
+// Map TensorFormat to oneDNN 3D format tag
+//
+// @input: TensorFlow data format
+// @return: oneDNN's memory format tag corresponding to TensorFormat.
+//          Fails with an error if invalid data format.
+inline memory::format_tag TFDataFormatToOneDnn3DDataFormat(
+                              TensorFormat format) {
+  if (format == FORMAT_NHWC) return memory::format_tag::ndhwc;
+  if (format == FORMAT_NCHW) return memory::format_tag::ncdhw;
   return memory::format_tag::undef;
 }
 

@@ -656,6 +656,10 @@ class MklConvBackpropCommonOp : public OpKernel {
     }
 
     OP_REQUIRES_OK(context, context->GetAttr("padding", &padding_));
+
+    if (std::is_same<T, float>::value) {
+      (void)SetFPMathMode();
+    }
   }
 
  protected:

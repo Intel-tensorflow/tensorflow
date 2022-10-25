@@ -159,6 +159,7 @@ class GRUCellBlockOp : public OpKernel {
 };
 
 // Register the Block GRU cell kernel for CPU.
+#ifndef INTEL_MKL
 #define REGISTER_KERNEL(T)                                            \
   REGISTER_KERNEL_BUILDER(                                            \
       Name("GRUBlockCell").Device(DEVICE_CPU).TypeConstraint<T>("T"), \
@@ -166,6 +167,7 @@ class GRUCellBlockOp : public OpKernel {
 
 REGISTER_KERNEL(float);
 #undef REGISTER_KERNEL
+#endif
 
 template <typename Device, typename T, bool USE_CUBLAS>
 class GRUBlockCellGradOp : public OpKernel {

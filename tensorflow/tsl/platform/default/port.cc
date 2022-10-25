@@ -21,9 +21,12 @@ limitations under the License.
 #include "tensorflow/tsl/platform/profile_utils/cpu_utils.h"
 #include "tensorflow/tsl/platform/snappy.h"
 #include "tensorflow/tsl/platform/types.h"
+#include "absl/base/call_once.h"
 
 #if defined(__linux__) && !defined(__ANDROID__)
 #include <sched.h>
+#include <algorithm>
+#include <fstream>
 #include <sys/sysinfo.h>
 #else
 #include <sys/syscall.h>
@@ -86,6 +89,149 @@ string JobName() {
 
 int64_t JobUid() { return -1; }
 
+std::string OneDNNThreadPinningMode() {
+  // setting default mode to compact for testing.
+#if defined(__linux__) && !defined(__ANDROID__)
+  static std::string pinning_mode = "compact";
+  static absl::once_flag once;
+  absl::call_once(once, [&] {
+  const char* val = std::getenv("TF_ONEDNN_THREAD_PINNING_MODE");
+    if (val != NULL) {
+      pinning_mode = std::string(val);
+    }
+  });
+  return pinning_mode;
+#endif // defined(__linux__) && !defined(__ANDROID__)
+  return "none";
+}
+
+int NumPhysCores(CPUTopology topology) {
+#if defined(__linux__) && !defined(__ANDROID__)
+  cpu_set_t cpuset;
+  cpu_set_t cpuset1;
+  cpu_set_t core_set;
+  CPU_ZERO(&cpuset);
+  CPU_ZERO(&core_set);
+  int count = 0;
+  int s = pthread_getaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+  for (auto sockets: topology) {
+    for (auto cores: sockets.second) {
+      for (auto core_num: cores.second) {
+        CPU_SET(core_num, &core_set);
+        CPU_AND(&cpuset1, &cpuset, &core_set);
+        if (CPU_COUNT(&cpuset1) == 1) {
+          count++;
+          CPU_ZERO(&core_set);
+          break;
+        }
+      }
+    }
+  }
+  return count;
+#endif // defined(__linux__) && !defined(__ANDROID__)
+  return MaxParallelism();
+}
+
+CPUTopology GetTopology() {
+  CPUTopology topology;
+#if defined(__linux__) && !defined(__ANDROID__)
+  std::ifstream cpuinfo("/proc/cpuinfo");
+  if (!cpuinfo) {
+    std::cout << "Failed to open cpuinfo";
+    return topology;
+  }
+  string line;
+  int ret = -1;
+  int socket,core,cpu;
+  int ret_cpu =-1;
+  int ret_core = -1; 
+  int ret_soc = -1;
+  bool soc_f  = false;
+  bool core_f  = false;
+  bool cpu_f  = false;
+  int core_count =0;
+  while (std::getline(cpuinfo, line)) {
+    if (!cpu_f)
+      ret_cpu = sscanf(line.c_str(), "processor\t: %d", &cpu);
+    if (ret_cpu > 0)
+      cpu_f = true;
+    if (!core_f)
+      ret_core = sscanf(line.c_str(), "core id\t: %d", &core);
+    if (ret_core > 0)
+      core_f = true;
+    if (!soc_f)
+      ret_soc = sscanf(line.c_str(), "physical id\t: %d", &socket);
+    if (ret_soc > 0)
+      soc_f = true;
+    if (cpu_f && soc_f && core_f) {
+      soc_f = false;
+      core_f = false;
+      cpu_f = false;
+      ret_cpu = -1;
+      ret_core = -1;
+      ret_soc = -1;
+      if (topology.find(socket) == topology.end()) {
+        std::vector<int> tmp_cpu;
+        tmp_cpu.push_back(cpu);
+        std::unordered_map<int, std::vector<int>> tmp_core;
+        tmp_core[core] = tmp_cpu;
+        topology[socket] = tmp_core;
+      } else {
+        auto core_map = topology[socket];
+        if (core_map.find(core) == core_map.end()) {
+          std::vector<int> tmp_cpu;
+          tmp_cpu.push_back(cpu);
+          core_map[core] = tmp_cpu;
+          topology[socket] = core_map;
+        } else {
+          topology[socket][core].push_back(cpu);
+        }
+      }  
+    }
+  }
+#endif // defined(__linux__) && !defined(__ANDROID__)
+  return topology;
+}
+
+void PrintTopology(CPUTopology topology) {
+#if defined(__linux__) && !defined(__ANDROID__)
+  for (auto sockets: topology)
+    for (auto cores: sockets.second)
+      for (int k = 0 ; k < cores.second.size() ; k++)
+          VLOG(0) << sockets.first  << " " << cores.first << " " << topology[sockets.first][cores.first][k] << std::endl;
+#endif // defined(__linux__) && !defined(__ANDROID__)
+}
+
+void GetPinningCoreList(CPUTopology topology, std::vector<int>& pinning_list) {
+#if defined(__linux__) && !defined(__ANDROID__)
+  int num_threads = NumPhysCores(topology);
+  cpu_set_t cpuset;
+  CPU_ZERO(&cpuset);
+  int s = pthread_getaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+  int count = 0;
+  // start with socket 0
+  for (int i = 0 ; i < topology.size(); i++)
+    for (auto cores: topology[i])
+      for (int k = 0 ; k < cores.second.size() ; k++)
+       if (CPU_ISSET(cores.second[k], &cpuset)) {
+         pinning_list.push_back(cores.second[k]);
+         break;
+       }
+  if (OneDNNThreadPinningMode() == "compact")
+    std::sort(pinning_list.begin(), pinning_list.end());
+  if (pinning_list.size() > num_threads) {
+    pinning_list.resize(num_threads);
+  } 
+#endif // defined(__linux__) && !defined(__ANDROID__)
+}
+void PinThread(int cpu) {
+#if defined(__linux__) && !defined(__ANDROID__)
+  cpu_set_t cpuset;
+  CPU_ZERO(&cpuset);
+  CPU_SET(cpu, &cpuset);
+  int s = pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+#endif // defined(__linux__) && !defined(__ANDROID__)
+}
 int64_t TaskId() { return -1; }
 
 int NumSchedulableCPUs() {

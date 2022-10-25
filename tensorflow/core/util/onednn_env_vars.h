@@ -18,8 +18,16 @@ limitations under the License.
 #ifdef INTEL_MKL
 
 namespace tensorflow {
+enum oneDNNMathModeSetting {
+   NONE = 0,
+   BF16 = 1,
+};
+
 bool AreWeightsFrozen();
 bool UseSystemAlloc();
+bool EnableFastConv();
+oneDNNMathModeSetting SetFPMathMode();
+bool ThreadPoolUseCallerThread();
 }  // namespace tensorflow
 #endif  // INTEL_MKL
 #endif  // TENSORFLOW_CORE_UTIL_ONEDNN_ENV_VARS_H_

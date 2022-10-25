@@ -217,9 +217,9 @@ class MklReorderWithScalePrimitiveFactory : public MklPrimitiveFactory<T> {
   }
 };
 
-// Quantizes a tensor from float to T, with user-specified min_range and
-// max_range.
-template <typename Device, typename T, bool native_format = false>
+// Quantizes a tensor from S(input) to T(output), with user-specified min_range
+// and max_range.
+template <typename Device, typename T, typename S, bool native_format = false>
 class MklQuantizeV2Op : public OpKernel {
  public:
   explicit MklQuantizeV2Op(OpKernelConstruction* ctx) : OpKernel(ctx) {
@@ -262,6 +262,20 @@ class MklQuantizeV2Op : public OpKernel {
     OP_REQUIRES_OK(ctx, ctx->GetAttr("axis", &axis_));
     OP_REQUIRES_OK(
         ctx, ctx->GetAttr("ensure_minimum_range", &ensure_minimum_range_));
+    if (ctx->HasAttr("dtype")) {
+      OP_REQUIRES_OK(ctx, ctx->GetAttr("dtype", &dtype_));
+      if (dtype_ == DT_BFLOAT16) {
+        OP_REQUIRES(
+            ctx,
+            ctx->input_type(0) == DT_BFLOAT16 &&
+                (mode_ == QUANTIZE_MODE_MIN_FIRST ||
+                 mode_ == QUANTIZE_MODE_SCALED),
+            errors::InvalidArgument("Input type bfloat16 is supported only "
+                                    "with MIN_FIRST and SCLAED modes"));
+      }
+    } else {
+      dtype_ = DT_FLOAT;
+    }
   }
 
   void ComputeScalar(OpKernelContext* ctx, float min_range, float max_range) {
@@ -374,39 +388,14 @@ class MklQuantizeV2Op : public OpKernel {
     }
     // Create reorder memory for src, dst: both are defined in mkl_util.h,
     // they are wrapper
-    MklDnnData<float> src(&cpu_engine);
+    MklDnnData<S> src(&cpu_engine);
     MklDnnData<T> dst(&cpu_engine);
     auto src_md =
         src_mkl_shape.IsMklTensor()
             ? src_mkl_shape.GetMklLayout()
-            : memory::desc(src_dims, MklDnnType<float>(), dst_layout_type);
+            : memory::desc(src_dims, MklDnnType<S>(), dst_layout_type);
 
-    // If the mode is min_first, input data has to be subtracted from
-    // min_range, before being scaled
-    auto flat_input = input.flat<float>().data();
-    Tensor min_shifted_input_tensor;
-    OP_REQUIRES_OK(ctx, ctx->allocate_temp(DT_FLOAT, input.shape(),
-                                           &min_shifted_input_tensor));
-    if (mode_ == QUANTIZE_MODE_MIN_FIRST) {
-      auto minfirst_input = min_shifted_input_tensor.flat<float>().data();
-      const Eigen::TensorOpCost cost(
-          sizeof(float), /*load bytes*/
-          sizeof(float), /*saved bytes*/
-          Eigen::TensorOpCost::AddCost<float>() /*sub cost*/);
-
-      const CPUDevice& d = ctx->eigen_device<CPUDevice>();
-      auto ParallelSub = [&](int64 start, int64 end) {
-        for (int i = start; i < end; ++i) {
-          minfirst_input[i] = flat_input[i] - min_range;
-        }
-      };
-      d.parallelFor(input.NumElements(), cost, ParallelSub);
-
-      src.SetUsrMem(src_md, &min_shifted_input_tensor);
-    } else {
-      src.SetUsrMem(src_md, &src_tensor);
-    }
-
+    src.SetUsrMem(src_md, &src_tensor);
     memory::desc dst_md =
         memory::desc(src_dims, MklDnnType<T>(), dst_layout_type);
 
@@ -467,27 +456,50 @@ class MklQuantizeV2Op : public OpKernel {
         target_range = static_cast<float>((uint64_t{1} << num_bits) - 1);
       }
       scale_factor = target_range / max_abs;
+
+      MklReorderWithScaleFwdParams fwdParams(src_dims, src_md, dst_md);
+      fwdParams.dtypes.append(typeid(S).name());
+      fwdParams.dtypes.append(typeid(T).name());
+      fwdParams.post_op_params.name = "scale";
+      fwdParams.post_op_params.param.push_back(scale_factor);
+
+      MklReorderWithScalePrimitive* reorder_prim =
+          MklReorderWithScalePrimitiveFactory<T>::Get(
+              src.GetUsrMem(), dst.GetUsrMem(), fwdParams);
+      std::shared_ptr<stream> cpu_stream;
+      MklDnnThreadPool eigen_tp(ctx);
+      cpu_stream.reset(CreateStream(&eigen_tp, reorder_prim->GetEngine()));
+      reorder_prim->Execute(src.GetUsrMemDataHandle(),
+                            dst.GetUsrMemDataHandle(), cpu_stream);
     } else if (mode_ == QUANTIZE_MODE_MIN_FIRST) {
-      // Estimate scale for qunatization
-      const int number_of_bits = sizeof(T) * 8;
-      const int64 number_of_steps = static_cast<int64_t>(1) << number_of_bits;
-      scale_factor = (number_of_steps - 1.0) / (max_range - min_range);
+      using namespace dnnl;
+      std::shared_ptr<stream> cpu_stream;
+      MklDnnThreadPool eigen_tp(ctx);
+      cpu_stream.reset(CreateStream(&eigen_tp, cpu_engine));
+
+      auto shift = static_cast<S>(-min_range);
+      memory::dims shift_dims(src_tf_shape.dims(), 1);
+      auto shift_md =
+          memory::desc(shift_dims, MklDnnType<S>(), dst_layout_type);
+      memory shift_mem(shift_md, cpu_engine, (void*)(&shift));
+
+      primitive_attr attr;
+      attr.set_scales(DNNL_ARG_SRC_0, 0, {255.0f / (max_range - min_range)});
+      attr.set_scales(DNNL_ARG_SRC_1, 0, {255.0f / (max_range - min_range)});
+      auto binary_d =
+          binary::desc(algorithm::binary_add, src_md, shift_md, dst_md);
+      auto binary_pd = binary::primitive_desc(binary_d, attr, cpu_engine);
+      auto binary_prim = binary(binary_pd);
+      std::unordered_map<int, memory> net_args{
+          {DNNL_ARG_SRC_0, *src.GetUsrMem()},
+          {DNNL_ARG_SRC_1, shift_mem},
+          {DNNL_ARG_DST, *dst.GetUsrMem()}};
+      binary_prim.execute(*cpu_stream, net_args);
+    } else {
+      OP_REQUIRES(ctx, false,
+                  errors::Unimplemented(
+                      "Supported modes are MIN_FIRST and SCALED only."));
     }
-
-    MklReorderWithScaleFwdParams fwdParams(src_dims, src_md, dst_md);
-    fwdParams.dtypes.append(typeid(T).name());
-    fwdParams.post_op_params.name = "scale";
-    fwdParams.post_op_params.param.push_back(scale_factor);
-
-    MklReorderWithScalePrimitive* reorder_prim =
-        MklReorderWithScalePrimitiveFactory<T>::Get(src.GetUsrMem(),
-                                                    dst.GetUsrMem(), fwdParams);
-    std::shared_ptr<stream> cpu_stream;
-    MklDnnThreadPool eigen_tp(ctx);
-    cpu_stream.reset(CreateStream(&eigen_tp, reorder_prim->GetEngine()));
-    reorder_prim->Execute(src.GetUsrMemDataHandle(), dst.GetUsrMemDataHandle(),
-                          cpu_stream);
-
     output_min_tensor->flat<float>()(0) = min_range;
     output_max_tensor->flat<float>()(0) = max_range;
   }
@@ -498,18 +510,24 @@ class MklQuantizeV2Op : public OpKernel {
   int round_mode_;
   int axis_;
   bool narrow_range_;
+  DataType dtype_;
 };
 
-REGISTER_KERNEL_BUILDER(Name("_MklQuantizeV2")
-                            .Device(DEVICE_CPU)
-                            .TypeConstraint<quint8>("T")
-                            .Label(mkl_op_registry::kMklQuantizedOpLabel),
-                        MklQuantizeV2Op<CPUDevice, quint8, true>);
-REGISTER_KERNEL_BUILDER(Name("_MklQuantizeV2")
-                            .Device(DEVICE_CPU)
-                            .TypeConstraint<qint8>("T")
-                            .Label(mkl_op_registry::kMklQuantizedOpLabel),
-                        MklQuantizeV2Op<CPUDevice, qint8, true>);
+#define REGISTER_QUANTIZE(src_type, dst_type)            \
+  REGISTER_KERNEL_BUILDER(                               \
+      Name("_MklQuantizeV2")                             \
+          .Device(DEVICE_CPU)                            \
+          .TypeConstraint<src_type>("dtype")             \
+          .TypeConstraint<dst_type>("T")                 \
+          .Label(mkl_op_registry::kMklQuantizedOpLabel), \
+      MklQuantizeV2Op<CPUDevice, dst_type, src_type, true>)
+
+REGISTER_QUANTIZE(float, qint8);
+REGISTER_QUANTIZE(float, quint8);
+REGISTER_QUANTIZE(bfloat16, qint8);
+REGISTER_QUANTIZE(bfloat16, quint8);
+#undef REGISTER_QUANTIZE
+
 }  // namespace tensorflow
 
 #endif  // INTEL_MKL

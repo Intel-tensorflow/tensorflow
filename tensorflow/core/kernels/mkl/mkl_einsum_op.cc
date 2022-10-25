@@ -144,6 +144,9 @@ class MklEinsum : public OpKernel {
                           &mkl_output_labels_, &mkl_label_types_,
                           &mkl_input_label_counts_, &mkl_output_label_counts_,
                           &mkl_input_has_ellipsis_, &mkl_output_has_ellipsis_));
+    if (std::is_same<T, float>::value) {
+      (void)SetFPMathMode();
+    }
   }
 
   virtual ~MklEinsum() {}
@@ -278,9 +281,7 @@ class MklEinsum : public OpKernel {
                               .TypeConstraint<TYPE>("T")                      \
                               .Label(mkl_op_registry::kMklNameChangeOpLabel), \
                           MklEinsum<CPUDevice, TYPE>)
-#ifdef ENABLE_MKL
 TF_CALL_float(REGISTER_EINSUM_MKL);
 TF_CALL_bfloat16(REGISTER_EINSUM_MKL);
-#endif  // ENABLE_MKL
 }  // namespace tensorflow
 #endif  // INTEL_MKL

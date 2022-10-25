@@ -50,11 +50,21 @@ struct EigenEnvironment {
   Env* const env_;
   const ThreadOptions thread_options_;
   const string name_;
-
+  port::CPUTopology topology_;
+  std::vector<int> pinning_list_;
+  int pinned_thread = 0;
+  mutex m_;
   EigenEnvironment(Env* env, const ThreadOptions& thread_options,
                    const string& name)
-      : env_(env), thread_options_(thread_options), name_(name) {}
+      : env_(env), thread_options_(thread_options), name_(name) {
 
+      if (str_util::EndsWith(name_, "Eigen") && port::OneDNNThreadPinningMode() != "none") {
+        topology_ = port::GetTopology();
+        port::PrintTopology(topology_);
+        port::GetPinningCoreList(topology_, pinning_list_);
+      }  
+    }
+ 
   EnvThread* CreateThread(std::function<void()> f) {
     return env_->StartThread(thread_options_, name_, [=]() {
       // Set the processor flag to flush denormals to zero.
@@ -64,6 +74,19 @@ struct EigenEnvironment {
       if (thread_options_.numa_node != port::kNUMANoAffinity) {
         port::NUMASetThreadNodeAffinity(thread_options_.numa_node);
       }
+      if (str_util::EndsWith(name_, "Eigen") && port::OneDNNThreadPinningMode() != "none")
+      {
+        mutex_lock l(m_);
+        port::PinThread(pinning_list_[pinned_thread++]);
+        cpu_set_t cpuset;
+        int s = pthread_getaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+        for (int i = 0 ; i < 1024; i++) {
+          if (CPU_ISSET(i, &cpuset)) {
+            VLOG(0) << " Thread " << pinned_thread << "pinned to " << i << std::endl;
+            break;
+          }
+        }  
+      }  
       f();
     });
   }

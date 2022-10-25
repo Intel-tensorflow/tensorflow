@@ -24,10 +24,10 @@ limitations under the License.
 #include <functional>
 #include <type_traits>
 
-#include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 #include "tensorflow/core/framework/bounds_check.h"
 #include "tensorflow/core/framework/numeric_types.h"
 #include "tensorflow/core/framework/tensor_types.h"
+#include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 
 // Keeping all new leakyrelu changes in 1 file.
 // This is similar to changes in cwise_ops.h
@@ -107,5 +107,7 @@ class LeakyReluOp : public OpKernel {
   float alpha_;
 };
 
-REGISTER(LeakyReluOp, CPU, "LeakyRelu", functor::leakyrelu, bfloat16);
+// Register LeakyRelu here for bfloat16 and float32
+// Other datatypes are registered in relu_op.cc
+REGISTER2(LeakyReluOp, CPU, "LeakyRelu", functor::leakyrelu, bfloat16, float);
 }  // namespace tensorflow

@@ -316,6 +316,7 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
     csinfo_.mkl_native_pad_with_fused_conv2d = "_MklNativePadWithFusedConv2D";
     csinfo_.mkl_pad_with_conv2d = "_MklPadWithConv2D";
     csinfo_.mkl_pad_with_fused_conv2d = "_MklPadWithFusedConv2D";
+    csinfo_.mkl_quantized_transpose = "_MklQuantizedTranspose";
     csinfo_.pad = "Pad";
     csinfo_.pad_with_conv2d = "__MklDummyPadWithConv2D";
     csinfo_.pad_with_fused_conv2d = "__MklDummyPadWithFusedConv2D";
@@ -357,11 +358,18 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
         "QuantizedDepthwiseConv2DWithBiasAndRelu";
     csinfo_.quantized_depthwise_conv2d_with_bias_and_relu_and_requantize =
         "QuantizedDepthwiseConv2DWithBiasAndReluAndRequantize";
+    csinfo_.quantized_transpose = "_QuantizedTranspose";
     csinfo_.quantize_v2 = "QuantizeV2";
     csinfo_.relu = "Relu";
     csinfo_.relu_grad = "ReluGrad";
     csinfo_.relu6 = "Relu6";
     csinfo_.relu6_grad = "Relu6Grad";
+    csinfo_.gelu = "Gelu";
+    csinfo_.gelu_grad = "GeluGrad";
+    csinfo_.mkl_gelu = "_MklGelu";
+    csinfo_.mkl_gelu_grad = "_MklGeluGrad";
+    csinfo_.mkl_native_gelu = "_MklNativeGelu";
+    csinfo_.mkl_native_gelu_grad = "_MklNativeGeluGrad";
     csinfo_.requantize = "Requantize";
     csinfo_.tanh = "Tanh";
     csinfo_.tanh_grad = "TanhGrad";
@@ -670,6 +678,9 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
              csinfo_
                  .quantized_depthwise_conv2d_with_bias_and_relu_and_requantize),
          CopyAttrsQuantizedConv2D, AlwaysRewrite, kRewriteForOpNameChange});
+    rinfo_.push_back({csinfo_.quantized_transpose,
+                      csinfo_.mkl_quantized_transpose, CopyAttrsAll,
+                      AlwaysRewrite, kRewriteForOpNameChange});
     rinfo_.push_back({csinfo_.quantize_v2,
                       mkl_op_registry::GetMklOpName(csinfo_.quantize_v2),
                       CopyAttrsAll, QuantizeOpRewrite,
@@ -685,6 +696,13 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
     rinfo_.push_back({csinfo_.relu6_grad,
                       mkl_op_registry::GetMklOpName(csinfo_.relu6_grad),
                       CopyAttrsAll, AlwaysRewrite, GetRewriteCause()});
+    rinfo_.push_back({csinfo_.gelu,
+                      native_fmt ? csinfo_.mkl_native_gelu : csinfo_.mkl_gelu,
+                      CopyAttrsAll, AlwaysRewrite, GetRewriteCause()});
+    rinfo_.push_back(
+        {csinfo_.gelu_grad,
+         native_fmt ? csinfo_.mkl_native_gelu_grad : csinfo_.mkl_gelu_grad,
+         CopyAttrsAll, AlwaysRewrite, GetRewriteCause()});
     rinfo_.push_back({csinfo_.requantize,
                       mkl_op_registry::GetMklOpName(csinfo_.requantize),
                       CopyAttrsAll, AlwaysRewrite, GetRewriteCause()});
@@ -920,6 +938,7 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
     string mkl_native_pad_with_fused_conv2d;
     string mkl_pad_with_conv2d;
     string mkl_pad_with_fused_conv2d;
+    string mkl_quantized_transpose;
     string mul;
     string pad;
     string pad_with_conv2d;
@@ -948,11 +967,18 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
     string quantized_depthwise_conv2d_with_bias;
     string quantized_depthwise_conv2d_with_bias_and_relu;
     string quantized_depthwise_conv2d_with_bias_and_relu_and_requantize;
+    string quantized_transpose;
     string quantize_v2;
     string relu;
     string relu_grad;
     string relu6;
     string relu6_grad;
+    string gelu;
+    string gelu_grad;
+    string mkl_gelu;
+    string mkl_gelu_grad;
+    string mkl_native_gelu;
+    string mkl_native_gelu_grad;
     string requantize;
     string tanh;
     string tanh_grad;
@@ -1780,14 +1806,21 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
             fused_ops == std::vector<string>{"BiasAdd", "Relu"} ||
             fused_ops == std::vector<string>{"BiasAdd", "Relu6"} ||
             fused_ops == std::vector<string>{"BiasAdd", "Elu"} ||
+            fused_ops == std::vector<string>{"BiasAdd", "_FusedHardSwish"} ||
             fused_ops == std::vector<string>{"BiasAdd", "Add"} ||
             fused_ops == std::vector<string>{"BiasAdd", "Add", "Relu"} ||
             fused_ops == std::vector<string>{"BiasAdd", "Add", "Relu6"} ||
             fused_ops == std::vector<string>{"BiasAdd", "Add", "Elu"} ||
+            fused_ops == std::vector<string>{"BiasAdd", "Mish"} ||
             fused_ops == std::vector<string>{"LeakyRelu"} ||
             fused_ops == std::vector<string>{"BiasAdd", "LeakyRelu"} ||
             fused_ops == std::vector<string>{"BiasAdd", "Add", "LeakyRelu"} ||
+            fused_ops == std::vector<string>{"BiasAdd", "_MklSwish"} ||
+            fused_ops == std::vector<string>{"BiasAdd", "_MklSwish",
+                                             "DepthwiseConv2dNative", "BiasAdd",
+                                             "_MklSwish"} ||
             fused_ops == std::vector<string>{"FusedBatchNorm"} ||
+            fused_ops == std::vector<string>{"FusedBatchNorm", "_MklSwish"} ||
             fused_ops == std::vector<string>{"FusedBatchNorm", "Relu"} ||
             fused_ops == std::vector<string>{"FusedBatchNorm", "Relu6"} ||
             fused_ops == std::vector<string>{"FusedBatchNorm", "Elu"} ||
@@ -1812,7 +1845,8 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
     return (fused_ops == std::vector<string>{"BiasAdd"} ||
             fused_ops == std::vector<string>{"BiasAdd", "Relu"} ||
             fused_ops == std::vector<string>{"BiasAdd", "Relu6"} ||
-            fused_ops == std::vector<string>{"BiasAdd", "Elu"});
+            fused_ops == std::vector<string>{"BiasAdd", "Elu"} ||
+            fused_ops == std::vector<string>{"BiasAdd", "_FusedHardSwish"});
   }
 
   // Rewrites input node to a new node specified by its matching rewrite info.
@@ -2733,9 +2767,12 @@ void MklLayoutRewritePass::CopyAttrsFusedConv2DCheckConstFilter(
   std::vector<string> fused_ops;
   float leakyrelu_alpha;
   bool use_cudnn_on_gpu;
-
+  std::vector<DataType> TArgs;
+  int32 dw_filter_size;
+  int32 dw_stride;
   // Get all attributes from old node.
   TF_CHECK_OK(GetNodeAttr(orig_node->def(), "T", &T));
+  TF_CHECK_OK(GetNodeAttr(orig_node->def(), "TArgs", &TArgs));
   TF_CHECK_OK(GetNodeAttr(orig_node->def(), "num_args", &num_args));
   TF_CHECK_OK(GetNodeAttr(orig_node->def(), "strides", &strides));
   TF_CHECK_OK(GetNodeAttr(orig_node->def(), "padding", &padding));
@@ -2750,6 +2787,7 @@ void MklLayoutRewritePass::CopyAttrsFusedConv2DCheckConstFilter(
 
   // Add attributes to new node.
   nb->Attr("T", T);
+  nb->Attr("TArgs", TArgs);
   nb->Attr("num_args", num_args);
   nb->Attr("strides", strides);
   nb->Attr("padding", padding);
@@ -2767,11 +2805,19 @@ void MklLayoutRewritePass::CopyAttrsFusedConv2DCheckConstFilter(
       !explicit_paddings.empty()) {
     nb->Attr("explicit_paddings", explicit_paddings);
   }
-
   // Check and set filter attribute.
   Node* filter_node = nullptr;
   TF_CHECK_OK(orig_node->input_node(1, &filter_node));
   nb->Attr("is_filter_const", filter_node->IsConstant());
+
+  // Get separable conv / fused_depthwise attributes, if fused.
+  if (TryGetNodeAttr(orig_node->def(), "fuseddepthwise_filtersize",
+                     &dw_filter_size)) {
+    nb->Attr("fuseddepthwise_filtersize", dw_filter_size);
+  }
+  if (TryGetNodeAttr(orig_node->def(), "fuseddepthwise_stride", &dw_stride)) {
+    nb->Attr("fuseddepthwise_stride", dw_stride);
+  }
 }
 
 void MklLayoutRewritePass::CopyAttrsFromPadAndFusedConv2D(
@@ -3808,7 +3854,6 @@ MklLayoutRewritePass::CheckForNodeRewrite(const Node* n) const {
       n->type_string() == csinfo_.depthwise_conv2d_grad_input ||
       n->type_string() == csinfo_.conv3d_grad_filter ||
       n->type_string() == csinfo_.conv3d_grad_filter ||
-      n->type_string() == csinfo_.max_pool ||
       n->type_string() == csinfo_.max_pool_grad ||
       n->type_string() == csinfo_.max_pool3d ||
       n->type_string() == csinfo_.max_pool3d_grad) {
@@ -3819,7 +3864,8 @@ MklLayoutRewritePass::CheckForNodeRewrite(const Node* n) const {
 
   // We make an exception for __MklDummyConv2DWithBias,
   // __MklConv2DBackpropFilterWithBias, and __MklDummyPadWithConv2D since their
-  // names do not match Mkl node names.
+  // names do not match Mkl node names. We also make exceptions for internal
+  // operations that have underscore prefix, for example, _FusedMatMul.
   if (n->type_string() != csinfo_.conv2d_with_bias &&
       n->type_string() != csinfo_.pad_with_conv2d &&
       n->type_string() != csinfo_.pad_with_fused_conv2d &&
@@ -3829,6 +3875,7 @@ MklLayoutRewritePass::CheckForNodeRewrite(const Node* n) const {
       n->type_string() != csinfo_.fused_depthwise_conv2d &&
       n->type_string() != csinfo_.fused_matmul &&
       n->type_string() != csinfo_.fused_conv3d &&
+      n->type_string() != csinfo_.quantized_transpose &&
       !mkl_op_registry::IsMklOp(mkl_op_registry::GetMklOpName(n->type_string()),
                                 T)) {
     return nullptr;

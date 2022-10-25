@@ -2468,6 +2468,7 @@ cc_library(
     deps = [
         "//tensorflow/core:lib",
         "//tensorflow/core:lib_internal",
+        "//tensorflow/core/framework:numeric_types",
     ],
 )
 
@@ -4278,6 +4279,7 @@ cc_library(
         ":depthwise_conv_op",
         ":dilation_ops",
         ":fused_batch_norm_op",
+        ":gelu_op",
         ":in_topk_op",
         ":l2loss_op",
         ":lrn_op",
@@ -4364,6 +4366,12 @@ tf_kernel_library(
     name = "lrn_op",
     prefix = "lrn_op",
     deps = NN_DEPS + if_rocm([":conv_ops_gpu_hdrs"]) + [":loose_headers"],
+)
+
+tf_kernel_library(
+    name = "gelu_op",
+    prefix = "gelu_op",
+    deps = NN_DEPS,
 )
 
 tf_kernel_library(
@@ -6638,7 +6646,7 @@ filegroup(
         "cwise_op_invert.cc",
         "cwise_op_isfinite.cc",
         "cwise_op_isnan.cc",
-        "cwise_op_leakyrelu_bf16.cc",
+        "cwise_op_leakyrelu.cc",
         "cwise_op_left_shift.cc",
         "cwise_op_less.cc",
         "cwise_op_less_equal.cc",
@@ -8055,7 +8063,7 @@ exports_files([
     "cwise_op_greater.cc",
     "cwise_op_greater_equal.cc",
     "cwise_op_isinf.cc",
-    "cwise_op_leakyrelu_bf16.cc",
+    "cwise_op_leakyrelu.cc",
     "cwise_op_less.cc",
     "cwise_op_less_equal.cc",
     "cwise_op_log.cc",

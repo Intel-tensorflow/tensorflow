@@ -52,6 +52,7 @@ typedef Eigen::GpuDevice GPUDevice;
 
 namespace functor {
 using random::PhiloxRandom;
+using random::PCGRandom;
 using random::SingleSampleAdapter;
 
 // The default implementation of the functor, which should never be invoked
@@ -72,10 +73,26 @@ struct FillPhiloxRandom {
   }
 };
 
+template <typename Device, class Distribution>
+struct FillPCGRandom {
+  typedef typename Distribution::ResultElementType T;
+  void operator()(OpKernelContext* ctx, const Device&, random::PCGRandom gen, T* data,
+                  int64 size, Distribution dist) {
+    OP_REQUIRES(
+        ctx, false,
+        errors::Internal(
+            "Default `FillPCGRandom` implementation should not be executed. "
+            "The cause of this error is probably that `FillPCGRandom` does "
+            "not support this device or random distribution yet."));
+  }
+};
+
 // A class to fill a specified range of random groups
 template <class Distribution, bool VariableSamplesPerOutput>
 struct FillPhiloxRandomTask;
 
+template <class Distribution, bool VariableSamplesPerOutput>
+struct FillPCGRandomTask;
 // Specialization for distribution that takes a fixed number of samples for
 // each output.
 template <class Distribution>
@@ -85,7 +102,14 @@ struct FillPhiloxRandomTask<Distribution, false> {
                   int64_t start_group, int64_t limit_group, Distribution dist) {
     const int kGroupSize = Distribution::kResultElementCount;
 
-    gen.Skip(start_group);
+    // Decide skip strides according to different kResultElementCount:
+    // * `1 = (4 + 3) / 4` for normal Distribution.
+    // * `1 = (2 + 3) / 4` for double/int64 Distribution.
+    // * `4 = (16 + 3) / 4` for vectorized float/bfloat16 Distribution.
+    const int skip_strides =
+        (kGroupSize + gen.kResultElementCount - 1) / gen.kResultElementCount;
+    gen.Skip(start_group * skip_strides);
+
     int64_t offset = start_group * kGroupSize;
 
     // First fill all the full-size groups
@@ -152,6 +176,52 @@ struct FillPhiloxRandomTask<Distribution, true> {
   }
 };
 
+template <class Distribution>
+struct FillPCGRandomTask<Distribution, false> {
+  typedef typename Distribution::ResultElementType T;
+  static void Run(random::PCGRandom gen, T* data, int64 size,
+                  int64 start_group, int64 limit_group, Distribution dist) {
+    const int kGroupSize = Distribution::kResultElementCount;
+
+    // Decide skip strides according to different kResultElementCount:
+    // * `1 = (4 + 3) / 4` for normal Distribution.
+    // * `1 = (2 + 3) / 4` for double/int64 Distribution.
+    // * `4 = (16 + 3) / 4` for vectorized float/bfloat16 Distribution.
+    const int skip_strides =
+        (kGroupSize + gen.kResultElementCount - 1) / gen.kResultElementCount;
+    gen.Skip(start_group * skip_strides);
+    int64 offset = start_group * kGroupSize;
+
+    // First fill all the full-size groups
+    int64 limit_group_full = std::min(limit_group, size / kGroupSize);
+    for (int64 index = start_group; index < limit_group_full; ++index) {
+      auto samples = dist(&gen);
+      std::copy(&samples[0], &samples[0] + kGroupSize, data + offset);
+      offset += kGroupSize;
+    }
+
+    // If there are any remaining elements that need to be filled, process them
+    if (limit_group_full < limit_group) {
+      int64 remaining_size = size - limit_group_full * kGroupSize;
+      auto samples = dist(&gen);
+      std::copy(&samples[0], &samples[0] + remaining_size, data + offset);
+    }
+  }
+};
+
+// Specialization for distribution that takes a variable number of samples for
+// each output. This will be slower due to the generality.
+template <class Distribution>
+struct FillPCGRandomTask<Distribution, true> {
+  typedef typename Distribution::ResultElementType T;
+  static constexpr int64 kReservedSamplesPerOutput = 256;
+
+  static void Run(random::PCGRandom base_gen, T* data, int64 size,
+                  int64 start_group, int64 limit_group, Distribution dist) {
+    const int kGroupSize = Distribution::kResultElementCount;
+
+  }
+};
 // Partial specialization for CPU to fill the entire region with randoms
 // It splits the work into several tasks and run them in parallel
 template <class Distribution>
@@ -166,9 +236,8 @@ void FillPhiloxRandom<CPUDevice, Distribution>::operator()(
 
   int64_t total_group_count = (size + kGroupSize - 1) / kGroupSize;
 
-  const int kGroupCost =
-      random::PhiloxRandom::kResultElementCount *
-      (random::PhiloxRandom::kElementCost + Distribution::kElementCost);
+  const int kGroupCost = kGroupSize * (random::PhiloxRandom::kElementCost +
+                                       Distribution::kElementCost);
 
   if (key != nullptr && counter != nullptr) {
     gen = GetPhiloxRandomFromCounterKeyMem(counter, key);
@@ -185,8 +254,32 @@ void FillPhiloxRandom<CPUDevice, Distribution>::operator()(
         });
 }
 
-}  // namespace functor
+template <class Distribution>
+void FillPCGRandom<CPUDevice, Distribution>::operator()(
+    OpKernelContext* ctx, const CPUDevice&, random::PCGRandom gen,
+    typename Distribution::ResultElementType* data, int64 size,
+    Distribution dist) {
+  const int kGroupSize = Distribution::kResultElementCount;
 
+  auto worker_threads = *(ctx->device()->tensorflow_cpu_worker_threads());
+
+  int64 total_group_count = (size + kGroupSize - 1) / kGroupSize;
+
+  const int kGroupCost = kGroupSize * (random::PCGRandom::kElementCost +
+                                       Distribution::kElementCost);
+
+  Shard(worker_threads.num_threads, worker_threads.workers, total_group_count,
+        kGroupCost,
+        [&gen, data, size, dist](int64 start_group, int64 limit_group) {
+          FillPCGRandomTask<
+              Distribution,
+              Distribution::kVariableSamplesPerOutput>::Run(gen, data, size,
+                                                            start_group,
+                                                            limit_group, dist);
+        });
+}
+
+}  // namespace functor
 
 }  // end namespace tensorflow
 

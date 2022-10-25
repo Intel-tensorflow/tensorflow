@@ -68,6 +68,91 @@ class Array {
   T data_[ElementCount];
 };
 
+class PCGRandom {
+ public:
+  // The number of elements that will be returned.
+  static constexpr int kResultElementCount = 1024;
+  using ResultType = Array<uint32_t, kResultElementCount>;
+  using StateType = Array<uint64_t, kResultElementCount>;
+  using StateElementType = uint64_t;
+  using ResultElementType = uint32_t;
+
+  // Cost of generation of a single element (in cycles).
+  static constexpr int kElementCost = 10;
+
+  PHILOX_DEVICE_INLINE
+  PCGRandom() {}
+
+  PHILOX_DEVICE_INLINE
+  explicit PCGRandom(uint64_t seed) {
+    for (int i = 0; i < kResultElementCount; i++) {
+      state_[i] = seed;
+    }
+  }
+
+  PHILOX_DEVICE_INLINE
+  explicit PCGRandom(uint64_t seed_lo, uint64_t seed_hi) {
+    for (int i = 0; i < kResultElementCount; i++) {
+      state_[i] = seed_lo;
+    }
+  }
+
+  // Skip the specified number of samples of 128-bits in the current stream.
+  PHILOX_DEVICE_INLINE
+  void Skip(uint64_t count) {
+    for (int i = 0; i < kResultElementCount; i++) {
+      uint64_t cur_inc = i * 2 + 1;
+      uint64_t cur_mul = 6364136223846793005ULL;
+      uint64_t acc_mult = 1;
+      uint64_t acc_plus = 0;
+      while (count > 0) {
+        if (count & 1) {
+          acc_mult *= cur_mul;
+          acc_plus = acc_plus * cur_mul + cur_inc;
+        }
+        cur_inc = (cur_mul + 1) * cur_inc;
+        cur_mul *= cur_mul;
+        count = count >> 1;
+      }
+      state_[i] = acc_mult * state_[i] + acc_plus;
+    }
+  }
+
+  // Returns a group of four random numbers using the underlying Philox
+  // algorithm.
+  PHILOX_DEVICE_INLINE
+  ResultType operator()() {
+    StateType state = state_;
+    ResultType result = ComputeSingleRound(state);
+    state_ = state;
+    return result;
+    // UpdateState(state_, inc_, mul_);
+  }
+
+ private:
+  // We use the same constants as recommended by the original paper.
+  // Helper function to skip the next sample of 128-bits in the current stream.
+  PHILOX_DEVICE_INLINE void SkipOne() { Skip(1); }
+
+  PHILOX_DEVICE_INLINE
+  ResultType ComputeSingleRound(StateType& state) {
+    ResultType xorshifted;
+    ResultType rot;
+    ResultType result;
+    for (int i = 0; i < kResultElementCount; i++) {
+      xorshifted[i] = ((state[i] >> 18u) ^ state[i]) >> 27u;
+      rot[i] = state[i] >> 59u;
+      result[i] =
+          (xorshifted[i] >> rot[i]) | (xorshifted[i] << ((-rot[i]) & 31));
+      state[i] = state[i] * 6364136223846793005ULL + (i * 2 + 1);
+    }
+    return result;
+  }
+
+ private:
+  StateType state_;
+};
+
 // A class that encapsulates all the states for a random number generator using
 // the philox_4x32_10 algorithm. Each invocation returns a 128-bit random bits
 // in the form of four uint32_t.

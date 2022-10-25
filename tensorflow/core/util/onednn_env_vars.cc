@@ -19,6 +19,7 @@ limitations under the License.
 
 #include "absl/base/call_once.h"
 #include "tensorflow/core/util/env_var.h"
+#include "tensorflow/core/platform/env.h"
 
 namespace tensorflow {
 
@@ -32,6 +33,15 @@ bool AreWeightsFrozen() {
   return weights_const;
 }
 
+bool EnableFastConv() {
+  static bool fast_conv = false;
+  static absl::once_flag once;
+  absl::call_once(once, [&] {
+    TF_CHECK_OK(ReadBoolFromEnvVar("TF_ONEDNN_ENABLE_FAST_CONV",
+                                   /*default_value*/ false, &fast_conv));
+  });
+  return fast_conv;
+}
 bool UseSystemAlloc() {
   static bool use_sys_alloc = false;
   static absl::once_flag once;
@@ -40,6 +50,30 @@ bool UseSystemAlloc() {
                                    /*default_value*/ false, &use_sys_alloc));
   });
   return use_sys_alloc;
+}
+oneDNNMathModeSetting SetFPMathMode() {
+  static oneDNNMathModeSetting math_mode = oneDNNMathModeSetting::NONE;
+  static string math_mode_setting = "";
+  static absl::once_flag once;
+  absl::call_once(once, [&] {
+    TF_CHECK_OK(ReadStringFromEnvVar("TF_SET_ONEDNN_FPMATH_MODE",
+                                   /*default_value*/ "", &math_mode_setting));
+    if (math_mode_setting == "BF16") {
+       setenv("ONEDNN_DEFAULT_FPMATH_MODE", "BF16", 1);
+       math_mode = oneDNNMathModeSetting::BF16;
+    }
+  });
+  return math_mode;
+}
+
+bool ThreadPoolUseCallerThread() {
+  static bool threadpool_use_caller_thread = false;
+  static absl::once_flag once;
+  absl::call_once(once, [&] {
+    TF_CHECK_OK(ReadBoolFromEnvVar("TF_ONEDNN_THREADPOOL_USE_CALLER_THREAD",
+                                   /*default_value*/ false, &threadpool_use_caller_thread));
+  });
+  return threadpool_use_caller_thread;
 }
 
 }  // namespace tensorflow

@@ -186,9 +186,9 @@ def _tf_repositories():
     tf_http_archive(
         name = "mkl_dnn_v1",
         build_file = "//third_party/mkl_dnn:mkldnn_v1.BUILD",
-        sha256 = "0ff70240378aa26e1fc3edf66d14964e614ef2f9278514182cd43b34ced9af21",
-        strip_prefix = "oneDNN-2.6.1",
-        urls = tf_mirror_urls("https://github.com/oneapi-src/oneDNN/archive/refs/tags/v2.6.1.tar.gz"),
+        sha256 = "1cfdd90f8cc45d2b87114458d42169686c672ba0ab44b71ea1176e48e8dc4830",
+        strip_prefix = "oneDNN-b1ea77cdb7468ca334d50dbc19f72aed44435507",
+        urls = tf_mirror_urls("https://github.com/oneapi-src/oneDNN/archive/b1ea77cdb7468ca334d50dbc19f72aed44435507.tar.gz"),
     )
 
     tf_http_archive(
@@ -569,10 +569,10 @@ def _tf_repositories():
     tf_http_archive(
         name = "zlib",
         build_file = "//third_party:zlib.BUILD",
-        sha256 = "91844808532e5ce316b3c010929493c0244f3d37593afd6de04f71821d5136d9",
-        strip_prefix = "zlib-1.2.12",
+        sha256 = "b3a24de97a8fdbc835b9833169501030b8977031bcb54b3b3ac13740f846ab30",
+        strip_prefix = "zlib-1.2.13",
         system_build_file = "//third_party/systemlibs:zlib.BUILD",
-        urls = tf_mirror_urls("https://zlib.net/zlib-1.2.12.tar.gz"),
+        urls = tf_mirror_urls("https://zlib.net/zlib-1.2.13.tar.gz"),
     )
 
     # LINT.IfChange

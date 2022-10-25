@@ -88,7 +88,10 @@ tf_mkl_kernel_library(
         "mkl_matmul_op.cc",
         "mkl_matmul_op_fused.cc",
     ],
-    hdrs = ["mkl_matmul_ops_common.h"],
+    hdrs = [
+        "mkl_matmul_ops_common.h",
+        "mkl_quantized_conv_ops.h",
+    ],
     deps = MKL_DEPS,
 )
 
@@ -115,6 +118,7 @@ tf_cc_test_mkl(
     deps = [
         ":mkl_conv_op",
         ":mkl_kernel_util",
+        "//tensorflow/cc:cc_ops_internal",
         "//tensorflow/core:array_ops_op_lib",
         "//tensorflow/core:direct_session",
         "//tensorflow/core:math_ops_op_lib",
@@ -134,6 +138,7 @@ tf_cc_test_mkl(
     srcs = ["mkl_qmatmul_op_test.cc"],
     linkstatic = 1,  # Fixes dyld error on MacOS.
     deps = [
+        ":mkl_matmul_op",
         ":mkl_qmatmul_op",
         "//tensorflow/core:array_ops_op_lib",
         "//tensorflow/core:math_ops_op_lib",
@@ -175,6 +180,7 @@ tf_cc_test_mkl(
     linkstatic = 1,  # Fixes dyld error on MacOS.
     deps = [
         ":mkl_pooling_ops",
+        ":mkl_kernel_util",
         "//tensorflow/core:array_ops_op_lib",
         "//tensorflow/core:math_ops_op_lib",
         "//tensorflow/core:nn_ops_op_lib",
@@ -237,6 +243,35 @@ tf_cc_test_mkl(
     deps = MKL_TEST_DEPS,
 )
 
+tf_mkl_kernel_library(
+    name = "mkl_deconv_op",
+    prefix = "mkl_deconv_op",
+    deps = [
+        "@com_google_absl//absl/strings",
+        "//tensorflow/core/kernels:conv_grad_shape_utils",
+        "//tensorflow/core/kernels:no_op",
+    ] + MKL_DEPS,
+)
+
+tf_cc_test_mkl(
+    name = "mkl_deconv_test",
+    size = "small",
+    srcs = ["mkl_deconv_test.cc"],
+    linkstatic = 1,  # Fixes dyld error on MacOS.
+    deps = [
+        ":mkl_conv_op",
+        ":mkl_deconv_op",
+        ":mkl_kernel_util",
+        "//tensorflow/core/kernels:quantization_utils",
+        "//tensorflow/core/kernels:quantized_ops",
+        "//tensorflow/core/kernels:bias_op",
+        "//tensorflow/core/kernels:conv_ops",
+        "//tensorflow/core/kernels:depthwise_conv_grad_op",
+        "//tensorflow/core/kernels:depthwise_conv_op",
+        "//tensorflow/core/kernels:relu_op",
+    ] + MKL_TEST_DEPS,
+)
+
 tf_cc_test_mkl(
     name = "mkl_relu_op_test",
     size = "small",
@@ -280,7 +315,7 @@ tf_mkl_kernel_library(
         "mkl_pooling_ops_common.cc",
     ],
     hdrs = ["mkl_pooling_ops_common.h"],
-    deps = MKL_SHORT_DEPS,
+    deps = MKL_SHORT_DEPS + ["//tensorflow/core/kernels:pooling_ops_hdrs"],
 )
 
 tf_mkl_kernel_library(
@@ -315,6 +350,7 @@ tf_cc_test_mkl(
     linkstatic = 1,  # Fixes dyld error on MacOS.
     deps = [
         ":mkl_dequantize_op",
+        ":mkl_kernel_util",
         ":mkl_tfconv_op",
         "//tensorflow/core:array_ops_op_lib",
         "//tensorflow/core:math_ops_op_lib",
@@ -387,9 +423,33 @@ tf_cc_test_mkl(
     deps = [
         ":mkl_conv_op",
         ":mkl_fused_batch_norm_op",
+        ":mkl_kernel_util",
         "//tensorflow/core:direct_session",
         "//tensorflow/core/graph:mkl_graph_util",
         "//tensorflow/core/kernels:conv_ops_gpu_hdrs",
+        "//tensorflow/core/kernels:relu_op",
+    ] + MKL_TEST_DEPS,
+)
+
+tf_mkl_kernel_library(
+    name = "mkl_fused_instance_norm_op",
+    srcs = ["mkl_fused_instance_norm_op.cc"],
+    deps = [
+        "//tensorflow/core:nn_ops_op_lib",
+        "//tensorflow/core:mkl_nn_ops_op_lib",
+    ] + MKL_DEPS,
+)
+
+tf_cc_test_mkl(
+    name = "mkl_fused_instance_norm_op_test",
+    size = "small",
+    srcs = ["mkl_fused_instance_norm_op_test.cc"],
+    linkstatic = 1,
+    deps = [
+        ":mkl_fused_instance_norm_op",
+        ":mkl_kernel_util",
+        "//tensorflow/core:direct_session",
+        "//tensorflow/core/graph:mkl_graph_util",
     ] + MKL_TEST_DEPS,
 )
 
@@ -471,6 +531,40 @@ tf_cc_test_mkl(
     ] + MKL_TEST_DEPS,
 )
 
+tf_mkl_kernel_library(
+     name = "mkl_gru_ops",
+     srcs = [
+         "mkl_gru_ops.cc",
+     ],
+     hdrs = [
+         "mkl_rnn_ops.h",
+         "mkl_ops_utils.h",
+     ],
+     deps = MKL_DEPS
+)
+tf_cc_test_mkl(
+     name = "mkl_rnn_ops_test",
+     size = "small",
+     srcs = ["mkl_rnn_ops_test.cc"],
+     linkstatic = 1,  # Fixes dyld error on MacOS.
+     deps = [
+         ":mkl_gru_ops",
+         ":mkl_matmul_op",
+         "//tensorflow/cc:cc_ops_internal",
+         "//tensorflow/core:direct_session",
+         "//tensorflow/core/graph:mkl_graph_util",
+         "//tensorflow/core/kernels:matmul_op",
+         "//tensorflow/core/kernels:bias_op",
+         "//tensorflow/core:array_ops_op_lib",
+         "//tensorflow/core:math_ops_op_lib",
+         "//tensorflow/core:nn_ops_op_lib",
+         "//tensorflow/core/kernels:quantization_utils",
+         "//tensorflow/core/kernels:quantized_ops",
+         "//tensorflow/core:tensorflow",
+     ] + MKL_TEST_DEPS,
+)
+
+
 tf_cc_test_mkl(
     name = "mkl_fused_ops_test",
     size = "small",
@@ -499,7 +593,10 @@ tf_mkl_kernel_library(
     srcs = [
         "mkl_transpose_op.cc",
     ],
-    deps = MKL_DEPS + ["//tensorflow/core/kernels:transpose_op"],
+    deps = MKL_DEPS + [
+        "//tensorflow/core/kernels:no_op",
+        "//tensorflow/core/kernels:transpose_op",
+    ],
 )
 
 tf_cc_test_mkl(
@@ -520,4 +617,57 @@ tf_mkl_kernel_library(
         ":mkl_quantize_op",
         "//tensorflow/core:direct_session",
     ],
+)
+
+tf_cc_test_mkl(
+    name = "onednn_nn_ops_benchmark",
+    size = "small",
+    srcs = ["onednn_nn_ops_benchmark.cc"],
+    linkstatic = 1,
+    deps = [
+        "//tensorflow/cc:cc_ops_internal",
+        "//tensorflow/core/kernels:softmax_op",
+        "//tensorflow/core/kernels/mkl:mkl_softmax_op",
+    ] + MKL_TEST_DEPS,
+)
+
+tf_cc_test_mkl(
+    name = "onednn_fused_matmul_ops_test",
+    size = "medium",
+    srcs = ["onednn_fused_matmul_ops_test.cc"],
+    linkstatic = 1,
+    deps = [
+        ":mkl_matmul_op",
+        ":mkl_kernel_util",
+        "//tensorflow/core:direct_session",
+        "//tensorflow/cc:cc_ops_internal",
+        "//tensorflow/core/kernels:matmul_op",
+        "//tensorflow/core/kernels:relu_op",
+        "//tensorflow/core/kernels:bias_op",
+    ] + MKL_TEST_DEPS,
+)
+
+tf_cc_test_mkl(
+    name = "onednn_fused_batchmatmul_op_test",
+    size = "medium",
+    srcs = ["onednn_fused_batchmatmul_op_test.cc"],
+    linkstatic = 1,
+    deps = [
+        ":mkl_batch_matmul_op",
+        ":mkl_kernel_util",
+        "//tensorflow/core:direct_session",
+        "//tensorflow/core/kernels:quantization_utils",
+        "@com_google_absl//absl/strings",
+    ] + MKL_TEST_DEPS,
+)
+
+tf_cc_test_mkl(
+    name = "onednn_transpose_op_test",
+    size = "medium",
+    srcs = ["onednn_transpose_op_test.cc"],
+    linkstatic = 1,
+    deps = [
+        ":mkl_transpose_op",
+        "//tensorflow/core:direct_session",
+    ] + MKL_TEST_DEPS,
 )

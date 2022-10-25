@@ -1,4 +1,4 @@
-/* Copyright 2021 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2022 The TensorFlow Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ limitations under the License.
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/framework/tensor_testutil.h"
 #include "tensorflow/core/framework/types.h"
+#include "tensorflow/core/framework/types.pb.h"
 #include "tensorflow/core/kernels/ops_testutil.h"
 #include "tensorflow/core/kernels/ops_util.h"
 #include "tensorflow/core/kernels/quantization_utils.h"
@@ -51,13 +52,15 @@ class MklTestingUtil {
     Node* max_node = test::graph::Constant(&*graph, Tensor(max), "max");
 
     Node* quantize_op;
+    string round_mode =
+        (mode == "SCALE") ? "HALF_TO_EVEN" : "HALF_AWAY_FROM_ZERO";
     TF_CHECK_OK(NodeBuilder("mkl_quantizeV2", "_MklQuantizeV2")
                     .Input(input_node)
                     .Input(min_node)
                     .Input(max_node)
                     .Attr("T", type)
                     .Attr("mode", mode)
-                    .Attr("round_mode", "HALF_TO_EVEN")
+                    .Attr("round_mode", round_mode)
                     .Attr("_kernel", "QuantizedMklOp")
                     .Finalize(&*graph, &quantize_op));
 
@@ -101,13 +104,40 @@ class MklTestingUtil {
   }
 
   template <typename T>
-  static void ComputeMinMax(const Tensor& tf_tensor, T* tenosr_min,
+  static void ComputeMinMax(const Tensor& tf_tensor, T* tensor_min,
                             T* tensor_max) {
     auto eigen_tensor = tf_tensor.flat<T>();
     Eigen::Tensor<T, 0, Eigen::RowMajor> min = eigen_tensor.minimum();
     Eigen::Tensor<T, 0, Eigen::RowMajor> max = eigen_tensor.maximum();
-    *tenosr_min = min();
+    *tensor_min = min();
     *tensor_max = max();
+  }
+
+  // This utlity function mimics Quantization of float/bfloat16 tensor with
+  // oneDNN backend QuantizeV2 operation. Since the op signature requires min
+  // and max values to be in float type, min_tensor and max_tensor should have
+  // their dtype set to DT_FLOAT.
+  template <typename T>
+  static void GetQuantizationTensors(const Tensor& input, Tensor* output,
+                                     DataType out_type, const string mode,
+                                     Tensor* min_tensor, Tensor* max_tensor) {
+    ASSERT_EQ(min_tensor->dtype(), DT_FLOAT);
+    ASSERT_EQ(max_tensor->dtype(), DT_FLOAT);
+    T min;
+    T max;
+    ComputeMinMax<T>(input, &min, &max);
+
+    float adjusted_min = static_cast<float>(min);
+    float adjusted_max = static_cast<float>(max);
+    if (mode == "SCALED") {
+      ASSERT_EQ(output->dtype(), DT_QINT8);
+      float range = std::max(std::abs(adjusted_min), std::abs(adjusted_max));
+      adjusted_min = -range;
+      adjusted_max = range;
+    }
+    RunMklQuantizeOp(input, adjusted_min, adjusted_max, out_type, mode, output);
+    min_tensor->flat<float>()(0) = adjusted_min;
+    max_tensor->flat<float>()(0) = adjusted_max;
   }
 };
 

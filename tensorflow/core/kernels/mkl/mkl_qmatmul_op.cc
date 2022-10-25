@@ -112,7 +112,8 @@ namespace tensorflow {
 
 template <typename Device, typename Tinput, typename Tweight, typename Tbias,
           typename Toutput, bool native_format = false>
-class MklDnnQuantizedMatMulOp : public MklDnnMatMulOpBase<Tweight, Toutput> {
+class MklDnnQuantizedMatMulOp
+    : public MklDnnMatMulOpBase<Tweight, Tbias, Toutput> {
  public:
   virtual ~MklDnnQuantizedMatMulOp() {
     if (this->input_bias_ != nullptr) {
@@ -137,7 +138,7 @@ class MklDnnQuantizedMatMulOp : public MklDnnMatMulOpBase<Tweight, Toutput> {
   }
 
   explicit MklDnnQuantizedMatMulOp(OpKernelConstruction* context)
-      : MklDnnMatMulOpBase<Tweight, Toutput>(context) {
+      : MklDnnMatMulOpBase<Tweight, Tbias, Toutput>(context) {
     string mode_string;
     OP_REQUIRES_OK(context, context->GetAttr("input_quant_mode", &mode_string));
     if (mode_string == "MIN_FIRST") {
@@ -365,7 +366,8 @@ class MklDnnQuantizedMatMulOp : public MklDnnMatMulOpBase<Tweight, Toutput> {
     // quint8. A post_op "output_scale" is added to do the conversion.
     if (std::is_same<Toutput, quint8>::value ||
         std::is_same<Toutput, qint8>::value ||
-        std::is_same<Toutput, float>::value) {
+        std::is_same<Toutput, float>::value ||
+        std::is_same<Toutput, bfloat16>::value) {
       float min_output_value;
       float max_output_value;
       ComputeOutputRangeForInt32(context, &min_output_value, &max_output_value);
@@ -380,7 +382,8 @@ class MklDnnQuantizedMatMulOp : public MklDnnMatMulOpBase<Tweight, Toutput> {
         scale = scale_int32 / scale_eightbit / static_cast<float>(1u << 23);
       } else if (std::is_same<Toutput, qint8>::value) {
         scale = scale_int32 / scale_eightbit / static_cast<float>(1u << 24);
-      } else if (std::is_same<Toutput, float>::value) {
+      } else if (std::is_same<Toutput, float>::value ||
+                 std::is_same<Toutput, bfloat16>::value) {
         scale = scale_int32 / static_cast<float>(1u << 31);
       } else {
         // TODO(intel-tf): Keep the default qint8 as before.
@@ -409,7 +412,8 @@ class MklDnnQuantizedMatMulOp : public MklDnnMatMulOpBase<Tweight, Toutput> {
     if (std::is_same<Tbias, qint32>::value) {
       return static_cast<Tbias*>(
           const_cast<Tbias*>(bias_tensor.flat<Tbias>().data()));
-    } else {
+    } else if (std::is_same<Tbias, float>::value ||
+               std::is_same<Tbias, bfloat16>::value) {
       // If the bias is fp32, then need to calculate the bias
       const float min_input = context->input(3).flat<float>()(0);
       const float max_input = context->input(4).flat<float>()(0);
@@ -418,6 +422,18 @@ class MklDnnQuantizedMatMulOp : public MklDnnMatMulOpBase<Tweight, Toutput> {
 
       std::vector<dnnl::primitive> net;
       float out_scale;
+      Tensor bias_float;
+      if (bias_tensor.dtype() == DT_BFLOAT16) {
+        TF_CHECK_OK(
+            context->allocate_temp(DT_FLOAT, bias_tensor.shape(), &bias_float));
+        BFloat16ToFloat(bias_tensor.flat<bfloat16>().data(),
+                        bias_float.flat<float>().data(),
+                        bias_tensor.NumElements());
+      }
+
+      float* bias_buf = static_cast<float*>(const_cast<float*>(
+          bias_tensor.dtype() == DT_FLOAT ? bias_tensor.flat<float>().data()
+                                          : bias_float.flat<float>().data()));
       // If the bias is float and input quantize is MIN_FIRST, bias has to be
       // compensated with B's32 = Q'a * Qw * Bf32 + Q'a * Qw * Min(Af32) * 1 *
       // Wf32.
@@ -428,9 +444,6 @@ class MklDnnQuantizedMatMulOp : public MklDnnMatMulOpBase<Tweight, Toutput> {
 
         qint8* wt_buf = static_cast<qint8*>(
             const_cast<qint8*>(weight_tensor.flat<qint8>().data()));
-
-        const float* bias_buf = static_cast<float*>(
-            const_cast<float*>(bias_tensor.flat<float>().data()));
 
         float qa_amin = 255 * min_input / (max_input - min_input);
 
@@ -481,8 +494,6 @@ class MklDnnQuantizedMatMulOp : public MklDnnMatMulOpBase<Tweight, Toutput> {
         dnnl::primitive_attr bias_attr;
         bias_attr.set_output_scales(0, scales);
 
-        void* bias_buf = static_cast<void*>(
-            const_cast<Tbias*>(bias_tensor.flat<Tbias>().data()));
         input_bias_ = new memory(mkldnn_matmul_fwd_pd->bias_desc(),
                                  this->cpu_engine_, bias_buf);
         scaled_bias_ =
@@ -533,7 +544,7 @@ class MklDnnQuantizedMatMulReluOp
     MklDnnQuantizedMatMulOp<Device, quint8, qint8, Tbias, Toutput,
                             native_format>::ExtendMklDnnMatMulFwdParams(context,
                                                                         params);
-    params.post_op_params.push_back({"relu", {1.0, 0.0, 0.0}});
+    params.post_op_params.push_back({"Relu", {1.0, 0.0, 0.0}});
   }
 };
 
@@ -568,6 +579,8 @@ REGISTER_MKL_KERNEL_ALL_BIAS_TYPES("QuantizedMatMulWithBiasAndRequantize", NoOp,
                                    quint8, false);
 REGISTER_MKL_KERNEL_ALL_BIAS_TYPES("QuantizedMatMulWithBiasAndDequantize", NoOp,
                                    float, false);
+REGISTER_MKL_KERNEL_ALL_BIAS_TYPES("QuantizedMatMulWithBiasAndDequantize", NoOp,
+                                   bfloat16, false);
 #undef BIAS_TYPE_CONSTRAINT
 #undef TEMPLATE_ARGS
 #undef LABEL
@@ -591,6 +604,17 @@ REGISTER_MKL_KERNEL_ALL_BIAS_TYPES("_MklQuantizedMatMulWithBiasAndRequantize",
                                    MklDnnQuantizedMatMulOp, quint8, true);
 REGISTER_MKL_KERNEL_ALL_BIAS_TYPES("_MklQuantizedMatMulWithBiasAndDequantize",
                                    MklDnnQuantizedMatMulOp, float, true);
+REGISTER_MKL_KERNEL("_MklQuantizedMatMulWithBiasAndDequantize",
+                    MklDnnQuantizedMatMulOp, qint32, bfloat16, true);
+REGISTER_KERNEL_BUILDER(
+    Name("_MklQuantizedMatMulWithBiasAndDequantize")
+        .Device(DEVICE_CPU)
+        .TypeConstraint<quint8>("T1")
+        .TypeConstraint<qint8>("T2")
+        .TypeConstraint<bfloat16>("Tbias")
+        .TypeConstraint<bfloat16>("Toutput")
+        .Label(mkl_op_registry::kMklQuantizedOpLabel),
+    MklDnnQuantizedMatMulOp<CPUDevice, quint8, qint8, float, bfloat16, true>);
 #undef BIAS_TYPE_CONSTRAINT
 #undef TEMPLATE_ARGS
 #undef LABEL

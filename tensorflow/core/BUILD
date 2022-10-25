@@ -640,7 +640,9 @@ cc_library(
         "//tensorflow/core/kernels/mkl:mkl_dequantize_op",
         "//tensorflow/core/kernels/mkl:mkl_conv_op",
         "//tensorflow/core/kernels/mkl:mkl_cwise_ops_common",
+	"//tensorflow/core/kernels/mkl:mkl_deconv_op",
         "//tensorflow/core/kernels/mkl:mkl_fused_batch_norm_op",
+        "//tensorflow/core/kernels/mkl:mkl_fused_instance_norm_op",
         "//tensorflow/core/kernels/mkl:mkl_identity_op",
         "//tensorflow/core/kernels/mkl:mkl_input_conversion_op",
         "//tensorflow/core/kernels/mkl:mkl_layer_norm_op",
@@ -661,6 +663,7 @@ cc_library(
         "//tensorflow/core/kernels/mkl:mkl_matmul_op",
         "//tensorflow/core/kernels/mkl:mkl_tfconv_op",
         "//tensorflow/core/kernels/mkl:mkl_tmp_bf16_ops",
+	"//tensorflow/core/kernels/mkl:mkl_gru_ops",
     ]) + if_cuda_or_rocm([
         "//tensorflow/core/kernels:cudnn_rnn_kernels",
     ]) + if_cuda([
@@ -2007,8 +2010,10 @@ tf_cc_test_mkl(
         "//tensorflow/core/kernels/mkl:mkl_concat_op",
         "//tensorflow/core/kernels/mkl:mkl_conv_op",
         "//tensorflow/core/kernels/mkl:mkl_cwise_ops_common",
+	"//tensorflow/core/kernels/mkl:mkl_deconv_op",
         "//tensorflow/core/kernels/mkl:mkl_dequantize_op",
         "//tensorflow/core/kernels/mkl:mkl_fused_batch_norm_op",
+        "//tensorflow/core/kernels/mkl:mkl_fused_instance_norm_op",
         "//tensorflow/core/kernels/mkl:mkl_identity_op",
         "//tensorflow/core/kernels/mkl:mkl_input_conversion_op",
         "//tensorflow/core/kernels/mkl:mkl_lrn_op",

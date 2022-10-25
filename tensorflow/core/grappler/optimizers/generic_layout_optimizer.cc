@@ -236,22 +236,25 @@ Status EraseCancellableNodes(TransposeContext* context) {
   utils::MutableGraphView* graph_view = context->graph_view.get();
   utils::Mutation* mutation = graph_view->GetMutationBuilder();
   const int num_nodes = graph_view->NumNodes();
+  std::vector<bool> nodes_to_remove(num_nodes, false);
 
-  for (int i = original_num_nodes; i < num_nodes; ++i) {
+  for (int i = 0; i < num_nodes; ++i) {
     auto* node = graph_view->GetNode(i);
+    const auto* node_def = node->node();
     if (node->NumRegularFanins() < 1) {
       continue;
     }
     const auto& regular_fanin_0 = node->GetRegularFanin(0);
     auto* fanin_node = regular_fanin_0.node_view();
-    // TODO(lyandy): Lift restriction once original nodes in the graph can be
-    // pruned away.
-    if (fanin_node->node_index() < original_num_nodes) {
-      continue;
-    }
     if (!IsCancellableNodePair(*node, *fanin_node)) {
       continue;
     }
+
+    if (nodes_to_remove[node->node_index()] ||
+        nodes_to_remove[fanin_node->node_index()]) {
+      continue;
+    }
+
     const auto& fanin_to_forward = fanin_node->GetRegularFanin(0);
     TensorId fanin_id_to_forward(fanin_to_forward.node_view()->GetName(),
                                  fanin_to_forward.index());
@@ -261,14 +264,27 @@ Status EraseCancellableNodes(TransposeContext* context) {
                                         fanin_id_to_forward);
     }
     mutation->RemoveNode(node);
+    nodes_to_remove[node->node_index()] = true;
     if (node->NumRegularFanins() > 1) {
-      mutation->RemoveNode(node->GetRegularFanin(1).node_view());
+      const auto& regular_fanin_1 = node->GetRegularFanin(1);
+      auto* fanin_node_1 = regular_fanin_1.node_view();
+      if (fanin_node_1->node_index() > original_num_nodes &&
+          fanin_node_1->NumRegularFanouts() == 1) {
+        // Remove the input only if it is a new node and has only 1 output
+        mutation->RemoveNode(node->GetRegularFanin(1).node_view());
+        nodes_to_remove[node->GetRegularFanin(1).node_view()->node_index()] =
+            true;
+      }
     }
     mutation->RemoveNode(fanin_node);
+    nodes_to_remove[fanin_node->node_index()] = true;
     if (fanin_node->NumRegularFanins() > 1) {
       mutation->RemoveNode(fanin_node->GetRegularFanin(1).node_view());
+      nodes_to_remove
+          [fanin_node->GetRegularFanin(1).node_view()->node_index()] = true;
     }
   }
+
   return mutation->Apply();
 }
 
@@ -457,7 +473,6 @@ Status GenericLayoutOptimizer::Optimize(Cluster* cluster,
         return OkStatus();
     }
   }
-
   TransposerFactory transposer_factory;
   TF_RETURN_IF_ERROR(ExpandLayoutSensitiveOp(&context, &transposer_factory));
   if (context.graph.node_size() > context.num_nodes || is_aggressive) {

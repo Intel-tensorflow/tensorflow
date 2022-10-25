@@ -85,6 +85,31 @@ class PhiloxRandomOp : public OpKernel {
   GuardedPhiloxRandom generator_;
 };
 
+template <typename Device, class Distribution>
+class PCGRandomOp : public OpKernel {
+ public:
+  typedef typename Distribution::ResultElementType T;
+  explicit PCGRandomOp(OpKernelConstruction* ctx) : OpKernel(ctx) {
+    OP_REQUIRES_OK(ctx, generator_.Init(ctx));
+  }
+
+  void Compute(OpKernelContext* ctx) override {
+    const Tensor& shape = ctx->input(0);
+    Tensor* output;
+    OP_REQUIRES_OK(ctx, AllocateOutputWithShape(ctx, shape, 0, &output));
+    auto output_flat = output->flat<T>();
+    functor::FillPCGRandom<Device, Distribution>()(
+        ctx, ctx->eigen_device<Device>(),
+        // Multiplier 256 is the same as in FillPhiloxRandomTask; do not change
+        // it just here.
+        generator_.ReserveRandomOutputs(output_flat.size(), 256),
+        output_flat.data(), output_flat.size(), Distribution());
+  }
+
+ private:
+  GuardedPCGRandom generator_;
+};
+
 template <typename Device, class IntType>
 class RandomUniformIntOp : public OpKernel {
  public:
@@ -329,6 +354,8 @@ class RandomGammaOp : public OpKernel {
 #define REGISTER(TYPE)                                                         \
   template struct functor::FillPhiloxRandom<                                   \
       CPUDevice, random::UniformDistribution<random::PhiloxRandom, TYPE>>;     \
+  template struct functor::FillPCGRandom<                                   \
+      CPUDevice, random::UniformDistribution<random::PCGRandom, TYPE>>;     \
   template struct functor::FillPhiloxRandom<                                   \
       CPUDevice, random::NormalDistribution<random::PhiloxRandom, TYPE>>;      \
   template struct functor::FillPhiloxRandom<                                   \
@@ -340,8 +367,8 @@ class RandomGammaOp : public OpKernel {
           .Device(DEVICE_CPU)                                                  \
           .HostMemory("shape")                                                 \
           .TypeConstraint<TYPE>("dtype"),                                      \
-      PhiloxRandomOp<CPUDevice, random::UniformDistribution<                   \
-                                    random::PhiloxRandom, TYPE>>);             \
+      PCGRandomOp<CPUDevice, random::UniformDistribution<                   \
+                                    random::PCGRandom, TYPE, true>>);       \
   REGISTER_KERNEL_BUILDER(                                                     \
       Name("RandomStandardNormal")                                             \
           .Device(DEVICE_CPU)                                                  \
@@ -453,6 +480,5 @@ TF_CALL_uint64(REGISTER_FULL_INT);
 #undef REGISTER_FULL_INT
 
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-
 
 }  // end namespace tensorflow
