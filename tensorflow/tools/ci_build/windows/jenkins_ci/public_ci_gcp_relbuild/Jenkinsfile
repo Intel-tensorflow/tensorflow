@@ -4,6 +4,8 @@ static final ArrayList buildLabels = [ 'winhrel' ]
 static final String branchName = params.get('CHECKOUT_BRANCH', 'master')
 static final String python_version = params.get('PYTHON_VERSION', 'all')
 static final boolean upload_pypi = params.get('UPLOAD_PYPI', false)
+static final boolean is_replace_pypi_project_description = params.get('IS_REPLACE_PYPI_PROJECT_DESCRIPTION', false)
+static final String pypi_project_description = params.get('PYPI_PROJECT_DESCRIPTION', '')
 
 def runBuild(pyVer) {
     catchError {
@@ -31,6 +33,84 @@ def runBuild(pyVer) {
     }
 }
 
+def sanityTests(pyVer){
+    withEnv(["WORKSPACE=$WORKSPACE","PYTHON_VENV=$WORKSPACE\\venv_py${pyVer}"]){
+        echo "----- Validate sanity tests in $PYTHON_VENV-----"
+        bat '''
+            cd %WORKSPACE%
+            wget https://raw.githubusercontent.com/Intel-tensorflow/tensorflow/win_ci/tensorflow/tools/ci_build/windows/jenkins_ci/validation/sanity_tests.py -O sanity_tests.py
+
+            echo Check the python venv is exist
+            if not exist "%PYTHON_VENV%\\Scripts\\python.exe" exit /b 1
+
+            echo Install Tensorflow Wheel
+            for /f %%w in ('dir %WORKSPACE%\\artifact\\*.whl /B') do "%PYTHON_VENV%\\Scripts\\pip.exe" install --force-reinstall "%WORKSPACE%\\artifact\\%%w"
+
+            echo Run sanity test
+            "%PYTHON_VENV%\\Scripts\\python.exe" sanity_tests.py
+        '''
+        echo "----- Validate sanity tests completed -----"
+    }
+}
+
+def renameForPyPI(pyVer) {
+    catchError {
+        withEnv(["WORKSPACE=$WORKSPACE", "PYTHON_VERSION=${pyVer}"]) {
+            echo "----- Next, renaming TF Windows Wheels to PyPI under tensorflow-intel namespace -----"
+            
+            echo "----- generate run_pypi_rename.bat -----"
+            dir("$WORKSPACE" + "/artifacts_bak") {
+                sh '''#!/bin/bash -x
+                echo "echo This is run_pypi_rename.bat executing..." > ./run_pypi_rename.bat
+                echo "pip install wheel twine" >> ./run_pypi_rename.bat
+                echo "python %WORKSPACE%\\make_new_package_name.py tensorflow_cpu tensorflow_intel" >> ./run_pypi_rename.bat
+                '''
+                
+                bat'''
+                cd %WORKSPACE%\\artifacts_bak
+                if not exist "%WORKSPACE%\\venv_py%PYTHON_VERSION%\\Scripts\\activate" exit /b 1
+                %WORKSPACE%\\venv_py%PYTHON_VERSION%\\Scripts\\activate && %WORKSPACE%\\artifacts_bak\\run_pypi_rename.bat
+                echo Package rename for PyPI completed.
+                '''
+            }
+
+        }
+    }
+}
+
+
+def uploadPyPI_new(pyVer) {
+    
+    renameForPyPI(pyVer)
+    
+    catchError {
+        withEnv(["WORKSPACE=$WORKSPACE", "PYTHON_VERSION=${pyVer}"]) {
+            echo "----- Finally, uploading TF Windows Wheels to PyPI under tensorflow-intel namespace -----"
+            
+            echo "----- generate run_pypi_upload.bat -----"
+            dir("$WORKSPACE" + "/artifacts_bak") {
+                sh '''#!/bin/bash -x
+                echo "echo This is run_pypi_upload.bat executing..." > ./run_pypi_upload.bat
+                echo "twine upload tensorflow_intel*.whl --non-interactive --disable-progress-bar --skip-existing" >> ./run_pypi_upload.bat
+                '''
+            }
+
+            withCredentials([usernamePassword(credentialsId: 'PYPI_INTEL_SECRET', usernameVariable: 'TWINE_USERNAME', passwordVariable: 'TWINE_PASSWORD')]) {
+                bat'''
+                set TWINE_REPOSITORY_URL=https://upload.pypi.org/legacy/
+                cd %WORKSPACE%\\artifacts_bak
+                if not exist "%WORKSPACE%\\venv_py%PYTHON_VERSION%\\Scripts\\activate" exit /b 1
+
+                %WORKSPACE%\\venv_py%PYTHON_VERSION%\\Scripts\\activate && %WORKSPACE%\\artifacts_bak\\run_pypi_upload.bat
+                cd %WORKSPACE%
+                rmdir /s /q %WORKSPACE%\\artifacts_bak
+                echo Upload completed.
+                '''
+            }
+        }
+    }
+}
+
 def uploadPyPI(pyVer) {
     catchError {
         withEnv(["WORKSPACE=$WORKSPACE", "PYTHON_VERSION=${pyVer}"]) {
@@ -45,13 +125,13 @@ def uploadPyPI(pyVer) {
                 echo "twine upload tensorflow_intel*.whl --non-interactive --disable-progress-bar --skip-existing" >> ./run_pypi_upload.bat
                 '''
             }
-            
+
             withCredentials([usernamePassword(credentialsId: 'PYPI_INTEL_SECRET', usernameVariable: 'TWINE_USERNAME', passwordVariable: 'TWINE_PASSWORD')]) {
                 bat'''
                 set TWINE_REPOSITORY_URL=https://upload.pypi.org/legacy/
                 cd %WORKSPACE%\\artifacts_bak
                 if not exist "%WORKSPACE%\\venv_py%PYTHON_VERSION%\\Scripts\\activate" exit /b 1
-                
+
                 %WORKSPACE%\\venv_py%PYTHON_VERSION%\\Scripts\\activate && %WORKSPACE%\\artifacts_bak\\run_pypi_upload.bat
                 cd %WORKSPACE%
                 rmdir /s /q %WORKSPACE%\\artifacts_bak
@@ -60,6 +140,85 @@ def uploadPyPI(pyVer) {
             }
         }
     }
+}
+
+def toBase64(text){
+    //The built-in method encode to bas64 is disabled.
+    map = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    s64 = ""
+    require_size = 3
+    bucket = []
+    padding = "=".bytes[0]
+    text.each{c->
+        bucket.add(c)
+        
+        if(bucket.size() == require_size){
+            c0 = bucket[0].bytes[0]
+            c1 = bucket[1].bytes[0]
+            c2 = bucket[2].bytes[0]
+
+            s64 += map[(c0 & 0xfc) >> 2]
+            s64 += map[((c0 & 0x3) << 4) + ((c1 & 0xf0) >> 4)]
+            s64 += map[((c1 & 0x0f) << 2) + ((c2 & 0xc0) >> 6)]
+            s64 += map[c2 & 0x3f]
+
+            bucket = [] //clear is disabled
+        }
+    }
+
+    if(bucket.size() != 0){
+        start_size = bucket.size()
+        for(i = 0; i < bucket.size(); i ++){
+            bucket[i] = bucket[i].bytes[0]
+        }
+        while(bucket.size() < require_size){
+            bucket.add(0x0)
+        }
+        c0 = bucket[0]
+        c1 = bucket[1]
+        c2 = bucket[2]
+
+        padding_size = (24 - start_size * 8)/6 as int
+        s64 += map[(c0 & 0xfc) >> 2]
+        s64 += map[((c0 & 0x3) << 4) + ((c1 & 0xf0) >> 4)]
+        
+        if(padding_size == 1){
+            s64 += map[((c1 & 0x0f) << 2) + ((c2 & 0xc0) >> 6)]
+            s64 += "="
+        }
+        else { // padding_size == 2
+            s64 += "=="
+        }
+        bucket = []
+    }
+
+    return s64
+}
+
+def replace_pypi_project_description(description){
+    String setup_path = "$WORKSPACE\\tensorflow\\tensorflow\\tools\\pip_package\\setup.py"
+
+    base64Description = toBase64(description)
+
+    echo "-------------Start replace ${setup_path}-------------"
+    withEnv(["WORKSPACE=$WORKSPACE", "PYTHON_ENV=C:\\Python310", "SETUP_PATH=${setup_path}", "DESCRIPTION=${base64Description}"]){
+        bat'''
+        cd %WORKSPACE%
+        echo Check the %SETUP_PATH% is exist
+        if not exist "%SETUP_PATH%" exit /b 1
+        wget https://raw.githubusercontent.com/Intel-tensorflow/tensorflow/win_ci/tensorflow/tools/ci_build/windows/jenkins_ci/tools/replace_pypi_project_description.py -O replace_pypi_project_description.py
+
+        echo Check the "%PYTHON_ENV%\\python.exe" is exist
+        if not exist "%PYTHON_ENV%\\python.exe" exit /b 1
+
+        echo ---- Current content
+        cat "%SETUP_PATH%"
+       "%PYTHON_ENV%\\python.exe" ./replace_pypi_project_description.py "%SETUP_PATH%" -d %DESCRIPTION%
+        echo ---- Replaced to content
+        cat "%SETUP_PATH%"
+        '''
+    }
+    echo "-------------End replace-------------"
 }
 
 Map parallelBuild = [:]
@@ -85,6 +244,12 @@ buildLabels.each { l ->
                     if exist "%WORKSPACE%\\artifact" rmdir /s /q %WORKSPACE%\\artifact
                     if exist "%WORKSPACE%\\artifacts_bak" rmdir /s /q %WORKSPACE%\\artifacts_bak
                     '''
+                }
+
+                if(is_replace_pypi_project_description){
+                    stage('Replace project description'){
+                        replace_pypi_project_description(pypi_project_description)
+                    }
                 }
 
                 if(python_version == "all") {
