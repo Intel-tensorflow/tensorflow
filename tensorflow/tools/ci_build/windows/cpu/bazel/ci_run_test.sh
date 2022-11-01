@@ -64,6 +64,7 @@ export TF_LOCATION=%MYTFWS%
 export TMP=${TMP:-"${MYTFWS_ROOT}/tmp"}
 export TEMP="$TMP"
 export TMPDIR=${TMPDIR:-"${MYTFWS}-build"} # used internally by TF build
+export TEST_TARGET=${TEST_TARGET:-"//tensorflow/..."}
 export MSYS_LOCATION='C:/msys64'
 export GIT_LOCATION='C:/Program Files/Git'
 export JAVA_LOCATION='C:/Program Files/Eclipse Adoptium/jdk-11.0.14.101-hotspot'
@@ -180,7 +181,7 @@ bazel test \
   --test_size_filters=small,medium --jobs="${N_JOBS}" --test_timeout=300,450,1200,3600 --verbose_failures \
   --flaky_test_attempts=3 \
   ${POSITIONAL_ARGS[@]} \
-  -- //tensorflow/... -//tensorflow/java/... -//tensorflow/lite/... -//tensorflow/compiler/xla/python/tpu_driver/... -//tensorflow/compiler/... \
+  -- ${TEST_TARGET} \
   > run.log 2>&1
 
 build_ret_val=$?   # Store the ret value
