@@ -196,15 +196,17 @@ cd $MYTFWS_ROOT
 cd ${MYTFWS_ARTIFACT}
 cp "${MYTFWS}"/run.log ./test_run.log
 
-exit $build_ret_val
+fgrep "FAILED: Build did NOT complete" test_run.log > summary.log
+fgrep "Executed" test_run.log >> summary.log
 
-# ret=0
-# fgrep "FAILED: Build did NOT complete" test_run.log > summary.log
-# [ $? -eq 0 ] && ret=1
-# fgrep "Executed" test_run.log >> summary.log
-# fgrep "FAILED" test_run.log | grep "out of" | sed -e 's/[ ][ ]*.*//' -e 's/$/ FAILED/' > test_failures.log
+[ $build_ret_val -eq 0 ] && exit 0
+
+echo "FAILED TESTS:" > test_failures.log
+fgrep "FAILED" test_run.log | grep " ms)" | sed -e 's/^.*\] //' -e 's/ .*$//' | sort | uniq >> test_failures.log
+echo >> test_failures.log
+echo "SKIPPED TESTS:" >> test_failures.log
+fgrep "SKIPPED" test_run.log | grep -v "listed below:" | sed -e 's/^.*\] //' | sort | uniq >> test_failures.log
 # fgrep "TIMEOUT" test_run.log | grep "out of" | sed -e 's/[ ][ ]*.*//' -e 's/$/ TIMEOUT/' >> test_failures.log
 # count=$(wc -l < test_failures.log)
-# [ $count -gt 0 ] && ret=1
 
-# exit $ret
+exit 1
