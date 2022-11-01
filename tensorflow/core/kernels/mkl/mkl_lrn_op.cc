@@ -18,7 +18,8 @@ limitations under the License.
 // layout and primitives, use MKL dnn primitives to compute local
 // response normalization
 
-#ifdef INTEL_MKL
+#if defined(INTEL_MKL) && defined(ENABLE_MKLDNN_V2)
+#ifndef ENABLE_MKLDNN_V3
 
 #define EIGEN_USE_THREADS
 
@@ -676,4 +677,5 @@ TF_CALL_float(REGISTER_MKL_LRN_CPU);
 
 }  // namespace tensorflow
 
+#endif // !ENABLE_MKLDNN_V3
 #endif  // INTEL_MKL

@@ -15,7 +15,8 @@ limitations under the License.
 
 // See docs in ../ops/math_ops.cc.
 
-#ifdef INTEL_MKL
+#if defined(INTEL_MKL) && defined(ENABLE_MKLDNN_V2)
+#ifndef ENABLE_MKLDNN_V3
 #define EIGEN_USE_THREADS
 
 #include <numeric>
@@ -265,4 +266,5 @@ TF_CALL_float(REGISTER_MKL_CPU);
 TF_CALL_bfloat16(REGISTER_MKL_CPU);
 #undef REGISTER_MKL_CPU
 }  // namespace tensorflow
+#endif // !ENABLE_MKLDNN_V3
 #endif  // INTEL_MKL

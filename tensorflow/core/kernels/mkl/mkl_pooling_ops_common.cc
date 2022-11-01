@@ -13,7 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifdef INTEL_MKL
+#if defined(INTEL_MKL) && defined(ENABLE_MKLDNN_V2)
+#ifndef ENABLE_MKLDNN_V3
 
 #include "tensorflow/core/kernels/mkl/mkl_pooling_ops_common.h"
 
@@ -390,4 +391,5 @@ void MklPoolParameters::Init(OpKernelContext* context,
 
 }  // namespace tensorflow
 
+#endif // !ENABLE_MKLDNN_V3
 #endif  // INTEL_MKL

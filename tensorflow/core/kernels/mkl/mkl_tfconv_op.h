@@ -16,7 +16,8 @@ limitations under the License.
 #ifndef TENSORFLOW_CORE_KERNELS_MKL_MKL_TFCONV_OP_H_
 #define TENSORFLOW_CORE_KERNELS_MKL_MKL_TFCONV_OP_H_
 
-#ifdef INTEL_MKL
+#if defined(INTEL_MKL) && defined(ENABLE_MKLDNN_V2)
+#ifndef ENABLE_MKLDNN_V3
 
 #include <algorithm>
 #include <string>
@@ -155,5 +156,6 @@ TF_CALL_QUANTIZED_TYPES(REGISTER_CPU);
 #undef REGISTER_CPU
 
 }  // namespace tensorflow
+#endif // !ENABLE_MKLDNN_V3
 #endif  // INTEL_MKL
 #endif  // TENSORFLOW_CORE_KERNELS_MKL_MKL_TFCONV_OP_H_

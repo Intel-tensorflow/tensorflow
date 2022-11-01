@@ -16,7 +16,7 @@ limitations under the License.
 #ifndef TENSORFLOW_CORE_KERNELS_MKL_MKL_KERNEL_UTIL
 #define TENSORFLOW_CORE_KERNELS_MKL_MKL_KERNEL_UTIL
 
-#ifdef INTEL_MKL
+#if defined(INTEL_MKL) && defined(ENABLE_MKLDNN_V2)
 
 #include "tensorflow/core/graph/testlib.h"
 #include "tensorflow/core/public/session.h"

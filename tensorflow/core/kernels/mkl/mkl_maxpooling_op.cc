@@ -14,7 +14,8 @@ limitations under the License.
 ==============================================================================*/
 
 // See docs in ../ops/nn_ops.cc.
-#ifdef INTEL_MKL
+#if defined(INTEL_MKL) && defined(ENABLE_MKLDNN_V2)
+#ifndef ENABLE_MKLDNN_V3
 #define EIGEN_USE_THREADS
 
 #include "tensorflow/core/framework/op_kernel.h"
@@ -430,4 +431,5 @@ REGISTER_KERNEL_BUILDER(Name("_MklQuantizedMaxPool")
                         MklMaxPoolingOp<CPUDevice, qint8, true>);
 }  // namespace tensorflow
 
+#endif // !ENABLE_MKLDNN_V3
 #endif  // INTEL_MKL

@@ -15,7 +15,8 @@ limitations under the License.
 
 // See docs in ../ops/array_ops.cc.
 
-#if defined(INTEL_MKL)
+#if defined(INTEL_MKL) && defined(ENABLE_MKLDNN_V2)
+#ifndef ENABLE_MKLDNN_V3
 
 #define EIGEN_USE_THREADS
 
@@ -175,4 +176,5 @@ TF_CALL_ALL_TYPES(REGISTER)
 
 }  // namespace tensorflow
 
+#endif // !ENABLE_MKLDNN_V3
 #endif  // INTEL_MKL

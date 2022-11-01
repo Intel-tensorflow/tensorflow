@@ -11,7 +11,6 @@ be pointed to either a local folder, or downloaded from the internet.
 mkl_repository depends on the following environment variables:
   * `TF_MKL_ROOT`: The root folder where a copy of libmkl is located.
 """
-
 load(
     "//tensorflow/tsl/mkl:build_defs.bzl",
     _if_enable_mkl = "if_enable_mkl",

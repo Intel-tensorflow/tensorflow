@@ -29,6 +29,24 @@ config_setting(
 )
 
 config_setting(
+    name = "build_with_mkldnn_v3",
+    define_values = {
+        "build_with_mkl": "true",
+        "build_with_mkldnn_v3": "true",
+    },
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "build_with_mkldnn_v2",
+    define_values = {
+        "build_with_mkl": "true",
+        "build_with_mkldnn_v2": "true",
+    },
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
     name = "build_with_mkl_aarch64_openmp",
     define_values = {
         "build_with_mkl_aarch64": "true",

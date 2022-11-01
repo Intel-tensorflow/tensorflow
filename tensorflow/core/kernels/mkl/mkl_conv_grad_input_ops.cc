@@ -17,7 +17,8 @@ limitations under the License.
 // layout and primitives, use MKL dnn primitives to compute convolution backward
 // input
 
-#ifdef INTEL_MKL
+#if defined(INTEL_MKL) && defined(ENABLE_MKLDNN_V2)
+#ifndef ENABLE_MKLDNN_V3
 
 #define USE_EIGEN_TENSOR
 #define EIGEN_USE_THREADS
@@ -630,4 +631,5 @@ TF_CALL_bfloat16(REGISTER_MKL_CPU_KERNELS);
 #undef REGISTER_MKL_CPU_KERNELS
 
 }  // namespace tensorflow
+#endif // !ENABLE_MKLDNN_V3
 #endif  // INTEL_MKL

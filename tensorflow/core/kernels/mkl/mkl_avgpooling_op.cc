@@ -13,7 +13,8 @@
    limitations under the License.
    ==============================================================================*/
 
-#ifdef INTEL_MKL
+#if defined(INTEL_MKL) && defined(ENABLE_MKLDNN_V2)
+#ifndef ENABLE_MKLDNN_V3
 #define EIGEN_USE_THREADS
 
 #include "dnnl.hpp"
@@ -382,4 +383,5 @@ REGISTER_KERNEL_BUILDER(Name("_MklQuantizedAvgPool")
 
 }  // namespace tensorflow
 
+#endif // !ENABLE_MKLDNN_V3
 #endif  // INTEL_MKL

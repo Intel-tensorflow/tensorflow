@@ -102,7 +102,8 @@ def mkl_deps():
     """
     return select({
         "@org_tensorflow//tensorflow/tsl/mkl:build_with_mkl_aarch64": ["@mkl_dnn_acl_compatible//:mkl_dnn_acl"],
-        "@org_tensorflow//tensorflow/tsl:linux_x86_64": ["@mkl_dnn_v1//:mkl_dnn"],
+        "@org_tensorflow//third_party/mkl_dnn:build_with_mkldnn_v3": ["@mkl_dnn_v3//:mkl_dnn"],
+        "@org_tensorflow//third_party/mkl_dnn:build_with_mkldnn_v2": ["@mkl_dnn_v1//:mkl_dnn"],
         "@org_tensorflow//tensorflow/tsl:windows": ["@mkl_dnn_v1//:mkl_dnn"],
         "//conditions:default": [],
     })

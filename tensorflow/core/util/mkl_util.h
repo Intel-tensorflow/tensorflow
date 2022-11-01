@@ -15,7 +15,8 @@ limitations under the License.
 
 #ifndef TENSORFLOW_CORE_UTIL_MKL_UTIL_H_
 #define TENSORFLOW_CORE_UTIL_MKL_UTIL_H_
-#ifdef INTEL_MKL
+#if defined(INTEL_MKL) && defined(ENABLE_MKLDNN_V2)
+#ifndef ENABLE_MKLDNN_V3
 
 #include <list>
 #include <memory>
@@ -2194,5 +2195,6 @@ inline bool IsConv1x1StrideNot1(memory::dims filter_dims,
 #else
 #define REGISTER_TEST_ALL_TYPES(TEST) REGISTER_TEST_FLOAT32(TEST);
 
+#endif // !ENABLE_MKLDNN_V3
 #endif  // INTEL_MKL
 #endif  // TENSORFLOW_CORE_UTIL_MKL_UTIL_H_

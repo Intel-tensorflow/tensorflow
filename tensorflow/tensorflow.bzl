@@ -51,6 +51,8 @@ load(
     "if_mkldnn_aarch64_acl",
     "if_mkldnn_aarch64_acl_openmp",
     "if_mkldnn_openmp",
+    "if_mkldnn_v2",
+    "if_mkldnn_v3",
 )
 load(
     "//third_party/compute_library:build_defs.bzl",
@@ -433,6 +435,8 @@ def tf_copts(
         # optimizations for Intel builds using oneDNN if configured
         if_enable_mkl(["-DENABLE_MKL"]) +
         if_mkldnn_openmp(["-DENABLE_ONEDNN_OPENMP"]) +
+        if_mkldnn_v2(["-DENABLE_MKLDNN_V2"]) +
+        if_mkldnn_v3(["-DENABLE_MKLDNN_V3"]) +
         if_mkldnn_aarch64_acl(["-DDNNL_AARCH64_USE_ACL=1"]) +
         if_mkldnn_aarch64_acl_openmp(["-DENABLE_ONEDNN_OPENMP"]) +
         if_zendnn(["-DAMD_ZENDNN"]) +

@@ -13,7 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifdef INTEL_MKL
+#if defined(INTEL_MKL) && defined(ENABLE_MKLDNN_V2)
+#ifndef ENABLE_MKLDNN_V3
 
 // See docs in ../ops/math_ops.cc.
 
@@ -87,4 +88,5 @@ REGISTER6(MklBinaryOp, CPU, "_MklSquaredDifference",
 
 }  // end namespace tensorflow
 
+#endif // !ENABLE_MKLDNN_V3
 #endif  // INTEL_MKL

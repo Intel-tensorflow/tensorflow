@@ -21,9 +21,10 @@ limitations under the License.
 // dimensions (rank) for output tensor is DNNL_MAX_NDIMS = 12 in oneDNN.
 // If output tensor rank exceeds 12, we exit with reporting an error message.
 
-#define EIGEN_USE_THREADS
+#if defined(INTEL_MKL) && defined(ENABLE_MKLDNN_V2)
+#ifndef ENABLE_MKLDNN_V3
 
-#if defined(INTEL_MKL)
+#define EIGEN_USE_THREADS
 
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 #include "tensorflow/core/framework/register_types.h"
@@ -338,4 +339,5 @@ TF_CALL_bfloat16(REGISTER_FUSED_BATCH_MATMUL_MKL);
 #endif  // INTEL_MKL
 
 }  // end namespace tensorflow
-#endif
+#endif // !ENABLE_MKLDNN_V3
+#endif // INTEL_MKL

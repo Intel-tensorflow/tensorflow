@@ -225,6 +225,7 @@ build:monolithic --experimental_link_static_libraries_once=false  # b/229868128
 build:mkl --define=build_with_mkl=true --define=enable_mkl=true
 build:mkl --define=tensorflow_mkldnn_contraction_kernel=0
 build:mkl --define=build_with_openmp=true
+build:mkl --define=build_with_mkldnn_v2=true
 build:mkl -c opt
 
 # config to build OneDNN backend with a user specified threadpool.
@@ -232,6 +233,24 @@ build:mkl_threadpool --define=build_with_mkl=true --define=enable_mkl=true
 build:mkl_threadpool --define=tensorflow_mkldnn_contraction_kernel=0
 build:mkl_threadpool --define=build_with_mkl_opensource=true
 build:mkl_threadpool -c opt
+
+build:mkldnn_v2_eigen_tp --define=build_with_mkl=true --define=enable_mkl=true
+build:mkldnn_v2_eigen_tp --define=tensorflow_mkldnn_contraction_kernel=0
+build:mkldnn_v2_eigen_tp --define=build_with_mkldnn_v2=true
+build:mkldnn_v2_eigen_tp --define=build_with_openmp=false
+build:mkldnn_v2_eigen_tp -c opt
+
+build:mkldnn_v3_omp --define=build_with_mkl=true --define=enable_mkl=true
+build:mkldnn_v3_omp --define=tensorflow_mkldnn_contraction_kernel=0
+build:mkldnn_v3_omp --define=build_with_mkldnn_v3=true
+build:mkldnn_v3_omp --define=build_with_openmp=true
+build:mkldnn_v3_omp -c opt
+
+build:mkldnn_v3_eigen_tp --define=build_with_mkl=true --define=enable_mkl=true
+build:mkldnn_v3_eigen_tp --define=tensorflow_mkldnn_contraction_kernel=0
+build:mkldnn_v3_eigen_tp --define=build_with_mkldnn_v3=true
+build:mkldnn_v3_eigen_tp --define=build_with_openmp=false
+build:mkldnn_v3_eigen_tp -c opt
 
 # Config setting to build oneDNN with Compute Library for the Arm Architecture (ACL).
 build:mkl_aarch64 --define=build_with_mkl_aarch64=true

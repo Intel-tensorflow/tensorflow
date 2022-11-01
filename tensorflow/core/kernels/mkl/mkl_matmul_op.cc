@@ -23,7 +23,8 @@ limitations under the License.
 // and when it is undefined at build time, this file becomes an empty
 // compilation unit
 
-#if defined(INTEL_MKL)
+#if defined(INTEL_MKL) && defined(ENABLE_MKLDNN_V2)
+#ifndef ENABLE_MKLDNN_V3
 
 #include "dnnl.hpp"
 #include "tensorflow/core/framework/op.h"
@@ -204,4 +205,5 @@ class MklMatMulOp : public OpKernel {
 TF_CALL_float(REGISTER_CPU);
 TF_CALL_bfloat16(REGISTER_CPU);
 }  // namespace tensorflow
+#endif // !ENABLE_MKLDNN_V3
 #endif  // INTEL_MKL
