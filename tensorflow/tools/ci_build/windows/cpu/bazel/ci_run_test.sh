@@ -61,9 +61,9 @@ export TF_LOCATION=%MYTFWS%
 # be set by a script for the specific system. This needs to be set here by
 # sourcing a file.
 
-export TMP="${MYTFWS_ROOT}/tmp"
+export TMP=${TMP:-"${MYTFWS_ROOT}/tmp"}
 export TEMP="$TMP"
-export TMPDIR="${MYTFWS}-build" # used internally by TF build
+export TMPDIR=${TMPDIR:-"${MYTFWS}-build"} # used internally by TF build
 export MSYS_LOCATION='C:/msys64'
 export GIT_LOCATION='C:/Program Files/Git'
 export JAVA_LOCATION='C:/Program Files/Eclipse Adoptium/jdk-11.0.14.101-hotspot'
