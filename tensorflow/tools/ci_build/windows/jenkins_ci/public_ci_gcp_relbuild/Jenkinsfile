@@ -20,16 +20,34 @@ def runBuild(pyVer) {
             '''
         }
     }
-    
+
     dir("$WORKSPACE" + "/artifact") {
         archiveArtifacts artifacts: 'tensorflow_cpu*.whl, *.log', excludes: null
     }
-    
-    dir("$WORKSPACE") {
-        bat'''
-        if not exist "%WORKSPACE%\\artifacts_bak" mkdir %WORKSPACE%\\artifacts_bak
-        copy %WORKSPACE%\\artifact\\*.whl %WORKSPACE%\\artifacts_bak
-        '''
+}
+
+def renameForPyPI(pyVer) {
+    catchError {
+        withEnv(["WORKSPACE=$WORKSPACE", "PYTHON_VERSION=${pyVer}"]) {
+            echo "----- Next, renaming TF Windows Wheels to PyPI under tensorflow-intel namespace -----"
+            
+            echo "----- generate run_pypi_rename.bat -----"
+            dir("$WORKSPACE" + "/artifact") {
+                sh '''#!/bin/bash -x
+                echo "echo This is run_pypi_rename.bat executing..." > ./run_pypi_rename.bat
+                echo "pip install wheel twine" >> ./run_pypi_rename.bat
+                echo "python %WORKSPACE%\\make_new_package_name.py tensorflow_cpu tensorflow_intel" >> ./run_pypi_rename.bat
+                '''
+                
+                bat'''
+                cd %WORKSPACE%\\artifact
+                if not exist "%WORKSPACE%\\venv_py%PYTHON_VERSION%\\Scripts\\activate" exit /b 1
+                %WORKSPACE%\\venv_py%PYTHON_VERSION%\\Scripts\\activate && %WORKSPACE%\\artifact\\run_pypi_rename.bat
+                echo Package rename for PyPI completed.
+                '''
+            }
+
+        }
     }
 }
 
@@ -53,62 +71,22 @@ def sanityTests(pyVer){
     }
 }
 
-def renameForPyPI(pyVer) {
-    catchError {
-        withEnv(["WORKSPACE=$WORKSPACE", "PYTHON_VERSION=${pyVer}"]) {
-            echo "----- Next, renaming TF Windows Wheels to PyPI under tensorflow-intel namespace -----"
-            
-            echo "----- generate run_pypi_rename.bat -----"
-            dir("$WORKSPACE" + "/artifacts_bak") {
-                sh '''#!/bin/bash -x
-                echo "echo This is run_pypi_rename.bat executing..." > ./run_pypi_rename.bat
-                echo "pip install wheel twine" >> ./run_pypi_rename.bat
-                echo "python %WORKSPACE%\\make_new_package_name.py tensorflow_cpu tensorflow_intel" >> ./run_pypi_rename.bat
-                '''
-                
-                bat'''
-                cd %WORKSPACE%\\artifacts_bak
-                if not exist "%WORKSPACE%\\venv_py%PYTHON_VERSION%\\Scripts\\activate" exit /b 1
-                %WORKSPACE%\\venv_py%PYTHON_VERSION%\\Scripts\\activate && %WORKSPACE%\\artifacts_bak\\run_pypi_rename.bat
-                echo Package rename for PyPI completed.
-                '''
-            }
-
+def copyWheelToUploadArtifactsBak(){
+    withEnv(["WORKSPACE=$WORKSPACE"]) {
+        dir("$WORKSPACE") {
+            bat'''
+            if not exist "%WORKSPACE%\\artifacts_bak" mkdir %WORKSPACE%\\artifacts_bak
+            copy %WORKSPACE%\\artifact\\*.whl %WORKSPACE%\\artifacts_bak
+            '''
         }
     }
 }
 
-
-def uploadPyPI_new(pyVer) {
-    
+def buildWheel(pyVer){
+    runBuild(pyVer)
     renameForPyPI(pyVer)
-    
-    catchError {
-        withEnv(["WORKSPACE=$WORKSPACE", "PYTHON_VERSION=${pyVer}"]) {
-            echo "----- Finally, uploading TF Windows Wheels to PyPI under tensorflow-intel namespace -----"
-            
-            echo "----- generate run_pypi_upload.bat -----"
-            dir("$WORKSPACE" + "/artifacts_bak") {
-                sh '''#!/bin/bash -x
-                echo "echo This is run_pypi_upload.bat executing..." > ./run_pypi_upload.bat
-                echo "twine upload tensorflow_intel*.whl --non-interactive --disable-progress-bar --skip-existing" >> ./run_pypi_upload.bat
-                '''
-            }
-
-            withCredentials([usernamePassword(credentialsId: 'PYPI_INTEL_SECRET', usernameVariable: 'TWINE_USERNAME', passwordVariable: 'TWINE_PASSWORD')]) {
-                bat'''
-                set TWINE_REPOSITORY_URL=https://upload.pypi.org/legacy/
-                cd %WORKSPACE%\\artifacts_bak
-                if not exist "%WORKSPACE%\\venv_py%PYTHON_VERSION%\\Scripts\\activate" exit /b 1
-
-                %WORKSPACE%\\venv_py%PYTHON_VERSION%\\Scripts\\activate && %WORKSPACE%\\artifacts_bak\\run_pypi_upload.bat
-                cd %WORKSPACE%
-                rmdir /s /q %WORKSPACE%\\artifacts_bak
-                echo Upload completed.
-                '''
-            }
-        }
-    }
+    sanityTests(pyVer)
+    copyWheelToUploadArtifactsBak()
 }
 
 def uploadPyPI(pyVer) {
@@ -121,7 +99,6 @@ def uploadPyPI(pyVer) {
                 sh '''#!/bin/bash -x
                 echo "echo This is run_pypi_upload.bat executing..." > ./run_pypi_upload.bat
                 echo "pip install wheel twine" >> ./run_pypi_upload.bat
-                echo "python %WORKSPACE%\\make_new_package_name.py tensorflow_cpu tensorflow_intel" >> ./run_pypi_upload.bat
                 echo "twine upload tensorflow_intel*.whl --non-interactive --disable-progress-bar --skip-existing" >> ./run_pypi_upload.bat
                 '''
             }
@@ -255,38 +232,34 @@ buildLabels.each { l ->
                 if(python_version == "all") {
                     // Build TensorFlow, create wheel with python3.7
                     stage('Build1') {
-                        runBuild("37")
+                        buildWheel("37")
                     } // stage Build1
                     
                     // Build TensorFlow, create wheel with python3.8
                     stage('Build2') {
-                        runBuild("38")
+                        buildWheel("38")
                     } // stage Build2
                     
                     // Build TensorFlow, create wheel with python3.9
                     stage('Build3') {
-                        runBuild("39")
+                        buildWheel("39")
                     } // stage Build3
                     
                     // Build TensorFlow, create wheel with python3.10
                     stage('Build4') {
-                        runBuild("310")
+                        buildWheel("310")
                     } // stage Build4
                 } else {
                     // Build TensorFlow, create wheel with Py version passed as parameter
                     stage('BuildX') {
-                        runBuild(python_version)
+                        buildWheel(python_version)
                     } // stage Build1
                 }
-                
+
                 if(upload_pypi) {
                     stage('Upload_PyPI') {
                         // Now upload the wheels to PyPI under tf_nightly_intel namespace
-                        if(python_version == "all") {
-                            uploadPyPI("310")
-                        } else {
-                            uploadPyPI(python_version)
-                        }
+                        uploadPyPI("310")
                     }
                 }
             }
