@@ -1,5 +1,3 @@
-// The tf-rel-win pipeline
-
 static final ArrayList buildLabels = [ 'winhrel' ]
 static final String branchName = params.get('CHECKOUT_BRANCH', 'master')
 static final String python_version = params.get('PYTHON_VERSION', 'all')
@@ -8,66 +6,39 @@ static final boolean is_replace_pypi_project_description = params.get('IS_REPLAC
 static final String pypi_project_description = params.get('PYPI_PROJECT_DESCRIPTION', '')
 
 def runBuild(pyVer) {
-    catchError {
-        withEnv(["WORKSPACE=$WORKSPACE","PYTHON_VERSION=${pyVer}","RELEASE_BUILD=1"]) {
-            echo "----- Build TF Windows Wheels with Python Version ${pyVer} -----"
-            bat'''
-                echo Workspace is %WORKSPACE%
-                cd %WORKSPACE%
-                wget https://raw.githubusercontent.com/Intel-tensorflow/tensorflow/bani/win_ci_scripts/tensorflow/tools/ci_build/windows/cpu/pip/ci_run_build_test.sh -O ci_run_build_test.sh
-                wget https://raw.githubusercontent.com/Intel-tensorflow/tensorflow/bani/win_ci_scripts/tensorflow/tools/ci_build/windows/cpu/pip/make_new_package_name.py -O make_new_package_name.py
-                bash ./ci_run_build_test.sh --release_build --extra_test_flags "--test_env=TF2_BEHAVIOR=1" --project_name "tensorflow_cpu"
-            '''
-        }
+    withEnv(["WORKSPACE=$WORKSPACE","PYTHON_VERSION=${pyVer}","RELEASE_BUILD=1"]) {
+        echo "----- Build TF Windows Wheels with Python Version ${pyVer} -----"
+        bat'''
+            echo Workspace is %WORKSPACE%
+            cd %WORKSPACE%
+            wget https://raw.githubusercontent.com/Intel-tensorflow/tensorflow/bani/win_ci_scripts/tensorflow/tools/ci_build/windows/cpu/pip/ci_run_build_test.sh -O ci_run_build_test.sh
+            wget https://raw.githubusercontent.com/Intel-tensorflow/tensorflow/bani/win_ci_scripts/tensorflow/tools/ci_build/windows/cpu/pip/make_new_package_name.py -O make_new_package_name.py
+            bash ./ci_run_build_test.sh --release_build --extra_test_flags "--test_env=TF2_BEHAVIOR=1" --project_name "tensorflow_intel"
+        '''
     }
 
     dir("$WORKSPACE" + "/artifact") {
-        archiveArtifacts artifacts: 'tensorflow_cpu*.whl, *.log', excludes: null
-    }
-}
-
-def renameForPyPI(pyVer) {
-    catchError {
-        withEnv(["WORKSPACE=$WORKSPACE", "PYTHON_VERSION=${pyVer}"]) {
-            echo "----- Next, renaming TF Windows Wheels to PyPI under tensorflow-intel namespace -----"
-            
-            echo "----- generate run_pypi_rename.bat -----"
-            dir("$WORKSPACE" + "/artifact") {
-                sh '''#!/bin/bash -x
-                echo "echo This is run_pypi_rename.bat executing..." > ./run_pypi_rename.bat
-                echo "pip install wheel twine" >> ./run_pypi_rename.bat
-                echo "python %WORKSPACE%\\make_new_package_name.py tensorflow_cpu tensorflow_intel" >> ./run_pypi_rename.bat
-                '''
-                
-                bat'''
-                cd %WORKSPACE%\\artifact
-                if not exist "%WORKSPACE%\\venv_py%PYTHON_VERSION%\\Scripts\\activate" exit /b 1
-                %WORKSPACE%\\venv_py%PYTHON_VERSION%\\Scripts\\activate && %WORKSPACE%\\artifact\\run_pypi_rename.bat
-                echo Package rename for PyPI completed.
-                '''
-            }
-
-        }
+        archiveArtifacts artifacts: 'tensorflow_intel*.whl, *.log', excludes: null
     }
 }
 
 def sanityTests(pyVer){
     withEnv(["WORKSPACE=$WORKSPACE","PYTHON_VENV=$WORKSPACE\\venv_py${pyVer}"]){
-        echo "----- Validate sanity tests in $PYTHON_VENV-----"
+        echo "----- Validate sanity tests in $PYTHON_VENV -----"
         bat '''
-            cd %WORKSPACE%
-            wget https://raw.githubusercontent.com/Intel-tensorflow/tensorflow/win_ci/tensorflow/tools/ci_build/windows/jenkins_ci/validation/sanity_tests.py -O sanity_tests.py
+        cd %WORKSPACE%
+        wget https://raw.githubusercontent.com/Intel-tensorflow/tensorflow/win_ci/tensorflow/tools/ci_build/windows/jenkins_ci/validation/sanity_tests.py -O sanity_tests.py
+        
+        echo Checking if python venv exists
+        if not exist "%PYTHON_VENV%\\Scripts\\python.exe" exit /b 1
+        
+        echo Installing Tensorflow Wheel
+        for /f %%w in ('dir %WORKSPACE%\\artifact\\tensorflow_intel*.whl /B') do "%PYTHON_VENV%\\Scripts\\pip.exe" install --force-reinstall "%WORKSPACE%\\artifact\\%%w"
 
-            echo Check the python venv is exist
-            if not exist "%PYTHON_VENV%\\Scripts\\python.exe" exit /b 1
-
-            echo Install Tensorflow Wheel
-            for /f %%w in ('dir %WORKSPACE%\\artifact\\*.whl /B') do "%PYTHON_VENV%\\Scripts\\pip.exe" install --force-reinstall "%WORKSPACE%\\artifact\\%%w"
-
-            echo Run sanity test
-            "%PYTHON_VENV%\\Scripts\\python.exe" sanity_tests.py
+        echo Running sanity tests
+        "%PYTHON_VENV%\\Scripts\\python.exe" sanity_tests.py
         '''
-        echo "----- Validate sanity tests completed -----"
+        echo "----- Validate sanity tests completed in $PYTHON_VENV -----"
     }
 }
 
@@ -83,10 +54,11 @@ def copyWheelToUploadArtifactsBak(){
 }
 
 def buildWheel(pyVer){
-    runBuild(pyVer)
-    renameForPyPI(pyVer)
-    sanityTests(pyVer)
-    copyWheelToUploadArtifactsBak()
+    catchError{
+        runBuild(pyVer)
+        sanityTests(pyVer)
+        copyWheelToUploadArtifactsBak()
+    }
 }
 
 def uploadPyPI(pyVer) {
@@ -189,10 +161,9 @@ def replace_pypi_project_description(description){
         if not exist "%PYTHON_ENV%\\python.exe" exit /b 1
 
         echo ---- Current content
-        cat "%SETUP_PATH%"
-       "%PYTHON_ENV%\\python.exe" ./replace_pypi_project_description.py "%SETUP_PATH%" -d %DESCRIPTION%
-        echo ---- Replaced to content
-        cat "%SETUP_PATH%"
+        echo "%SETUP_PATH%"
+        "%PYTHON_ENV%\\python.exe" ./replace_pypi_project_description.py "%SETUP_PATH%" -d %DESCRIPTION%
+        echo ---- Replaced setup.py content
         '''
     }
     echo "-------------End replace-------------"
@@ -229,32 +200,10 @@ buildLabels.each { l ->
                     }
                 }
 
-                if(python_version == "all") {
-                    // Build TensorFlow, create wheel with python3.7
-                    stage('Build1') {
-                        buildWheel("37")
-                    } // stage Build1
-                    
-                    // Build TensorFlow, create wheel with python3.8
-                    stage('Build2') {
-                        buildWheel("38")
-                    } // stage Build2
-                    
-                    // Build TensorFlow, create wheel with python3.9
-                    stage('Build3') {
-                        buildWheel("39")
-                    } // stage Build3
-                    
-                    // Build TensorFlow, create wheel with python3.10
-                    stage('Build4') {
-                        buildWheel("310")
-                    } // stage Build4
-                } else {
-                    // Build TensorFlow, create wheel with Py version passed as parameter
-                    stage('BuildX') {
-                        buildWheel(python_version)
-                    } // stage Build1
-                }
+                // Build TensorFlow, create wheel with Py version passed as parameter
+                stage('BuildX') {
+                    buildWheel(python_version)
+                }// stage BuildX
 
                 if(upload_pypi) {
                     stage('Upload_PyPI') {
