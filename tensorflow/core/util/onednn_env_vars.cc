@@ -18,8 +18,8 @@ limitations under the License.
 #include "tensorflow/core/util/onednn_env_vars.h"
 
 #include "absl/base/call_once.h"
-#include "tensorflow/core/util/env_var.h"
 #include "tensorflow/core/platform/env.h"
+#include "tensorflow/core/util/env_var.h"
 
 namespace tensorflow {
 
@@ -57,10 +57,10 @@ oneDNNMathModeSetting SetFPMathMode() {
   static absl::once_flag once;
   absl::call_once(once, [&] {
     TF_CHECK_OK(ReadStringFromEnvVar("TF_SET_ONEDNN_FPMATH_MODE",
-                                   /*default_value*/ "", &math_mode_setting));
+                                     /*default_value*/ "", &math_mode_setting));
     if (math_mode_setting == "BF16") {
-       setenv("ONEDNN_DEFAULT_FPMATH_MODE", "BF16", 1);
-       math_mode = oneDNNMathModeSetting::BF16;
+      setenv("ONEDNN_DEFAULT_FPMATH_MODE", "BF16", 1);
+      math_mode = oneDNNMathModeSetting::BF16;
     }
   });
   return math_mode;
@@ -71,9 +71,20 @@ bool ThreadPoolUseCallerThread() {
   static absl::once_flag once;
   absl::call_once(once, [&] {
     TF_CHECK_OK(ReadBoolFromEnvVar("TF_ONEDNN_THREADPOOL_USE_CALLER_THREAD",
-                                   /*default_value*/ false, &threadpool_use_caller_thread));
+                                   /*default_value*/ false,
+                                   &threadpool_use_caller_thread));
   });
   return threadpool_use_caller_thread;
+}
+
+bool EnableWeightCompression() {
+  static bool compress_weight = false;
+  static absl::once_flag once;
+  absl::call_once(once, [&] {
+    TF_CHECK_OK(ReadBoolFromEnvVar("TF_ONEDNN_ENABLE_WEIGHT_COMPRESSION",
+                                   /*default_value*/ false, &compress_weight));
+  });
+  return compress_weight;
 }
 
 }  // namespace tensorflow

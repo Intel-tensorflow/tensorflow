@@ -18,6 +18,7 @@ limitations under the License.
 // This file uses oneDNN InnerProduct for acceleration of TF Matrix-Matrix
 // Multiplication (MatMul) with bias (BiasAdd) operations.
 #ifdef INTEL_MKL
+#define EIGEN_USE_THREADS
 
 #include <type_traits>
 
@@ -64,7 +65,7 @@ class MklFusedMatMulOp : public MklDnnMatMulOpBase<T2, Tbias, Toutput> {
     if (fused_ops_.size() == 2 && fused_ops_[1] == "LeakyRelu") {
       OP_REQUIRES_OK(ctx, ctx->GetAttr("leakyrelu_alpha", &leakyrelu_alpha_));
     }
-    if (std::is_same<T1, float>::value && std::is_same<Toutput, float>::value){
+    if (std::is_same<T1, float>::value && std::is_same<Toutput, float>::value) {
       (void)SetFPMathMode();
     }
   }
@@ -141,6 +142,35 @@ class MklFusedMatMulOp : public MklDnnMatMulOpBase<T2, Tbias, Toutput> {
         src_dims, weight_dims, bias_dims, dst_dims, src_format,
         memory::format_tag::any, memory::format_tag::nc,
         this->is_weight_const_);
+
+    // Enable weight compression. Currently, weight can be compressed if it is
+    // (i) constant, (ii) quantized, (iii) row and column are at least 64, and
+    // (iv) total size of number of non-zeros and bitmask is less than the size
+    // of original weights.
+    if constexpr (std::is_same<T2, qint8>::value) {
+      bool compress_weight =
+          EnableWeightCompression() && this->is_weight_const_;
+      if (compress_weight) matmul_params.nnz_weights = this->nnz_weights_;
+      if (compress_weight && this->nnz_weights_ == -1) {
+        uint64_t nnz;
+        auto weight_flat = weight_tensor.flat<T2>();
+        TTypes<uint64_t>::UnalignedScalar nnz_tensor(&nnz);
+        nnz_tensor.device(ctx->eigen_device<Device>()) =
+            (weight_flat != static_cast<T2>(0)).template cast<uint64_t>().sum();
+        uint64_t total_num_elements = weight_tensor.NumElements();
+        uint64_t bitmask_size = total_num_elements / 8;  // size in bytes.
+        uint64_t compressed_size = nnz * sizeof(T2) + bitmask_size;
+        compress_weight = nnz > 0 && compressed_size < weight_tensor.TotalBytes() &&
+                          weight_dims[0] >= 64 && weight_dims[1] >= 64;
+        if (compress_weight) {
+          matmul_params.nnz_weights = nnz;
+          this->nnz_weights_ = nnz;
+        } else {
+          matmul_params.nnz_weights = 0;
+          this->nnz_weights_ = 0;  // Stop next iteration from computing nonzeros.
+        }
+      }
+    }
     // Extend the basic parameters for data types and fusions.
     ExtendMklDnnMatMulFwdParams(ctx, matmul_params);
 #ifdef DNNL_AARCH64_USE_ACL
@@ -353,6 +383,9 @@ class MklFusedMatMulOp : public MklDnnMatMulOpBase<T2, Tbias, Toutput> {
   std::vector<string> fused_ops_;
   int input_idx_add_ = 3;
   const int kOutputIndex_Dst = 0;
+  int64_t nnz_weights_ = -1;  //  -1  : compressibilty has not been checked.
+                              //  0   : compressiblity checked but unsuccessful.
+                              //  >0  : compressibilty checked and successful.
 #ifdef DNNL_AARCH64_USE_ACL
   const int kWeightTensorHashLength = 1024;
 #endif

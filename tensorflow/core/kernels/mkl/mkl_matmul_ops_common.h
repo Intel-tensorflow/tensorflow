@@ -76,6 +76,7 @@ struct MklDnnMatMulFwdParams {
     string partial_key = string("");
   };
   std::vector<PostOpParam> post_op_params;
+  int64_t nnz_weights = -1;
 
   MklDnnMatMulFwdParams(
       memory::dims src_dims, memory::dims weight_dims, memory::dims bias_dims,
@@ -214,9 +215,21 @@ class MklDnnMatMulFwdPrimitive : public MklPrimitive {
                                            MklDnnType<Tinput>(),
                                            matmul_fwd_params.src_format));
 
-    context_.weight_md.reset(new memory::desc({matmul_fwd_params.weight_dims},
-                                              MklDnnType<Tweight>(),
-                                              matmul_fwd_params.weight_format));
+    // If weight compression is enabled then weight memory descriptor should be
+    // packed.
+    // TODO(intel-tf): Relax condition when weight compression is generalized.
+    if (std::is_same<Tweight, qint8>::value && EnableWeightCompression() &&
+        matmul_fwd_params.nnz_weights > 0) {
+      int nnz = matmul_fwd_params.nnz_weights;
+      context_.weight_md.reset(new memory::desc({matmul_fwd_params.weight_dims},
+                                                MklDnnType<Tweight>(),
+                                                memory::desc::packed(nnz)));
+
+    } else {
+      context_.weight_md.reset(new memory::desc(
+          {matmul_fwd_params.weight_dims}, MklDnnType<Tweight>(),
+          matmul_fwd_params.weight_format));
+    }
 
     context_.dst_md.reset(new memory::desc({matmul_fwd_params.dst_dims},
                                            MklDnnType<Toutput>(),
@@ -416,6 +429,9 @@ class MklDnnMatMulFwdPrimitiveFactory : public MklPrimitiveFactory<T> {
     key_creator.AddAsKey(mkldnn_matmul_fwd_dims.dst_dims);
     key_creator.AddAsKey(mkldnn_matmul_fwd_dims.dtypes);
     key_creator.AddAsKey(mkldnn_matmul_fwd_dims.weight_format);
+    if (EnableWeightCompression()) {
+      key_creator.AddAsKey(mkldnn_matmul_fwd_dims.nnz_weights);
+    }
 #ifdef DNNL_AARCH64_USE_ACL
     key_creator.AddAsKey(mkldnn_matmul_fwd_dims.weight_hash);
 #endif
