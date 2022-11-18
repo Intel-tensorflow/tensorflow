@@ -178,7 +178,7 @@ bazel --windows_enable_symlinks test \
   --config=opt \
   -k --keep_going --test_output=errors \
   --test_tag_filters=-no_windows,-no_oss,-gpu,-tpu,-v1only \
-  --test_size_filters=small,medium --jobs=1 --test_timeout=300,450,1200,3600 --verbose_failures \
+  --test_size_filters=small,medium --jobs=16 --test_timeout=300,450,1200,3600 --verbose_failures \
   --flaky_test_attempts=3 \
   ${POSITIONAL_ARGS[@]} \
   -- ${TEST_TARGET} \
