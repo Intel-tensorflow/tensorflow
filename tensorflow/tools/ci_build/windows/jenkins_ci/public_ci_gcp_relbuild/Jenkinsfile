@@ -186,12 +186,14 @@ buildLabels.each { l ->
                     submoduleCfg: [],
                     userRemoteConfigs: [[url: 'https://github.com/tensorflow/tensorflow']]])
                 } // stage Checkout
-                
-                dir("$WORKSPACE") {
-                    bat'''
-                    if exist "%WORKSPACE%\\artifact" rmdir /s /q %WORKSPACE%\\artifact
-                    if exist "%WORKSPACE%\\artifacts_bak" rmdir /s /q %WORKSPACE%\\artifacts_bak
-                    '''
+
+                stage('Prepare'){
+                    dir("$WORKSPACE") {
+                        bat'''
+                        if exist "%WORKSPACE%\\artifact" rmdir /s /q %WORKSPACE%\\artifact
+                        if exist "%WORKSPACE%\\artifacts_bak" rmdir /s /q %WORKSPACE%\\artifacts_bak
+                        '''
+                    }
                 }
 
                 if(is_replace_pypi_project_description){
@@ -205,10 +207,10 @@ buildLabels.each { l ->
                     buildWheel(python_version)
                 }// stage BuildX
 
-                if(upload_pypi) {
+                if(upload_pypi && currentBuild.currentResult != "FAILURE") {
                     stage('Upload_PyPI') {
                         // Now upload the wheels to PyPI under tf_nightly_intel namespace
-                        uploadPyPI("310")
+                        uploadPyPI(python_version)
                     }
                 }
             }
