@@ -1,0 +1,126 @@
+static final ArrayList buildLabels = [ 'winh' ]
+static String timeout_hours = params.get('TIMEOUT_HOURS', '10')
+static final String branchName = params.get('CHECKOUT_BRANCH', 'master')
+static final String python_version = params.get('PYTHON_VERSION', '310')
+static final String goodCommitID = params.get('GOOD_COMMIT_ID', '')
+static final String badCommitID = params.get('BAD_COMMIT_ID', '')
+static final String commands = params.get('COMMANDS', 'bash ./ci_run_build_test.sh')
+static final String jobUrl = params.get('JOB_URL', '')
+static final String filters = params.get('FILTERS', 'Build did NOT complete successfully')
+static final boolean isCleanCache = params.get('IS_CLEAN_CACHE')
+static final boolean isOneLine = params.get('IS_ONE_LINE')
+
+String strTFGithubLabel = "Intel community CI build - Windows CPU"
+String strCommitID = ""
+
+def buildGitBisectCommand(script, repo, branch, commands, isOneLine, isCleanCache, pythonVersion, workspace, good="", bad="", jobUrl = "", filters = ""){
+    args = []
+    workspace && pythonVersion && repo && args.add(""""${workspace}\\venv_py${pythonVersion}\\scripts\\python.exe" "${script}" "$repo" """)
+    branch && args.add(" --branch $branch")
+    good && bad && args.add(" -g $good -b $bad")
+    isCleanCache && args.add(' --cmds "bazel clean --expunge"')
+    commands && commands.split("\n").each{cmd->
+        args.add(" --cmds \"$cmd\"")
+    }
+    jobUrl && args.add(" -j $jobUrl")
+    filters && filters.split("\n").each{filter->
+        args.add(" -f \"$filter\"")
+    }
+    isOneLine && args.add(" -o")
+
+    gitBisectCommand = String.join(" ", args)
+    println "Builded bisect command : $gitBisectCommand"
+    return gitBisectCommand
+}
+
+Map parallelBuild = [:]
+buildLabels.each { l ->
+    parallelBuild += [
+        "${l}": {
+            node(l) {
+                timeout(unit: 'HOURS', time: timeout_hours) {
+                    stage('Checkout') {
+                        if (fileExists('./tensorflow/.git/HEAD')) {
+                            sh 'cd tensorflow && git checkout .'
+                        }
+                        checkout([$class: 'GitSCM',
+                        branches: [[name: branchName]],
+                        doGenerateSubmoduleConfigurations: false,
+                        extensions: [[$class           : 'RelativeTargetDirectory',
+                                    relativeTargetDir: 'tensorflow']],
+                        submoduleCfg: [],
+                        userRemoteConfigs: [[url: 'https://github.com/tensorflow/tensorflow']]])
+                        
+                        dir("tensorflow") {
+                            strCommitID = sh(returnStdout: true, script: 'git rev-parse HEAD').trim()
+                        }
+                        echo "strCommitID=" + strCommitID
+                    } // stage Checkout
+
+                    stage('Prepare'){
+                        withEnv(["WORKSPACE=$WORKSPACE","PYTHON_VENV=$WORKSPACE\\venv_py${python_version}", "NATIVE_PYTHON_EXE=C:\\Python${python_version}\\python.exe"]) {
+
+                            echo "----- Get bisect helper script -----"
+                            bat'''
+                                echo Workspace is %WORKSPACE%
+                                cd %WORKSPACE%
+                                wget https://raw.githubusercontent.com/Intel-tensorflow/tensorflow/win_ci/tensorflow/tools/ci_build/windows/jenkins_ci/tools/find_first_invalid_commit.py -O find_first_invalid_commit.py
+
+                                wget https://raw.githubusercontent.com/Intel-tensorflow/tensorflow/bani/win_ci_scripts/tensorflow/tools/ci_build/windows/cpu/pip/ci_run_build_test.sh -O ci_run_build_test.sh
+
+                                %NATIVE_PYTHON_EXE% -m venv %PYTHON_VENV%
+                                "%PYTHON_VENV%\\Scripts\\pip.exe" install ujenkins
+                            '''
+                        }
+                    }
+
+                    stage('Bisect search'){
+                        String repoPath = "${env.WORKSPACE}\\tensorflow"
+                        String scriptPath = "${env.WORKSPACE}\\find_first_invalid_commit.py"
+                        withEnv(["WORKSPACE=$WORKSPACE",
+                                "BAZEL_PATH=c:\\Tools\\bazel",
+                                """GIT_BISECT_COMMAND=${buildGitBisectCommand(
+                                    scriptPath,
+                                    repoPath,
+                                    branchName,
+                                    commands,
+                                    isOneLine,
+                                    isCleanCache,
+                                    python_version,
+                                    env.WORKSPACE,
+                                    goodCommitID,
+                                    badCommitID,
+                                    jobUrl,
+                                    filters)}"""]) {
+
+                            echo "----- Get bisect helper script -----"
+                            bat'''
+                                echo Workspace is %WORKSPACE%
+                                cd %WORKSPACE%
+                                set PATH=%BAZEL_PATH%;%PATH%
+                                echo Start git bisect search with command
+                                echo ------------------------------------
+                                %GIT_BISECT_COMMAND% 2>&1 |tee suspicious_commit.txt
+                                echo ------------------------------------
+                            '''
+                        }
+                    }
+
+                    stage('Complete') {
+                        if (currentBuild.result == "FAILURE") {
+                            echo "Failed to search the commit!"
+                        }
+                        else{
+                            echo 'Search completed!'
+                            dir("$WORKSPACE") {
+                                archiveArtifacts artifacts: ' *.txt', excludes: null
+                            }
+                        }
+                    } // stage Archive
+                } // timeout
+            } //node
+        }
+    ] // parallel
+}
+
+parallel parallelBuild
