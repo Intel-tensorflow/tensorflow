@@ -74,6 +74,7 @@ echo ""
 #Bazel test command with two option eigencuda or dnllcuda
 pwd
 ls -ld /workspace
+mkdir /workspace/gpu-test
 sudo chmod -R 777 .
 bazel --output_user_root="/workspace/gpu-test" test \
     --test_tag_filters=gpu,-no_gpu,-benchmark-test,-no_gpu_presubmit,-no_cuda11,-v1only,-no_oss,-oss_serial \
