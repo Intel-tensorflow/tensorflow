@@ -73,7 +73,8 @@ echo "Bazel will test with CONFIG=${CONFIG}, ENABLE_ONEDNN=${ENABLE_ONEDNN}"
 echo ""
 #Bazel test command with two option eigencuda or dnllcuda
 pwd
-sudo chmod -R 777 /root/.cache/bazel/_bazel_root
+ls -ld /workspace
+sudo chmod -R 777 .
 bazel --output_user_root="/workspace/gpu-test" test \
     --test_tag_filters=gpu,-no_gpu,-benchmark-test,-no_gpu_presubmit,-no_cuda11,-v1only,-no_oss,-oss_serial \
     --build_tag_filters=gpu,-no_gpu,-benchark-test,-no_oss,-oss_serial,-no_gpu_presubmit,-no_cuda11,-v1only \
