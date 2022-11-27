@@ -136,7 +136,7 @@ cd $MYTFWS
 bash "${MYTFWS}"/tensorflow/tools/ci_build/windows/cpu/pip/build_tf_windows.sh \
    --extra_build_flags "--action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XBF_ARGS}" \
    --extra_test_flags "--action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XTF_ARGS}" \
-   ${POSITIONAL_ARGS[@]}  > run.log 2>&1
+   ${POSITIONAL_ARGS[@]},--jobs=24  > run.log 2>&1
 
 build_ret_val=$?   # Store the ret value
 
