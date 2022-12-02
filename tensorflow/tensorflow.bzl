@@ -2781,7 +2781,7 @@ def pybind_extension_opensource(
         features = [],
         link_in_framework = False,
         licenses = None,
-        linkopts = [],
+        linkopts = if_windows(["/FORCE"],[]),
         pytype_deps = [],
         pytype_srcs = [],
         restricted_to = None,
