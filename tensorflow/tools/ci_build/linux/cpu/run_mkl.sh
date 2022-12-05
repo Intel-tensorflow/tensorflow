@@ -24,6 +24,9 @@
 set -e
 set -x
 
+pip3 install keras
+pip3 install tensorflow-estimator
+
 #using default targets from tensorflow project
 source "./tensorflow/tools/ci_build/build_scripts/DEFAULT_TEST_TARGETS.sh"
 if [[ -z "$DEFAULT_BAZEL_TARGETS" ]]; then
@@ -89,7 +92,7 @@ echo ""
 # execution in an MKL primitive. This reduces the effects of an oversubscription
 # of OpenMP threads caused by executing multiple tests concurrently.
 bazel test \
-    --test_tag_filters=-no_oss,-oss_serial,-gpu,-tpu,-benchmark-test,-v1only \
+    --test_tag_filters=-no_oss,-no_oss_py2,-oss_serial,-gpu,-tpu,-benchmark-test,-v1only \
     --test_lang_filters=cc,py \
     -k \
     --jobs=${N_JOBS} \
@@ -102,8 +105,4 @@ bazel test \
     ${BLOCK_FORMAT} \
     --config=opt \
     --test_output=errors \
-    -- \
-    //tensorflow/... \
-    -//tensorflow/compiler/... \
-    -//tensorflow/lite/... \
-    -//tensorflow/core/tpu/...
+    -- ${DEFAULT_BAZEL_TARGETS}

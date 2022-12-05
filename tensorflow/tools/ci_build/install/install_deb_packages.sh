@@ -27,13 +27,7 @@ if [[ "$1" != "" ]] && [[ "$1" != "--without_cmake" ]]; then
   exit 1
 fi
 
-if [[ "$ubuntu_version" == "18" ]]; then
-  apt-get update
-  apt-get install -y gnupg2
-fi
-
 # Install dependencies from ubuntu deb repository.
-apt-key adv --keyserver keyserver.ubuntu.com --recv 084ECFC5828AB726
 apt-get update
 
 if [[ "$ubuntu_version" == "14" ]]; then
@@ -60,7 +54,7 @@ apt-get install -y --no-install-recommends \
     pkg-config \
     python-dev \
     python-setuptools \
-    python3-virtualenv \
+    python-virtualenv \
     python3-dev \
     python3-setuptools \
     rsync \

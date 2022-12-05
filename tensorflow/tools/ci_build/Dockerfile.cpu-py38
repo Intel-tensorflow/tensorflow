@@ -1,0 +1,39 @@
+FROM ubuntu:18.04
+
+LABEL maintainer="Ravi Gupta <ravi1.gupta@intel.com>"
+
+# Copy and run the install scripts.
+RUN apt-get update
+RUN apt-get upgrade -y
+RUN apt-get install cmake -y
+
+COPY install/*.sh /install/
+RUN bash -x /install/install_bootstrap_deb_packages.sh
+RUN add-apt-repository -y ppa:openjdk-r/ppa
+RUN bash -x /install/install_deb_packages.sh
+
+# Install gcc 7
+RUN add-apt-repository ppa:ubuntu-toolchain-r/test
+RUN apt update
+RUN apt -y install gcc-7 g++-7
+RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 700 \
+                         --slave /usr/bin/g++ g++ /usr/bin/g++-7
+
+# Install Python 3.8
+# libffi-dev is needed for ctypes module of python3.8
+RUN apt -y install libffi-dev
+# libsqlite3-dev is needed for module named '_sqlite3'
+RUN apt -y install libsqlite3-dev
+RUN chmod 777 /install/install_python38.sh
+RUN /install/install_python38.sh
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.8 0
+RUN python3 -V
+RUN /install/install_pip_packages_by_version.sh pip3
+
+RUN bash -x /install/install_bazel.sh
+RUN bash -x /install/install_proto3.sh
+RUN bash -x /install/install_buildifier.sh
+RUN bash -x /install/install_auditwheel.sh
+RUN bash -x /install/install_golang.sh
+# Set up the master bazelrc configuration file.
+COPY install/.bazelrc /etc/bazel.bazelrc
