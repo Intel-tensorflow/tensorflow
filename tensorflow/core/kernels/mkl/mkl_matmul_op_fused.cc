@@ -341,17 +341,8 @@ class MklFusedMatMulOp : public MklDnnMatMulOpBase<T, void, T> {
                           MklFusedMatMulOp<CPUDevice, type, true>);
 TF_CALL_float(REGISTER_FUSEDMATMUL_MKL_SUPPORTED_KERNELS_TYPES);
 TF_CALL_bfloat16(REGISTER_FUSEDMATMUL_MKL_SUPPORTED_KERNELS_TYPES);
-
-#define REGISTER_FUSEDMATMUL_MKL_SUPPORTED_KERNELS_TYPES_half(type) \
-  REGISTER_KERNEL_BUILDER(                                          \
-      Name("_MklNativeFusedMatMul")                                 \
-          .Device(DEVICE_CPU)                                       \
-          .TypeConstraint<type>("T")                                \
-          .Label(mkl_op_registry::kMklNameChangeOpLabel),           \
-      MklFusedMatMulOp<CPUDevice, type, true>);
-      //MklFusedMatMulOp<CPUDevice, type, type, type, type, type, true>);
-TF_CALL_half(REGISTER_FUSEDMATMUL_MKL_SUPPORTED_KERNELS_TYPES_half);
-#undef REGISTER_FUSEDMATMUL_MKL_SUPPORTED_KERNELS_TYPES_half(type)  \
+TF_CALL_half(REGISTER_FUSEDMATMUL_MKL_SUPPORTED_KERNELS_TYPES);
+#undef REGISTER_FUSEDMATMUL_MKL_SUPPORTED_KERNELS_TYPES
 
 }  // namespace tensorflow
 

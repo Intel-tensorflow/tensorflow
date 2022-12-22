@@ -1486,7 +1486,7 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
   static bool MatMulRewrite(const Node* n) {
     DataType T;
     TF_CHECK_OK(GetNodeAttr(n->def(), "T", &T));
-    if ((T == DT_FLOAT) || (T == DT_BFLOAT16)) {
+    if ((T == DT_FLOAT) || (T == DT_BFLOAT16) || (T == DT_HALF)) {
       VLOG(2) << "Rewriting MatMul to _MklMatMul";
       return true;
     }
