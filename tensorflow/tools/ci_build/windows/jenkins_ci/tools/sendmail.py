@@ -3,9 +3,22 @@
 The Email notification helper script
 
 Ex:
-find_first_invalid_commit.py [-h] [--good GOOD] [--bad BAD] [--branch BRANCH]
-                                    --cmds [CMD ...] [--oneline] [--filters FILTER]
-Switch to the branch and run git bisect search for the repository
+usage: sendmail.py [-h] [--from_address FROM_ADDRESS] --to_addresses TO_ADDRESSES [TO_ADDRESSES ...]
+                   [--subject SUBJECT] [--content CONTENT] [--key KEY]
+
+The Email notification helper script
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --from_address FROM_ADDRESS, -f FROM_ADDRESS
+                        The sender address
+  --to_addresses TO_ADDRESSES [TO_ADDRESSES ...], -t TO_ADDRESSES [TO_ADDRESSES ...]
+                        The Email to address. Can be supplied multiple times.
+  --subject SUBJECT, -s SUBJECT
+                        The subject of the Email.
+  --content CONTENT, -c CONTENT
+                        The Email content string.
+  --key KEY, -k KEY     The private key to decrypt the credentials.
 
 Unit test:
 Execute the script without any arguments.
