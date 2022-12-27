@@ -59,8 +59,8 @@ creds_root = mkdtemp()
 creds_path = os.path.join(creds_root, 'credential.json')
 token_path = os.path.join(creds_root, 'token.json')
 
-creds_content = b'gAAAAABjodNrilAjbBeFHAs6E3qMS5PGfTCIycG2pfwKF_SKtimYSyDn-9iuV3MmMZZzWu-BOwIcO-0xE09xTzFdOp2sCzPB0iv_lvBwmSG7bA48glCE9dTb1pjEObi3Pz9e-aBTDhVikuWBUVxaZJ12otYuzRTR-05m6DzP0roD9gfEmvzm_wvIErkArl7hktVcLb2847-1GUBeT9Vh7rWpbnF4DgfMq1RiT9ElimpQX-FZshLk5AVNnQ_vmWCgdTq_aJfVRaIDx0l9wFEXhksWh1pmYHge-PRR3INLye8bvEdqFNjX6lV9reVd33WrmQO_Jb98bApcDsDi86UNx3ZVyWznR0fSZ2m3Y0450rQHN9D0r4QZn0MpQF3tImmQw2oQUmNEqRv_qoJgnsxKFYbdsUtGtDmJ3dLrTJu8KvpMQ9mIamJwGsv5v81t6eZL0ULZyXGZDStehCDBJqD_SXZArLZZLSCutA4dapgzFGJg7ik0BxwNlB6e2QKoVT5S9dr6l6V-Do6yjbdwXukaJwF94upvA4jLlsNmG4-wCqDkjoQ266SAOw_WwUD2_kKi3T3AQBJRanG4zDXjr-KbLGf4zp50ZpKFqk-gO9K6F2arzGuA8XHxtyw='
-token_content = b'gAAAAABjodNPC9UzM2DPB0Q_VSFNwS9JOMyyw9tok3bAXs8RYdLDauaHctByovVLUGVSHe8bzVuM3gLNM6_bDYy7xTZZ6DUjlQ04_55_bcS5uiv3xpKIKqPvQxQypoVfqO6vvTXvC_OnwW-rFYxmbAG0vDW8QFYF2jgKee-zjfPh1sA3KkCsirg5vKCZbWueHMyQcEAak_h7ytzXXpiZEBPndJkUgYm3GbbFbfLJsjto6m66TVFFfct--3GfprgO7MhXDb0vuOIbTTnQEiRS-Km-8K9gVaiwbyD9Ro8iE5zYgtGL4MBeK5nXcjyPeGu-lbceSKFkp81vydvxZrZNyflGORnxcgX71amg-jRxH3cFv5U4LBdGX3wH29qhyXbIodgncdSJ36seGVivGVNgl1ZXHoG1QQdbQPHxWvxTOWyHDxEyvTcrqhOGvwSCqLdLsyErKTlTZW8lGBWkEWwP4nE2mUKgsAFwwL-fZkC_RHhbm0qs3fMI-DF0IeUdefu9cwSb53WXr4ZNin9gRlt_COfq1kwcxKY0uBOemrfKURiYYGUWpRtAwtoVbUjoqlp5yWkxyiPY8Hx929g1acFKK905uFshK9kVhk_ZFVIfkfm6Cfgt8OM_icTtmmzLmT5asmepMBVG99zIj96S0i3sbVZJqyAcH8BsYqmSEBECFaJAQCFy45FCWxi74JskJsnTBj2mDcW0SdPGV_QaWxItSS9FqlvFHUpKbpfLaTXbRBqlbmPWJhkkcOZft-zfxHHWGU3_YSAM6rUiDUOn25H8jN0-hkh7WPzvaHEOY312HDXcuMVArEy6tFJMFlQu7a3Tb4MsdpY4BMHvk_zTBtL-1rzR8FmJD7TAQLVkyEul8Q7CNZ6ZRWXk_bjZBCbotx4R6U16vlJBoFH5TDwPdMiDlPsHXbPA8hBKdYNn2eu5eL7xqYBT5JrPeV3rPVP0wuO59bpoktKGtiH5XgeDUksne5idR2uEtCgsED5nPW2mieZx46VfxJz0xzujm3ccXYYuJh2a2Evzx4NypjZxfPqM-j5zYfK3dHoOvQ=='
+creds_content = b'gAAAAABjqvE1Zj429Nqq4XlPN4Qiko8nmcetSuL68yjN5gj02_rW-tjglAUM59YedkPA_bwkB-Q_tBcMDfKWI3oKPVozbuJGUD4yQt1c5OeU6K-mR-1pXhMNWeF1yr8n-l6Ow_wYEXHxvPFUpd2HAF9f6e-MeTCpA10zd9yqOhmh2z1gLWeHbyRAtTT8FkBP01rnTddp26D7AdMGHBPhublQ9nzY5GbNZe488sS_Gby0AhuhwNi9S0WoplArW-fj37KYUM8ASEcdqboZIR4pCm37cXj7Jn5BvfXpON7l3SaiOco0wWnxeajtehi-JtxXHpz3OHsVfjl0fgQ2M1G9sUnoSXaKnlwie9wkCjyz1znamxaBMHWQ0NTjlFb7BGHT2BEogugNOokB9GCIgchuuo3vvBz7LHkj8IG5LzNfC7I7nv3R2wsmQ8IWUnf1hNASi5g12vxurF-sk4KBA_R0CtpMBmMxSDE_EM6mQxfrsEVSqtEUMq2u1SzHAxVfpYzCYO7MA6fMj72nTT3alz64USg5pp-AXRb19GouVc8mQmNQBZGDe_ft98S-nywlYVZ7JuDpv9_UJ3lOGzyr4OGTX_1ByBApgCwnFQrk-ok0lLr-szSBmR4OKCo='
+token_content = b'gAAAAABjqvFetQRtBFlxc3MOWAInsG0FqmbCsh3r1OLFY89qQ7_RnDYUndNhyCGFHGrBFUKqtEsGlSn8f4s593nr6nHgezoe4tst0SZwNAdyCUu4lhCyBjbnZqNELPY-oB7mvHRX0NxWx6VcZWm6jvYhUwv4YFxR7_Z4ms9IjZBVXKy8-vPH7W_8cg1slJWCcpJa3RB3ZOzFeJJ2lSym8A8ph2_iPBLf3h4lcfKdp9SC59vei2r6_Z5d5ewLAJSPfswQcgPO4W2-Gd-a30w8gksYE7nJ4jlc8xiSioIoLAUiHS-hd1R5pnrDbe8avdgfW5UYnkzWwRFdSNlrYAmustg0D8aqystahdEXHyRqhOE8DCDsLlvfkX5W7UTiSUa-yEHMc6WOiM2emgLky4novbtd9V3hERlpbbdLRm-WGrj2tCbZ8rYm3ymiY1WChUNommctIOvyMqGsuBl31gsgKAAy2EoybUkJa49ZtzhTrBkhulHVbmHfqWIuZOcn5LetQXjcCRXOLqStcrPW-89W9C99s4dPS30PxXQDGafcRqc2FsJAifydWa_XHEWyK_MWoTObGT7ThIpPxkc_V4tp-Dph73_lTmYfOfOA48c0nD09L0z2uiv6PksRZnrGxvtLnwS9LlwEs2Gdx4wiFkjRic-Q-JkB_vOq-zGkoppYzLfyA0C5so8hYh9D9tMu2bGhLx1KB7EWDXBQ2JT4nR8wCa5MlVBEaR5NOGE6nLhe8zr8llXgVJTvMkd6oIu-F7R6BGgzZVVOolxRlpHZkWYARp9FGF8xnMPpuULbSETTdKxT4uefxAiu1AImzNKNAoVYdubjpfBmdCI42yQ2HEPMfbTtEWF13PwpLYnUQYV83U5s6uF80NjhTmqfZcI9Ty4CTwXeBuTI-2QEfGtFFhdlEd-l4mxb7dAUQRMrG-OuweBUCa0GyhbTupMPX_aCr9lAYj3z782HuUk_NDgB1ihyZnTiN9ufOZKl3I5Y9L56ZTVBvuK7af9jvGQQk07r0Ar3zVQXW2tPqn7AwiXEy5R7iDw-3twlx1sNIA=='
 
 
 class ToBytes(argparse.Action):
@@ -181,17 +181,25 @@ def sendmail(from_address: str, to_addresses: List[str], subject: str, content: 
     # time.
     if os.path.exists(token_path):
         creds = Credentials.from_authorized_user_file(token_path, SCOPES)
+    else:
+        print(f"Create Email credential failed due to token file is not exist {token_path}")
+        sys.exit(1)
+
     # If there are no (valid) credentials available, let the user log in.
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
+    if (creds and not creds.valid) and creds.expired and creds.refresh_token:
+        try:
             creds.refresh(Request())
-        else:
+        except Exception:
+            print('Refresh credential failed due to token expired')
             flow = InstalledAppFlow.from_client_secrets_file(
                 creds_path, SCOPES)
             creds = flow.run_local_server(port=0)
-        # Save the credentials for the next run
-        with open(token_path, 'w') as token:
-            token.write(creds.to_json())
+            # Save the credentials for the next run
+            with open(token_path, 'w') as token:
+                token.write(creds.to_json())
+    else:
+        print(f"Email credential {creds_path} is not valid. Send Email failed!")
+        sys.exit(1)
 
     try:
         # create gmail api client
