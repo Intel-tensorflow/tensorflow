@@ -186,7 +186,7 @@ def sendmail(from_address: str, to_addresses: List[str], subject: str, content: 
         sys.exit(1)
 
     # If there are no (valid) credentials available, let the user log in.
-    if (creds and not creds.valid) and creds.expired and creds.refresh_token:
+    if creds and creds.expired and creds.refresh_token:
         try:
             creds.refresh(Request())
         except Exception:
@@ -197,7 +197,8 @@ def sendmail(from_address: str, to_addresses: List[str], subject: str, content: 
             # Save the credentials for the next run
             with open(token_path, 'w') as token:
                 token.write(creds.to_json())
-    else:
+
+    if not creds.valid:
         print(f"Email credential {creds_path} is not valid. Send Email failed!")
         sys.exit(1)
 
