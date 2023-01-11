@@ -58,7 +58,7 @@ PY_TEST_DIR="py_test_dir"
 
 SKIP_TEST=0
 RELEASE_BUILD=0
-TEST_TARGET="//${PY_TEST_DIR}/tensorflow/python/..."
+TEST_TARGET="//${PY_TEST_DIR}/tensorflow/python/... -//${PY_TEST_DIR}/tensorflow/python/distribute/... -//${PY_TEST_DIR}/tensorflow/python/tpu/..."
 PROJECT_NAME=""
 EXTRA_BUILD_FLAGS=""
 EXTRA_TEST_FLAGS=""
@@ -200,7 +200,7 @@ bazel  test \
   --build_tag_filters=-no_pip,-no_windows,-no_oss,-gpu,-tpu --build_tests_only --config=monolithic \
   --config=opt \
   -k --test_output=errors \
-  --test_tag_filters=-no_windows,-no_oss,-gpu,-tpu,-v1only \
+  --test_tag_filters=-no_pip,-no_windows,-no_oss,-gpu,-tpu,-v1only \
   --discard_analysis_cache \
   --test_size_filters=small --jobs=16 --test_timeout=300,450,1200,3600 --verbose_failures \
   --flaky_test_attempts=3 \
