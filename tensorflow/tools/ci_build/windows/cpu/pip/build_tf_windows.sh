@@ -74,7 +74,7 @@ while [[ $# -gt 0 ]]; do
     --skip_test) SKIP_TEST=1 ;;
     --enable_remote_cache) set_remote_cache_options ;;
     --release_build) RELEASE_BUILD=1 ;;
-    --test_core_only) TEST_TARGET="//${PY_TEST_DIR}/tensorflow/python/..." ;;
+    --test_core_only) TEST_TARGET="${TEST_TARGET}";;
     --extra_build_flags)
       shift
       if [[ -z "$1" ]]; then
