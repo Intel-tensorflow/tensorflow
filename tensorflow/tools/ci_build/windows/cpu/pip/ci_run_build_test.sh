@@ -111,8 +111,9 @@ python --version
 # Install pip modules as per specs in tensorflow/tools/ci_build/release/requirements_common.txt
 if [ "${PYTHON_VERSION}" == 311 ]
 then
-    cd..
-    cp ./h5py_whl/artifact/h5py-3.7.0-cp311-cp311-win_amd64.whl ${MYTFWS_ROOT} 
+  path_level=$(dirname ${MYTFWS_ROOT})
+  
+  cp "${path_level}"/h5py_whl/artifact/h5py-3.7.0-cp311-cp311-win_amd64.whl ${MYTFWS_ROOT} 
     
 fi
 python -m pip install -r $MYTFWS/tensorflow/tools/ci_build/release/requirements_common.txt
