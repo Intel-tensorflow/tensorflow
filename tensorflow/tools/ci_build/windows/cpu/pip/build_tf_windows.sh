@@ -179,8 +179,7 @@ bazel test --announce_rc --config=opt -k --test_output=errors \
   --test_size_filters=small \
   --jobs="${N_JOBS}" --test_timeout="300,450,1200,3600" \
   --flaky_test_attempts=3 \
-  --output_filter=^$ \
-  ${TEST_TARGET}
+  -- ${TEST_TARGET}
 
 MYTFWS_ROOT=${WORKSPACE:-"C:/Users/mlp_admin"} # keep the tensorflow git repo clone under here as tensorflow subdir
 MYTFWS_ROOT=`cygpath -m $MYTFWS_ROOT`
