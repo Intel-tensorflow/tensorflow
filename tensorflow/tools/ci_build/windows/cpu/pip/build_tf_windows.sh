@@ -193,18 +193,19 @@ cd $MYTFWS
 
 TEST_TARGET_1="//tensorflow/... -//tensorflow/java/... -//tensorflow/lite/... -//tensorflow/compiler/xla/python/tpu_driver/... -//tensorflow/compiler/... -//tensorflow/go/... -//tensorflow/js/... -//tensorflow/python/distribute/... -//tensorflow/python/... -//tensorflow/core/distributed_runtime/... -//tensorflow/tsl/distributed_runtime/..."
 
-bazel  test \
+bazel --windows_enable_symlinks test \
   --action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XTF_ARGS} \
   --experimental_cc_shared_library --enable_runfiles --nodistinct_host_configuration \
   --dynamic_mode=off --config=xla --config=short_logs --announce_rc \
   --build_tag_filters=-no_pip,-no_windows,-no_oss,-gpu,-tpu --build_tests_only --config=monolithic \
   --config=opt \
   -k --test_output=errors \
-  --test_tag_filters=-no_pip,-no_windows,-no_oss,-gpu,-tpu,-v1only \
+  --test_tag_filters=no_pip,-no_windows,-no_oss,-gpu,-tpu,-v1only \
   --discard_analysis_cache \
   --test_size_filters=small --jobs=16 --test_timeout=300,450,1200,3600 --verbose_failures \
   --flaky_test_attempts=3 \
   ${POSITIONAL_ARGS[@]} \
   -- ${TEST_TARGET_1} 
+ 
 
 
