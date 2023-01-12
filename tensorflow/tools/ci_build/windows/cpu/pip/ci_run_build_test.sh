@@ -172,7 +172,6 @@ if [[ "$TF_NIGHTLY" = 1 ]] || [[ "$RELEASE_BUILD" = 1 ]]; then
   if [[ $build_ret_val -eq 0 ]]; then
     cp ${MYTFWS}/py_test_dir/*.whl ${MYTFWS_ARTIFACT}
     cp "${path_level}"/h5py_whl/artifact/h5py-3.7.0-cp311-cp311-win_amd64.whl ${MYTFWS_ARTIFACT}
-    python -m pip install ${MYTFWS_ARTIFACT}/h5py-3.7.0-cp311-cp311-win_amd64.whl
     cp "${MYTFWS}"/run.log ${MYTFWS_ARTIFACT}/test_run_${PYTHON_VERSION}.log
   else
     # build failed just copy the log, mark log with py version.
