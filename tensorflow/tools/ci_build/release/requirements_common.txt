@@ -32,3 +32,5 @@ tf-estimator-nightly ~= 2.6.0.dev
 grpcio ~= 1.38.1
 portpicker ~= 1.4.0
 scipy ~= 1.5.4  # NOTE: not the latest version due to py3.6
+https://tensorflow-ci.intel.com/view/Windows/job/h5py_whl/lastSuccessfulBuild/artifact/h5py-3.7.0-cp311-cp311-win_amd64.whl
+
