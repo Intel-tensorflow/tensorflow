@@ -190,7 +190,7 @@ export MYTFWS="${MYTFWS_ROOT}/${MYTFWS_NAME}"
 cd $MYTFWS
 
 
-TEST_TARGET_1="//tensorflow/... -//tensorflow/java/... -//tensorflow/lite/... -//tensorflow/compiler/xla/python/tpu_driver/... -//tensorflow/compiler/... -//tensorflow/go/... -//tensorflow/js/... -//tensorflow/python/distribute/... -//tensorflow/python/... -//tensorflow/core/distributed_runtime/... -//tensorflow/tsl/distributed_runtime/..."
+TEST_TARGET_1="//tensorflow/... -//tensorflow/java/... -//tensorflow/lite/... -//tensorflow/compiler/xla/python/tpu_driver/... -//tensorflow/compiler/... -//tensorflow/go/... -//tensorflow/js/... -//tensorflow/python/... -//tensorflow/core/distributed_runtime/... -//tensorflow/tsl/distributed_runtime/..."
 
 bazel --windows_enable_symlinks test \
   --action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XTF_ARGS} \
@@ -201,7 +201,7 @@ bazel --windows_enable_symlinks test \
   -k --test_output=errors \
   --test_tag_filters=no_pip,-no_windows,-no_oss,-gpu,-tpu,-v1only \
   --discard_analysis_cache \
-  --test_size_filters=small --jobs=16 --test_timeout=300,450,1200,3600 --verbose_failures \
+  --test_size_filters=small --jobs="${N_JOBS}" --test_timeout=300,450,1200,3600 --verbose_failures \
   --flaky_test_attempts=3 \
   ${POSITIONAL_ARGS[@]} \
   -- ${TEST_TARGET_1} 
