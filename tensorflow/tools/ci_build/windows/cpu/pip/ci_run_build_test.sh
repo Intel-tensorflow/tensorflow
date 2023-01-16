@@ -117,11 +117,9 @@ then
   python -m pip install ${MYTFWS_ROOT}/h5py-3.7.0-cp311-cp311-win_amd64.whl
     
 fi
-pip list
-pwd
+
 python -m pip install -r $MYTFWS/tensorflow/tools/ci_build/release/requirements_common.txt
-pwd
-pip list
+
 
 
 # set up other Variables required by bazel.
