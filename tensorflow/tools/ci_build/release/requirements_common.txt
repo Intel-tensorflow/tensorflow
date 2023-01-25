@@ -36,9 +36,7 @@ scipy ~= 1.7.2; python_version < '3.11'
 scipy ~= 1.9.2; python_version >= '3.11' # Earliest version for Python 3.11
 
 # This is usually vendored in setuptools but ensure it gets installed in CI anyway
-# No bound here, we prefer the one in setuptools
-packaging
-https://tensorflow-ci.intel.com/view/Windows/job/h5py_whl/lastSuccessfulBuild/artifact/h5py-3.7.0-cp311-cp311-win_amd64.whl
+# No bound here, we prefer the one in setuptools packaging
 
 
 
