@@ -60,9 +60,6 @@ class RaiseBfloat16Error : public OpKernel {
                               .TypeConstraint<bfloat16>("T")                  \
                               .TypeConstraint<float>("U"),                    \
                           RaiseBfloat16Error);                                \
-  REGISTER_KERNEL_BUILDER(                                                    \
-      Name("_FusedMatMul").Device(DEVICE_CPU).TypeConstraint<T>("T"),         \
-      RaiseBfloat16Error);
 
 TF_CALL_bfloat16(REGISTER_CPU);
 #undef REGISTER_CPU
