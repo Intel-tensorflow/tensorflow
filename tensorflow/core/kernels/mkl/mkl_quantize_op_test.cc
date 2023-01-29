@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#if defined(INTEL_MKL) && !defined(ENABLE_ONEDNN_V3) && defined(ENABLE_MKL)
+#if defined(INTEL_MKL) && defined(ENABLE_MKL)
 #include "tensorflow/core/framework/fake_input.h"
 #include "tensorflow/core/framework/node_def_builder.h"
 #include "tensorflow/core/framework/tensor.h"
@@ -82,6 +82,7 @@ TEST_F(MklQuantizeV2OpTest, small_int8) {
   test::ExpectTensorEqual<float>(expected_max, *GetOutput(2));
 }
 
+#ifndef ENABLE_ONEDNN_V3
 TEST_F(MklQuantizeV2OpTest, small_minfirst) {
   TF_ASSERT_OK(NodeDefBuilder("quantize_op", "_MklQuantizeV2")
                    .Input(FakeInput(DT_FLOAT))
@@ -153,6 +154,7 @@ TEST_F(MklQuantizeV2OpTest, small_minfirst_int) {
   EXPECT_NEAR(-0.8f, output_min, 1e-5f);
   EXPECT_NEAR(0.0f, output_max, 1e-5f);
 }
+#endif  // !ENABLE_ONEDNN_V3
 
 }  // end namespace tensorflow
 #endif  // INTEL_MKL && ENABLE_MKL
