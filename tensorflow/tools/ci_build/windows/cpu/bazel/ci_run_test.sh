@@ -171,7 +171,8 @@ N_JOBS="${NUMBER_OF_PROCESSORS}"
 
 # --config=release_cpu_windows 
 Bazel --output_user_root=c:\ --windows_enable_symlinks test \
---nodistinct_host_configuration --enable_runfiles --dynamic_mode=off \
+--action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XTF_ARGS} \
+--experimental_cc_shared_library --nodistinct_host_configuration --enable_runfiles --dynamic_mode=off \
 --test_verbose_timeout_warnings --config=xla --config=short_logs --announce_rc \
 --build_tag_filters=-no_windows,-no_oss --build_tests_only --config=monolithic \
 --keep_going --test_output=errors --test_tag_filters=-no_windows,-no_oss,-gpu,-tpu \
