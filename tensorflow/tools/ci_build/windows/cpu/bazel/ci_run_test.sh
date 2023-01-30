@@ -170,20 +170,19 @@ set +e   # Unset so script continues even if commands fail, this is needed to co
 N_JOBS="${NUMBER_OF_PROCESSORS}"
 
 # --config=release_cpu_windows 
-bazel --windows_enable_symlinks test \
-  --action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XTF_ARGS} \
-  --experimental_cc_shared_library --enable_runfiles --nodistinct_host_configuration \
-  --dynamic_mode=off --config=xla --config=short_logs --announce_rc \
-  --build_tag_filters=-no_pip,-no_windows,-no_oss,-gpu,-tpu --build_tests_only --config=monolithic \
-  --config=opt \
-  -k --test_output=errors \
-  --test_tag_filters=-no_windows,-no_oss,-gpu,-tpu,-v1only \
-  --discard_analysis_cache \
-  --test_size_filters=small,medium --jobs=16 --test_timeout=300,450,1200,3600 --verbose_failures \
-  --flaky_test_attempts=3 \
-  ${POSITIONAL_ARGS[@]} \
-  -- ${TEST_TARGET} \
-  > run.log 2>&1
+--output_user_root=c:\ --windows_enable_symlinks test \
+--nodistinct_host_configuration --enable_runfiles --dynamic_mode=off \
+--test_verbose_timeout_warnings --config=xla --config=short_logs --announce_rc \
+--build_tag_filters=-no_windows,-no_oss --build_tests_only --config=monolithic \
+--keep_going --test_output=errors --test_tag_filters=-no_windows,-no_oss,-gpu,-tpu \
+--test_size_filters=small,medium --test_timeout="300,450,1200,3600" \
+--verbose_failures --copt=/d2ReducedOptimizeHugeFunctions \
+--host_copt=/d2ReducedOptimizeHugeFunctions \
+//tensorflow/cc/saved_model:saved_model_bundle_test \
+//tensorflow/cc/saved_model/experimental/tests:saved_model_api_test \
+//tensorflow/cc/saved_model:saved_model_bundle_lite_test \
+//tensorflow/c/experimental/saved_model/core/ops:restore_ops_test \
+//tensorflow/cc/saved_model/experimental/tests:saved_model_api_test
 
 build_ret_val=$?   # Store the ret value
 
