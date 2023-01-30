@@ -170,7 +170,7 @@ set +e   # Unset so script continues even if commands fail, this is needed to co
 N_JOBS="${NUMBER_OF_PROCESSORS}"
 
 # --config=release_cpu_windows 
---output_user_root=c:\ --windows_enable_symlinks test \
+Bazel --output_user_root=c:\ --windows_enable_symlinks test \
 --nodistinct_host_configuration --enable_runfiles --dynamic_mode=off \
 --test_verbose_timeout_warnings --config=xla --config=short_logs --announce_rc \
 --build_tag_filters=-no_windows,-no_oss --build_tests_only --config=monolithic \
@@ -178,11 +178,8 @@ N_JOBS="${NUMBER_OF_PROCESSORS}"
 --test_size_filters=small,medium --test_timeout="300,450,1200,3600" \
 --verbose_failures --copt=/d2ReducedOptimizeHugeFunctions \
 --host_copt=/d2ReducedOptimizeHugeFunctions \
-//tensorflow/cc/saved_model:saved_model_bundle_test \
-//tensorflow/cc/saved_model/experimental/tests:saved_model_api_test \
-//tensorflow/cc/saved_model:saved_model_bundle_lite_test \
-//tensorflow/c/experimental/saved_model/core/ops:restore_ops_test \
-//tensorflow/cc/saved_model/experimental/tests:saved_model_api_test
+${POSITIONAL_ARGS[@]} \
+ -- ${TEST_TARGET} 
 
 build_ret_val=$?   # Store the ret value
 
