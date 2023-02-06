@@ -86,7 +86,7 @@ def _validate_file_size(path: Path, limit: int):
     >>> f.close()
     >>> os.remove(f.name)
     """
-	limit = max(limit, 0)
+    limit = max(limit, 0)
     limit_bytes = limit * 1024 * 1024
     if path.stat().st_size > limit_bytes:
         raise FileSizeError(path, limit)
