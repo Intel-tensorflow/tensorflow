@@ -17,7 +17,7 @@ limitations under the License.
 // layout and primitives, use MKL dnn primitives to compute convolution backward
 // input
 
-#ifdef INTEL_MKL
+#if defined(INTEL_MKL) && !defined(ENABLE_ONEDNN_V3)
 
 #define USE_EIGEN_TENSOR
 #define EIGEN_USE_THREADS

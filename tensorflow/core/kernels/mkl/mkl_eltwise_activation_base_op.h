@@ -18,7 +18,7 @@ limitations under the License.
 
 // See docs in ../ops/mkl_nn_ops.cc.
 
-#ifdef INTEL_MKL
+#if defined(INTEL_MKL) && !defined(ENABLE_ONEDNN_V3)
 
 #include <unordered_map>
 

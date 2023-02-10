@@ -23,7 +23,7 @@ limitations under the License.
 // and when it is undefined at build time, this file becomes an empty
 // compilation unit
 
-#if defined(INTEL_MKL)
+#if defined(INTEL_MKL) && !defined(ENABLE_ONEDNN_V3)
 
 #include "dnnl.hpp"
 #include "tensorflow/core/framework/op.h"

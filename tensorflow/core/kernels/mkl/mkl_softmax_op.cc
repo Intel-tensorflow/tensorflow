@@ -15,7 +15,7 @@ limitations under the License.
 
 // See docs in ../ops/nn_ops.cc.
 
-#ifdef INTEL_MKL
+#if defined(INTEL_MKL) && !defined(ENABLE_ONEDNN_V3)
 
 #include "dnnl.hpp"
 #include "tensorflow/core/framework/numeric_op.h"
