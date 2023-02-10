@@ -16,7 +16,7 @@ limitations under the License.
 #ifndef TENSORFLOW_CORE_KERNELS_MKL_MKL_MATMUL_OPS_COMMON_H_
 #define TENSORFLOW_CORE_KERNELS_MKL_MKL_MATMUL_OPS_COMMON_H_
 
-#if defined(INTEL_MKL) && !defined(ENABLE_ONEDNN_V3)
+#ifdef INTEL_MKL
 #include <memory>
 #include <string>
 #include <vector>
@@ -37,6 +37,20 @@ using dnnl::prop_kind;
 using dnnl::stream;
 
 namespace tensorflow {
+
+#ifndef ENABLE_ONEDNN_V3
+#define APPEND_ELTWISE(scale, alg, alpha, beta) \
+  append_eltwise(scale, alg, alpha, beta)
+#define APPEND_ELTWISE_RELU6(alpha, beta) \
+  append_eltwise(scale, dnnl::algorithm::eltwise_bounded_relu, alpha, beta)
+#define SET_MKL_LAYOUT(md) SetMklLayout(&md)
+#else
+#define APPEND_ELTWISE(scale, alg, alpha, beta) append_eltwise(alg, alpha, beta)
+#define APPEND_ELTWISE_RELU6(alpha, beta) \
+  append_eltwise(dnnl::algorithm::eltwise_clip, 0.0, alpha)
+#define SET_MKL_LAYOUT(md) SetMklLayout(md)
+#endif  // !ENABLE_ONEDNN_V3
+
 static Eigen::internal::CacheSizes cache_sizes = Eigen::internal::CacheSizes();
 
 typedef Eigen::ThreadPoolDevice CPUDevice;
@@ -171,7 +185,9 @@ class MklDnnMatMulFwdPrimitive : public MklPrimitive {
     std::shared_ptr<dnnl::memory> sp_mem;
 
     // Descriptor and primitive-descriptor for forward inner-product.
+#ifndef ENABLE_ONEDNN_V3
     std::shared_ptr<dnnl::inner_product_forward::desc> fwd_desc;
+#endif  // !ENABLE_ONEDNN_V3
     std::shared_ptr<dnnl::inner_product_forward::primitive_desc> fwd_pd;
 
     // Memory descriptors.
@@ -192,7 +208,9 @@ class MklDnnMatMulFwdPrimitive : public MklPrimitive {
           bias_mem(nullptr),
           dst_mem(nullptr),
           sp_mem(nullptr),
+#ifndef ENABLE_ONEDNN_V3
           fwd_desc(nullptr),
+#endif  // !ENABLE_ONEDNN_V3
           fwd_pd(nullptr),
           src_md(nullptr),
           weight_md(nullptr),
@@ -220,6 +238,7 @@ class MklDnnMatMulFwdPrimitive : public MklPrimitive {
                                             MklDnnType<Tbias>(),
                                             memory::format_tag::any));
     // Create an inner-product.
+#ifndef ENABLE_ONEDNN_V3
     context_.fwd_desc.reset(new inner_product_forward::desc(
         matmul_fwd_params.const_weight ? prop_kind::forward_inference
                                        : prop_kind::forward_training,
@@ -227,6 +246,7 @@ class MklDnnMatMulFwdPrimitive : public MklPrimitive {
         *context_.dst_md));
     context_.fwd_pd.reset(new inner_product_forward::primitive_desc(
         *context_.fwd_desc, cpu_engine_));
+#endif  // !ENABLE_ONEDNN_V3
 
     // Check if there is any fusion as post-ops
     auto const& post_op_params = matmul_fwd_params.post_op_params;
@@ -240,56 +260,57 @@ class MklDnnMatMulFwdPrimitive : public MklPrimitive {
           float op_scale = post_op_param.param[0];
           float op_alpha = post_op_param.param[1];
           float op_beta = post_op_param.param[2];
-          post_ops.append_eltwise(op_scale, dnnl::algorithm::eltwise_relu,
+          post_ops.APPEND_ELTWISE(op_scale, dnnl::algorithm::eltwise_relu,
                                   op_alpha, op_beta);
         } else if (post_op_param.name == "relu6") {
           DCHECK_EQ(post_op_param.param.size(), 3);
           float op_scale = post_op_param.param[0];
           float op_alpha = post_op_param.param[1];
           float op_beta = post_op_param.param[2];
-          post_ops.append_eltwise(op_scale,
-                                  dnnl::algorithm::eltwise_bounded_relu,
-                                  op_alpha, op_beta);
+          post_ops.APPEND_ELTWISE_RELU6(op_alpha, op_beta);
         } else if (post_op_param.name == "elu") {
           DCHECK_EQ(post_op_param.param.size(), 3);
           float op_scale = post_op_param.param[0];
           float op_alpha = post_op_param.param[1];
           float op_beta = post_op_param.param[2];
-          post_ops.append_eltwise(op_scale, dnnl::algorithm::eltwise_elu,
+          post_ops.APPEND_ELTWISE(op_scale, dnnl::algorithm::eltwise_elu,
                                   op_alpha, op_beta);
         } else if (post_op_param.name == "gelu_approximate") {
           DCHECK_EQ(post_op_param.param.size(), 3);
           float op_scale = post_op_param.param[0];
           float op_alpha = post_op_param.param[1];
           float op_beta = post_op_param.param[2];
-          post_ops.append_eltwise(op_scale, dnnl::algorithm::eltwise_gelu_tanh,
+          post_ops.APPEND_ELTWISE(op_scale, dnnl::algorithm::eltwise_gelu_tanh,
                                   op_alpha, op_beta);
         } else if (post_op_param.name == "gelu_exact") {
           DCHECK_EQ(post_op_param.param.size(), 3);
           float op_scale = post_op_param.param[0];
           float op_alpha = post_op_param.param[1];
           float op_beta = post_op_param.param[2];
-          post_ops.append_eltwise(op_scale, dnnl::algorithm::eltwise_gelu_erf,
+          post_ops.APPEND_ELTWISE(op_scale, dnnl::algorithm::eltwise_gelu_erf,
                                   op_alpha, op_beta);
         } else if (post_op_param.name == "tanh") {
           DCHECK_EQ(post_op_param.param.size(), 3);
           float op_scale = post_op_param.param[0];
           float op_alpha = post_op_param.param[1];
           float op_beta = post_op_param.param[2];
-          post_ops.append_eltwise(op_scale, dnnl::algorithm::eltwise_tanh,
+          post_ops.APPEND_ELTWISE(op_scale, dnnl::algorithm::eltwise_tanh,
                                   op_alpha, op_beta);
         } else if (post_op_param.name == "logistic") {
           DCHECK_EQ(post_op_param.param.size(), 3);
           float op_scale = post_op_param.param[0];
           float op_alpha = post_op_param.param[1];
           float op_beta = post_op_param.param[2];
-          post_ops.append_eltwise(op_scale, dnnl::algorithm::eltwise_logistic,
+          post_ops.APPEND_ELTWISE(op_scale, dnnl::algorithm::eltwise_logistic,
                                   op_alpha, op_beta);
         } else if (post_op_param.name == "output_scale") {
+#ifndef ENABLE_ONEDNN_V3
+          // TODO(intel-tf): Enable this for int8 when using oneDNN v3.x
           DCHECK_EQ(post_op_param.param.size(), 1);
           std::vector<float> scales;
           scales.push_back(post_op_param.param[0]);
           post_ops_attr.set_output_scales(0, scales);
+#endif  // !ENABLE_ONEDNN_V3
         } else if (post_op_param.name == "sum") {
           DCHECK_EQ(post_op_param.param.size(), 1);
           float op_scale = post_op_param.param[0];
@@ -307,12 +328,19 @@ class MklDnnMatMulFwdPrimitive : public MklPrimitive {
         }
       }
       post_ops_attr.set_post_ops(post_ops);
-      context_.fwd_pd.reset(new inner_product_forward::primitive_desc(
-          *context_.fwd_desc, post_ops_attr, cpu_engine_));
-    } else {
-      context_.fwd_pd.reset(new inner_product_forward::primitive_desc(
-          *context_.fwd_desc, post_ops_attr, cpu_engine_));
     }
+
+#ifndef ENABLE_ONEDNN_V3
+    context_.fwd_pd.reset(new inner_product_forward::primitive_desc(
+        *context_.fwd_desc, post_ops_attr, cpu_engine_));
+#else
+    context_.fwd_pd.reset(new inner_product_forward::primitive_desc(
+        cpu_engine_,
+        matmul_fwd_params.const_weight ? prop_kind::forward_inference
+                                       : prop_kind::forward_training,
+        *context_.src_md, *context_.weight_md, *context_.bias_md,
+        *context_.dst_md, post_ops_attr));
+#endif  // !ENABLE_ONEDNN_V3
 
     // Create memory primitive based on dummy data
     context_.src_mem.reset(
@@ -462,7 +490,7 @@ class MklDnnMatMulOpBase : public OpKernel {
 
     MklDnnShape output_mkl_shape;
     output_mkl_shape.SetMklTensor(true);
-    output_mkl_shape.SetMklLayout(&dst_pd);
+    output_mkl_shape.SET_MKL_LAYOUT(dst_pd);
     output_mkl_shape.SetElemType(MklDnnType<Toutput>());
     output_mkl_shape.SetTfLayout(output_dims_mkl_order.size(),
                                  output_dims_mkl_order, output_tf_format);
@@ -673,7 +701,9 @@ class MklMatMulPrimitive : public MklPrimitive {
     std::shared_ptr<dnnl::memory> sp_mem;
 
     // Descriptor and primitive-descriptor for MatMul.
+#ifndef ENABLE_ONEDNN_V3
     std::shared_ptr<matmul::desc> desc;
+#endif  // !ENABLE_ONEDNN_V3
     std::shared_ptr<matmul::primitive_desc> prim_desc;
 
     // Memory descriptors.
@@ -694,7 +724,9 @@ class MklMatMulPrimitive : public MklPrimitive {
           mul_mem(nullptr),
           add_mem(nullptr),
           sp_mem(nullptr),
+#ifndef ENABLE_ONEDNN_V3
           desc(nullptr),
+#endif  // !ENABLE_ONEDNN_V3
           prim_desc(nullptr),
           a_md(nullptr),
           b_md(nullptr),
@@ -717,8 +749,10 @@ class MklMatMulPrimitive : public MklPrimitive {
                                          params.c_strides));
 
     // Create matmul.
+#ifndef ENABLE_ONEDNN_V3
     context_.desc.reset(
         new matmul::desc(*context_.a_md, *context_.b_md, *context_.c_md));
+#endif  // !ENABLE_ONEDNN_V3
 
     // Check if there is any fusion as post-ops
     auto const& post_op_params = params.post_op_params;
@@ -727,10 +761,13 @@ class MklMatMulPrimitive : public MklPrimitive {
     if (!post_op_params.empty()) {
       for (auto const& post_op_param : post_op_params) {
         if (post_op_param.name == "output_scale") {
+#ifndef ENABLE_ONEDNN_V3
+          // TODO(intel-tf): Enable this for int8 when using oneDNN v3.x
           DCHECK_EQ(post_op_param.param.size(), 1);
           std::vector<float> scales;
           scales.push_back(post_op_param.param[0]);
           post_ops_attr.set_output_scales(0, scales);
+#endif  // !ENABLE_ONEDNN_V3
         } else if (post_op_param.name == "mul") {
           context_.mul_md.reset(new memory::desc({post_op_param.dims},
                                                  post_op_param.data_type,
@@ -748,8 +785,14 @@ class MklMatMulPrimitive : public MklPrimitive {
       post_ops_attr.set_post_ops(post_ops);
     }
     post_ops_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
+#ifndef ENABLE_ONEDNN_V3
     context_.prim_desc.reset(
         new matmul::primitive_desc(*context_.desc, post_ops_attr, cpu_engine_));
+#else
+    context_.prim_desc.reset(
+        new matmul::primitive_desc(cpu_engine_, *context_.a_md, *context_.b_md,
+                                   *context_.c_md, post_ops_attr));
+#endif  // !ENABLE_ONEDNN_V3
 
     // Create memory primitive based on dummy data.
     context_.a_mem.reset(
@@ -910,6 +953,10 @@ void dnnl_gemm(char transa, char transb, int64_t m, int64_t n, int64_t k,
 }
 
 }  // anonymous namespace
+
+#undef APPEND_ELTWISE
+#undef APPEND_ELTWISE_RELU6
+#undef SET_MKL_LAYOUT
 
 }  // namespace tensorflow
 

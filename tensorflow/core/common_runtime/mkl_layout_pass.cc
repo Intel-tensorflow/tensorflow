@@ -517,12 +517,12 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
                                  : csinfo_.mkl_fused_depthwise_conv2d,
                       CopyAttrsAllCheckConstFilter, FusedDepthwiseConv2DRewrite,
                       GetRewriteCause()});
-#ifndef ENABLE_ONEDNN_V3
     rinfo_.push_back({csinfo_.fused_matmul,
                       native_fmt ? csinfo_.mkl_native_fused_matmul
                                  : csinfo_.mkl_fused_matmul,
                       CopyAttrsAllCheckConstFilter, FusedMatMulRewrite,
                       GetRewriteCause()});
+#ifndef ENABLE_ONEDNN_V3
     rinfo_.push_back(
         {csinfo_.identity, mkl_op_registry::GetMklOpName(csinfo_.identity),
          CopyAttrsAll, RewriteIfAtleastOneMklInput, GetRewriteCause()});
@@ -754,7 +754,7 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
     // first, for example, graph "A->B->C-D" and finfo_ is {A->B->C to ABC,
     // A->B->C->D to ABCD}, since the first gets applied first, the final
     // graph will be ABC->D.
-#endif // !ENABLE_ONEDNN_V3
+#endif  // !ENABLE_ONEDNN_V3
   }
 
   // Standard interface to run pass
