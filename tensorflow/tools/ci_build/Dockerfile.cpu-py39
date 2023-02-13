@@ -21,6 +21,10 @@ RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 700 \
 
 # Install Python 3.9
 # The following line installs the Python 3.9 cross-compilation toolchain.
+# libffi-dev is needed for ctypes module of python3.9
+RUN apt install libffi-dev
+# libsqlite3-dev is needed for module named '_sqlite3'
+RUN apt install libsqlite3-dev
 RUN chmod 777 /install/install_python39.sh
 RUN /install/install_python39.sh
 #RUN /install/install_pi_python3x_toolchain.sh "3.9"
