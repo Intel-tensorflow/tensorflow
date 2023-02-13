@@ -15,10 +15,10 @@
 # ==============================================================================
 
 cd /usr/src
-wget https://www.python.org/ftp/python/3.9.0/Python-3.9.0.tgz
-tar xzf Python-3.9.0.tgz
-cd Python-3.9.0
+wget https://www.python.org/ftp/python/3.9.16/Python-3.9.16.tgz
+tar xzf Python-3.9.16.tgz
+cd Python-3.9.16
 ./configure --enable-optimizations  --with-ensurepip=install --prefix=/usr/
 make altinstall
-rm /usr/src/Python-3.9.0.tgz
-rm -rf /usr/src/Python-3.9.0
+rm /usr/src/Python-3.9.16.tgz
+rm -rf /usr/src/Python-3.9.16
