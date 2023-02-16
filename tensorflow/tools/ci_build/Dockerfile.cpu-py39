@@ -39,3 +39,5 @@ RUN bash -x /install/install_auditwheel.sh
 RUN bash -x /install/install_golang.sh
 # Set up the master bazelrc configuration file.
 COPY install/.bazelrc /etc/bazel.bazelrc
+
+RUN pip list
