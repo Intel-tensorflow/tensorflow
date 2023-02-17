@@ -60,23 +60,24 @@ def parse_args(test_args: Optional[str] = None) -> argparse.ArgumentParser:
 
 def safe_remove(is_dry: bool, path: Path):
     try:
-        if is_dry:
-            print(f"Dry run remove {'directory' if path.is_dir() else 'file'} {path}")
+        if path.is_dir():
+            shutil.rmtree(path, ignore_errors=True)
         else:
-            if path.is_dir():
-                shutil.rmtree(path, ignore_errors=True)
-            else:
-                path.unlink(missing_ok=True)
+            path.unlink(missing_ok=True)
     except Exception as e:
         print(f"Safe remove {path} failed with error {e}", file=sys.stderr)
 
 
 def remove_subitems(is_dry: bool, path: Path):
-    if path.is_dir():
-        for item in os.listdir(path):
-            safe_remove(is_dry, path.joinpath(item))
+    if is_dry:
+        print(f"Dry run remove {'directory' if path.is_dir() else 'file'} {path}")
     else:
-        safe_remove(is_dry, path)
+        print(f"Remove {'directory' if path.is_dir() else 'file'} {path}")
+        if path.is_dir():
+            for item in os.listdir(path):
+                safe_remove(is_dry, path.joinpath(item))
+        else:
+            safe_remove(is_dry, path)
 
 
 def main(is_dry: bool, *args: Iterable[Path]):
