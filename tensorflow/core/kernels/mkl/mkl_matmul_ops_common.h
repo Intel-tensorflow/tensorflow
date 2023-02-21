@@ -41,12 +41,12 @@ namespace tensorflow {
 #ifndef ENABLE_ONEDNN_V3
 #define APPEND_ELTWISE(scale, alg, alpha, beta) \
   append_eltwise(scale, alg, alpha, beta)
-#define APPEND_ELTWISE_RELU6(alpha, beta) \
+#define APPEND_ELTWISE_RELU6(scale, alpha, beta) \
   append_eltwise(scale, dnnl::algorithm::eltwise_bounded_relu, alpha, beta)
 #define SET_MKL_LAYOUT(md) SetMklLayout(&md)
 #else
 #define APPEND_ELTWISE(scale, alg, alpha, beta) append_eltwise(alg, alpha, beta)
-#define APPEND_ELTWISE_RELU6(alpha, beta) \
+#define APPEND_ELTWISE_RELU6(scale, alpha, beta) \
   append_eltwise(dnnl::algorithm::eltwise_clip, 0.0, alpha)
 #define SET_MKL_LAYOUT(md) SetMklLayout(md)
 #endif  // !ENABLE_ONEDNN_V3
@@ -267,7 +267,7 @@ class MklDnnMatMulFwdPrimitive : public MklPrimitive {
           float op_scale = post_op_param.param[0];
           float op_alpha = post_op_param.param[1];
           float op_beta = post_op_param.param[2];
-          post_ops.APPEND_ELTWISE_RELU6(op_alpha, op_beta);
+          post_ops.APPEND_ELTWISE_RELU6(op_scale, op_alpha, op_beta);
         } else if (post_op_param.name == "elu") {
           DCHECK_EQ(post_op_param.param.size(), 3);
           float op_scale = post_op_param.param[0];
