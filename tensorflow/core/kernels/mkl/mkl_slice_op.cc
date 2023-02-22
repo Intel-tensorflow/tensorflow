@@ -15,7 +15,7 @@ limitations under the License.
 
 // See docs in ../ops/array_ops.cc.
 
-#ifdef INTEL_MKL
+#if defined(INTEL_MKL) && !defined(ENABLE_ONEDNN_V3)
 
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 #include "dnnl.hpp"

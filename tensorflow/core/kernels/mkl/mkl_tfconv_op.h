@@ -16,7 +16,7 @@ limitations under the License.
 #ifndef TENSORFLOW_CORE_KERNELS_MKL_MKL_TFCONV_OP_H_
 #define TENSORFLOW_CORE_KERNELS_MKL_MKL_TFCONV_OP_H_
 
-#ifdef INTEL_MKL
+#if defined(INTEL_MKL) && !defined(ENABLE_ONEDNN_V3)
 
 #include <algorithm>
 #include <string>

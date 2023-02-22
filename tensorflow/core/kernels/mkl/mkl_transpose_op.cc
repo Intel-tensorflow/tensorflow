@@ -15,7 +15,7 @@ limitations under the License.
 
 // See docs in ../ops/array_ops.cc.
 
-#if defined(INTEL_MKL)
+#if defined(INTEL_MKL) && !defined(ENABLE_ONEDNN_V3)
 
 #define EIGEN_USE_THREADS
 

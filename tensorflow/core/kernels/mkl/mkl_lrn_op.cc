@@ -18,7 +18,7 @@ limitations under the License.
 // layout and primitives, use MKL dnn primitives to compute local
 // response normalization
 
-#ifdef INTEL_MKL
+#if defined(INTEL_MKL) && !defined(ENABLE_ONEDNN_V3)
 
 #define EIGEN_USE_THREADS
 

@@ -13,7 +13,7 @@
    limitations under the License.
    ==============================================================================*/
 
-#ifdef INTEL_MKL
+#if defined(INTEL_MKL) && !defined(ENABLE_ONEDNN_V3)
 #define EIGEN_USE_THREADS
 
 #include "dnnl.hpp"
