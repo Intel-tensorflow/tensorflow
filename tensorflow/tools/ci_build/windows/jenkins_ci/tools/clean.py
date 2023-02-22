@@ -20,6 +20,7 @@ import os
 
 from pathlib import Path
 from typing import Optional, Iterable
+from glob import glob
 
 
 def parse_args(test_args: Optional[str] = None) -> argparse.ArgumentParser:
@@ -28,21 +29,30 @@ def parse_args(test_args: Optional[str] = None) -> argparse.ArgumentParser:
     Returns:
         argparse.ArgumentParser: return the parser object
 
-    >>> p = parse_args(['-p', 'c:', '-p', 'd:', '-p', 'e:', '-d'])
+    >>> p = parse_args(['-p', 'c:', '-p', 'd:', '-p', 'e:', '-d', '-g', 'c:\\t*'])
     >>> p.path
     [WindowsPath('c:'), WindowsPath('d:'), WindowsPath('e:')]
     >>> p.dry
     True
+    >>> p.glob
+    ['c:\\t*']
     """
     p = argparse.ArgumentParser(
         description="Clean the given directories without raise errors. The root directories will be kept.")
     p.add_argument("--path",
                    "-p",
                    action="extend",
-                   required=True,
-                   nargs="+",
+                   required=False,
+                   nargs="*",
                    type=Path,
                    help="The path to be removed. Can be passed multiple times")
+    p.add_argument("--glob",
+                   "-g",
+                   action="extend",
+                   required=False,
+                   type=str,
+                   nargs="*",
+                   help="The unix glob path pattern to search the clean directories. Support *, ?, [0-9], **")
     p.add_argument("--dry",
                    "-d",
                    action="store_true",
@@ -70,9 +80,9 @@ def safe_remove(is_dry: bool, path: Path):
 
 def remove_subitems(is_dry: bool, path: Path):
     if is_dry:
-        print(f"Dry run remove {'directory' if path.is_dir() else 'file'} {path}")
+        print(f"Dry run remove {'directory' if path.is_dir() else 'file'} {path} and it is exist {path.exists()}")
     else:
-        print(f"Remove {'directory' if path.is_dir() else 'file'} {path}")
+        print(f"Remove {'directory subitems' if path.is_dir() else 'file'} {path}")
         if path.is_dir():
             for item in os.listdir(path):
                 safe_remove(is_dry, path.joinpath(item))
@@ -80,20 +90,65 @@ def remove_subitems(is_dry: bool, path: Path):
             safe_remove(is_dry, path)
 
 
-def main(is_dry: bool, *args: Iterable[Path]):
+def remove_glob_subitems(is_dry: bool, glob_path: [str, Path]):
+    try:
+        paths = (Path(p) for p in glob(str(glob_path)))
+    except Exception as e:
+        print(f"Glob file path failed with error, {e}", file=sys.stderr)
+        return
+
+    for path in paths:
+        remove_subitems(is_dry, path)
+
+
+def main(is_dry: bool, paths: Iterable[Path], glob_paths: Iterable[str]):
     """
     The main entry of the clean method
 
     Args:
         is_dry (bool): Is dry run the clean operation
-    >>> main(True, *[Path('c'), Path('d')])
+        paths (Iterable[Path]): The paths to clean
+        glob_paths (Iterable[str]): The glob path pattern
+    >>> main(True, [Path('c'), Path('d')], [])
     Dry run remove paths ...
+    >>> import tempfile
+    >>> tmp = tempfile.TemporaryDirectory()
+    >>> tmp_path = Path(tmp.name)
+    >>> a1 = Path.joinpath(tmp_path, 'a1')
+    >>> a2 = Path.joinpath(tmp_path, 'a2')
+    >>> os.mkdir(a1)
+    >>> os.mkdir(a2)
+    >>> t1 = Path(Path.joinpath(tmp_path, 'a1', 't1.txt'))
+    >>> t2 = Path(Path.joinpath(tmp_path, 'a2', 't2.txt'))
+    >>> open(t1, 'w').close()
+    >>> open(t2, 'w').close()
+    >>> t1.exists()
+    True
+    >>> t2.exists()
+    True
+    >>> main(False, [], [Path.joinpath(tmp_path, 'a*')])
+    Remove directory...
+    Remove directory...
+    >>> t1.exists()
+    False
+    >>> t2.exists()
+    False
+    >>> main(False, [tmp_path], [])
+    Remove directory...
+    >>> a1.exists()
+    False
+    >>> a2.exists()
+    False
+    >>> tmp.cleanup()
     """
     if is_dry:
-        print(f"Dry run remove paths {args}")
+        print(f"Dry run remove paths {paths}, {glob_paths}")
 
-    for path in args:
+    for path in paths:
         remove_subitems(is_dry, path)
+
+    for glob_path in glob_paths:
+        remove_glob_subitems(is_dry, glob_path)
 
 
 if __name__ == "__main__":
