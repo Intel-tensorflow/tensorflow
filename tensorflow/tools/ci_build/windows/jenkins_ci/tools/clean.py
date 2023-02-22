@@ -43,6 +43,7 @@ def parse_args(test_args: Optional[str] = None) -> argparse.ArgumentParser:
                    "-p",
                    action="extend",
                    required=False,
+                   default=[],
                    nargs="*",
                    type=Path,
                    help="The path to be removed. Can be passed multiple times")
@@ -51,6 +52,7 @@ def parse_args(test_args: Optional[str] = None) -> argparse.ArgumentParser:
                    action="extend",
                    required=False,
                    type=str,
+                   default=[],
                    nargs="*",
                    help="The unix glob path pattern to search the clean directories. Support *, ?, [0-9], **")
     p.add_argument("--dry",
@@ -159,4 +161,5 @@ if __name__ == "__main__":
     else:
         args = parse_args()
         main(args.dry,
-             *args.path)
+             args.path,
+             args.glob)
