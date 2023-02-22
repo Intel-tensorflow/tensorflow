@@ -29,13 +29,15 @@ def parse_args(test_args: Optional[str] = None) -> argparse.ArgumentParser:
     Returns:
         argparse.ArgumentParser: return the parser object
 
-    >>> p = parse_args(['-p', 'c:', '-p', 'd:', '-p', 'e:', '-d', '-g', 'c:\\t*'])
+    >>> p = parse_args(['-p', 'c:', '-p', 'd:', '-p', 'e:', '-d', '-g', 'c:\\t*', '-r', 'c:/a*', '-r', 'd:/b*'])
     >>> p.path
     [WindowsPath('c:'), WindowsPath('d:'), WindowsPath('e:')]
     >>> p.dry
     True
     >>> p.glob
     ['c:\\t*']
+    >>> p.rd
+    ['c:/a*', 'd:/b*']
     """
     p = argparse.ArgumentParser(
         description="Clean the given directories without raise errors. The root directories will be kept.")
@@ -46,7 +48,7 @@ def parse_args(test_args: Optional[str] = None) -> argparse.ArgumentParser:
                    default=[],
                    nargs="*",
                    type=Path,
-                   help="The path to be removed. Can be passed multiple times")
+                   help="The path of the sub items to be removed. Can be passed multiple times")
     p.add_argument("--glob",
                    "-g",
                    action="extend",
@@ -55,6 +57,13 @@ def parse_args(test_args: Optional[str] = None) -> argparse.ArgumentParser:
                    default=[],
                    nargs="*",
                    help="The unix glob path pattern to search the clean directories. Support *, ?, [0-9], **")
+    p.add_argument("--rd",
+                   "-r",
+                   action="extend",
+                   type=str,
+                   default=[],
+                   nargs="*",
+                   help="Remove the directories match the glob pattern instead of remove the sub items.")
     p.add_argument("--dry",
                    "-d",
                    action="store_true",
@@ -92,18 +101,23 @@ def remove_subitems(is_dry: bool, path: Path):
             safe_remove(is_dry, path)
 
 
-def remove_glob_subitems(is_dry: bool, glob_path: [str, Path]):
+def remove_glob_subitems(is_dry: bool, glob_path: [str, Path], is_remove_root: bool):
     try:
         paths = (Path(p) for p in glob(str(glob_path)))
     except Exception as e:
         print(f"Glob file path failed with error, {e}", file=sys.stderr)
         return
 
-    for path in paths:
-        remove_subitems(is_dry, path)
+    if is_remove_root:
+        for path in paths:
+            print(f"Remove {'directory ' if path.is_dir() else 'file'} {path}")
+            safe_remove(is_dry, path)
+    else:
+        for path in paths:
+            remove_subitems(is_dry, path)
 
 
-def main(is_dry: bool, paths: Iterable[Path], glob_paths: Iterable[str]):
+def main(is_dry: bool, paths: Iterable[Path], glob_paths: Iterable[str], rd_paths: Iterable[str]):
     """
     The main entry of the clean method
 
@@ -111,7 +125,7 @@ def main(is_dry: bool, paths: Iterable[Path], glob_paths: Iterable[str]):
         is_dry (bool): Is dry run the clean operation
         paths (Iterable[Path]): The paths to clean
         glob_paths (Iterable[str]): The glob path pattern
-    >>> main(True, [Path('c'), Path('d')], [])
+    >>> main(True, [Path('c'), Path('d')], [], [])
     Dry run remove paths ...
     >>> import tempfile
     >>> tmp = tempfile.TemporaryDirectory()
@@ -128,18 +142,21 @@ def main(is_dry: bool, paths: Iterable[Path], glob_paths: Iterable[str]):
     True
     >>> t2.exists()
     True
-    >>> main(False, [], [Path.joinpath(tmp_path, 'a*')])
+    >>> main(False, [], [Path.joinpath(tmp_path, 'a*')], [Path.joinpath(tmp_path, 'a2')])
+    Remove directory...
     Remove directory...
     Remove directory...
     >>> t1.exists()
     False
     >>> t2.exists()
     False
-    >>> main(False, [tmp_path], [])
+    >>> a1.exists()
+    True
+    >>> a2.exists()
+    False
+    >>> main(False, [tmp_path], [], [])
     Remove directory...
     >>> a1.exists()
-    False
-    >>> a2.exists()
     False
     >>> tmp.cleanup()
     """
@@ -150,7 +167,10 @@ def main(is_dry: bool, paths: Iterable[Path], glob_paths: Iterable[str]):
         remove_subitems(is_dry, path)
 
     for glob_path in glob_paths:
-        remove_glob_subitems(is_dry, glob_path)
+        remove_glob_subitems(is_dry, glob_path, False)
+
+    for rd_path in rd_paths:
+        remove_glob_subitems(is_dry, rd_path, True)
 
 
 if __name__ == "__main__":
@@ -162,4 +182,5 @@ if __name__ == "__main__":
         args = parse_args()
         main(args.dry,
              args.path,
-             args.glob)
+             args.glob,
+             args.rd)
