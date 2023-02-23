@@ -24,6 +24,8 @@
 set -e
 set -x
 
+pip3 install keras
+
 #using default targets from tensorflow project
 source "./tensorflow/tools/ci_build/build_scripts/DEFAULT_TEST_TARGETS.sh"
 if [[ -z "$DEFAULT_BAZEL_TARGETS" ]]; then
