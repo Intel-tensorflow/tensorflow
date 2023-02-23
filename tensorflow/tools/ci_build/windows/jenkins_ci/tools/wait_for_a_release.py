@@ -1,3 +1,24 @@
+"""
+Wait for a package release from pypi in a given timeout range.
+If the timeout is not provided then the script will continue wait.
+The script will continue waiting.
+
+Ex:
+usage: wait_for_a_release.py [-h] --package PACKAGE --version VERSION [--timeout TIMEOUT]
+
+Wait for a specific python package version from
+https://pypi.org/rss/project/package/releases.xml
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --package PACKAGE, -p PACKAGE
+                        The python package name
+  --version VERSION, -v VERSION
+                        The expected version of the package
+  --timeout TIMEOUT, -t TIMEOUT
+                        The timeout hours, if not provided their will be no timeout limitation.
+"""
+
 import argparse
 import doctest
 import sys
@@ -43,7 +64,7 @@ def parse_args(test_args: Optional[str] = None) -> argparse.ArgumentParser:
                    type=int,
                    default=0,
                    required=False,
-                   help="The timeout hours, if not provided their will be no timeout when the wait flag is provided.")
+                   help="The timeout hours, if not provided their will be no timeout limitation")
 
     if isinstance(test_args, str):
         return p.parse_args(test_args.split())
