@@ -183,7 +183,7 @@ def download_artifacts(urls: Iterable[str], output: Path, version: str):
         name = wheel_url.split('/')[-1]
         wheel_version, _ = get_versions(name)
         if wheel_version != version:
-            print_error('Error: The wheel version {wheel_version} is not match the required {version}!')
+            print_error(f'Error: The wheel version {wheel_version} is not match the required {version}!')
             exit_error()
 
         with open(output.joinpath(name), 'wb') as f:
@@ -222,8 +222,8 @@ def get_artifact_links(server: str, job: str, version: str, py_versions: Iterabl
             for a in build_info['artifacts']:
                 name: str = a['fileName']
                 if name and name.endswith('.whl'):
-                    version, py_version = get_versions(name)
-                    if version == version and py_version in py_versions:
+                    wheel_version, py_version = get_versions(name)
+                    if wheel_version == version and py_version in py_versions:
                         url = build_info['url']
                         print(f'Found {job} version {version} artifact for Python {py_version} {url}')
                         artifacts.append(url)
