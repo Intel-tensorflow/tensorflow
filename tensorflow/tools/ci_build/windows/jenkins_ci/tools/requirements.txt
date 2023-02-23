@@ -1,4 +1,5 @@
 # wait_fore_a_release.py
+# download_wheels.py
 beautifulsoup4
 
 # find_first_invalid_commit.py
@@ -9,3 +10,6 @@ google-api-python-client
 google-auth-httplib2
 google-auth-oauthlib
 cryptography
+
+# download_wheels.py
+python-jenkins
