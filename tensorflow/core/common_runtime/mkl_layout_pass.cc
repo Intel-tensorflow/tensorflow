@@ -436,7 +436,6 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
                                  : csinfo_.mkl_conv2d_with_bias,
                       CopyAttrsConvCheckConstFilter, AlwaysRewrite,
                       GetRewriteCause()});
-#ifndef ENABLE_ONEDNN_V3
     rinfo_.push_back({csinfo_.conv2d_grad_filter,
                       mkl_op_registry::GetMklOpName(csinfo_.conv2d_grad_filter),
                       CopyAttrsConv, AlwaysRewrite, GetRewriteCause()});
@@ -445,18 +444,15 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
                           ? csinfo_.mkl_native_conv2d_grad_filter_with_bias
                           : csinfo_.mkl_conv2d_grad_filter_with_bias,
                       CopyAttrsConv, AlwaysRewrite, GetRewriteCause()});
-#endif  // !ENABLE_ONEDNN_V3
     rinfo_.push_back({csinfo_.conv2d_grad_input,
                       mkl_op_registry::GetMklOpName(csinfo_.conv2d_grad_input),
                       CopyAttrsConv, AlwaysRewrite, GetRewriteCause()});
     rinfo_.push_back(
         {csinfo_.conv3d, mkl_op_registry::GetMklOpName(csinfo_.conv3d),
          CopyAttrsConvCheckConstFilter, AlwaysRewrite, GetRewriteCause()});
-#ifndef ENABLE_ONEDNN_V3
     rinfo_.push_back({csinfo_.conv3d_grad_filter,
                       mkl_op_registry::GetMklOpName(csinfo_.conv3d_grad_filter),
                       CopyAttrsConv, AlwaysRewrite, GetRewriteCause()});
-#endif  // !ENABLE_ONEDNN_V3
     rinfo_.push_back({csinfo_.conv3d_grad_input,
                       mkl_op_registry::GetMklOpName(csinfo_.conv3d_grad_input),
                       CopyAttrsConv, AlwaysRewrite, GetRewriteCause()});
@@ -468,11 +464,11 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
         {csinfo_.depthwise_conv2d_grad_input,
          mkl_op_registry::GetMklOpName(csinfo_.depthwise_conv2d_grad_input),
          CopyAttrsAll, AlwaysRewrite, GetRewriteCause()});
-#ifndef ENABLE_ONEDNN_V3
     rinfo_.push_back(
         {csinfo_.depthwise_conv2d_grad_filter,
          mkl_op_registry::GetMklOpName(csinfo_.depthwise_conv2d_grad_filter),
          CopyAttrsAll, AlwaysRewrite, GetRewriteCause()});
+#ifndef ENABLE_ONEDNN_V3
     rinfo_.push_back(
         {csinfo_.dequantize, mkl_op_registry::GetMklOpName(csinfo_.dequantize),
          CopyAttrsAll, DequantizeRewrite, kRewriteForOpNameChange});
@@ -759,7 +755,6 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
     minfo_.push_back({csinfo_.pad, csinfo_.fused_conv2d,
                       csinfo_.pad_with_fused_conv2d, GetPadOrFusedConv2D});
 
-#ifndef ENABLE_ONEDNN_V3
     minfo_.push_back({csinfo_.conv2d_grad_filter, csinfo_.bias_add_grad,
                       csinfo_.conv2d_grad_filter_with_bias,
                       GetConv2DBackpropFilterOrBiasAddGrad});
@@ -768,7 +763,6 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
     // first, for example, graph "A->B->C-D" and finfo_ is {A->B->C to ABC,
     // A->B->C->D to ABCD}, since the first gets applied first, the final
     // graph will be ABC->D.
-#endif  // !ENABLE_ONEDNN_V3
   }
 
   // Standard interface to run pass
