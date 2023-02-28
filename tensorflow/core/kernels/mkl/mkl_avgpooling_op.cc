@@ -13,7 +13,7 @@
    limitations under the License.
    ==============================================================================*/
 
-#if defined(INTEL_MKL) && !defined(ENABLE_ONEDNN_V3)
+#ifdef INTEL_MKL
 #define EIGEN_USE_THREADS
 
 #include "dnnl.hpp"
@@ -83,7 +83,12 @@ class MklAvgPoolingOp : public MklPoolingForwardOpBase<T> {
 
       memory::dims filter_dims, strides, padding_left, padding_right;
       // Get src/filter/stride/padding information.
+#ifndef ENABLE_ONEDNN_V3
       this->PoolParamsToDims(&pool_params, &filter_dims, &strides,
+#else
+      memory::dims dilations;
+      this->PoolParamsToDims(&pool_params, &filter_dims, &strides, &dilations,
+#endif  // !ENABLE_ONEDNN_V3
                              &padding_left, &padding_right, is_pool2d);
 
       // Get the input memory descriptor.
@@ -110,9 +115,13 @@ class MklAvgPoolingOp : public MklPoolingForwardOpBase<T> {
         pooling_prop_kind = prop_kind::forward_training;
 
       MklPoolingParams fwdParams(
-          src_dims, output_dims_mkl_order, filter_dims, strides, padding_left,
-          padding_right, dnnl::algorithm::pooling_avg_exclude_padding,
-          pooling_prop_kind,
+#ifndef ENABLE_ONEDNN_V3
+          src_dims, output_dims_mkl_order, filter_dims, strides,
+#else
+          src_dims, output_dims_mkl_order, filter_dims, strides, dilations,
+#endif  // !ENABLE_ONEDNN_V3
+          padding_left, padding_right,
+          dnnl::algorithm::pooling_avg_exclude_padding, pooling_prop_kind,
           static_cast<memory::format_tag>(this->data_format_mkldnn_), input_md,
           this->native_format_);
       pooling_fwd = MklPoolingFwdPrimitiveFactory<T>::Get(fwdParams);
@@ -178,6 +187,7 @@ class MklAvgPoolingOp : public MklPoolingForwardOpBase<T> {
   engine cpu_engine_ = engine(engine::kind::cpu, 0);
 };  // MklAvgPoolingOp
 
+#ifndef ENABLE_ONEDNN_V3
 template <class Device, class T, bool native_format = false>
 class MklAvgPoolingGradOp : public MklPoolingBackwardOpBase<T> {
  public:
@@ -312,6 +322,7 @@ class MklAvgPoolingGradOp : public MklPoolingBackwardOpBase<T> {
   const int kInputTensorIndexInputGradient = 1;
   engine cpu_engine_ = engine(engine::kind::cpu, 0);
 };  // MklAvgPoolingGradOp
+#endif  // !ENABLE_ONEDNN_V3
 
 #define REGISTER_MKL_AVGPOOL3D_KERNELS(T)                                     \
   REGISTER_KERNEL_BUILDER(                                                    \
@@ -320,26 +331,34 @@ class MklAvgPoolingGradOp : public MklPoolingBackwardOpBase<T> {
           .TypeConstraint<T>("T")                                             \
           .Label(mkl_op_registry::kMklLayoutDependentOpLabel),                \
       MklAvgPoolingOp<CPUDevice, T>);                                         \
+  REGISTER_KERNEL_BUILDER(Name("_MklNativeAvgPool3D")                         \
+                              .Device(DEVICE_CPU)                             \
+                              .TypeConstraint<T>("T")                         \
+                              .Label(mkl_op_registry::kMklNameChangeOpLabel), \
+                          MklAvgPoolingOp<CPUDevice, T, true>);
+
+TF_CALL_float(REGISTER_MKL_AVGPOOL3D_KERNELS);
+TF_CALL_bfloat16(REGISTER_MKL_AVGPOOL3D_KERNELS);
+#undef REGISTER_MKL_AVGPOOL3D_KERNELS
+
+#define REGISTER_MKL_AVGPOOL3D_GRAD_KERNELS(T)                                \
   REGISTER_KERNEL_BUILDER(                                                    \
       Name("_MklAvgPool3DGrad")                                               \
           .Device(DEVICE_CPU)                                                 \
           .TypeConstraint<T>("T")                                             \
           .Label(mkl_op_registry::kMklLayoutDependentOpLabel),                \
       MklAvgPoolingGradOp<CPUDevice, T>);                                     \
-  REGISTER_KERNEL_BUILDER(Name("_MklNativeAvgPool3D")                         \
-                              .Device(DEVICE_CPU)                             \
-                              .TypeConstraint<T>("T")                         \
-                              .Label(mkl_op_registry::kMklNameChangeOpLabel), \
-                          MklAvgPoolingOp<CPUDevice, T, true>);               \
   REGISTER_KERNEL_BUILDER(Name("_MklNativeAvgPool3DGrad")                     \
                               .Device(DEVICE_CPU)                             \
                               .TypeConstraint<T>("T")                         \
                               .Label(mkl_op_registry::kMklNameChangeOpLabel), \
                           MklAvgPoolingGradOp<CPUDevice, T, true>);
 
-TF_CALL_float(REGISTER_MKL_AVGPOOL3D_KERNELS);
-TF_CALL_bfloat16(REGISTER_MKL_AVGPOOL3D_KERNELS);
-#undef REGISTER_MKL_AVGPOOL3D_KERNELS
+#ifndef ENABLE_ONEDNN_V3
+TF_CALL_float(REGISTER_MKL_AVGPOOL3D_GRAD_KERNELS);
+TF_CALL_bfloat16(REGISTER_MKL_AVGPOOL3D_GRAD_KERNELS);
+#endif  // !ENABLE_ONEDNN_V3
+#undef REGISTER_MKL_AVGPOOL3D_GRAD_KERNELS
 
 #define REGISTER_MKL_AVGPOOL_KERNELS(T)                                       \
   REGISTER_KERNEL_BUILDER(                                                    \
@@ -348,27 +367,36 @@ TF_CALL_bfloat16(REGISTER_MKL_AVGPOOL3D_KERNELS);
           .TypeConstraint<T>("T")                                             \
           .Label(mkl_op_registry::kMklLayoutDependentOpLabel),                \
       MklAvgPoolingOp<CPUDevice, T>);                                         \
+  REGISTER_KERNEL_BUILDER(Name("_MklNativeAvgPool")                           \
+                              .Device(DEVICE_CPU)                             \
+                              .TypeConstraint<T>("T")                         \
+                              .Label(mkl_op_registry::kMklNameChangeOpLabel), \
+                          MklAvgPoolingOp<CPUDevice, T, true>);
+
+TF_CALL_float(REGISTER_MKL_AVGPOOL_KERNELS);
+TF_CALL_bfloat16(REGISTER_MKL_AVGPOOL_KERNELS);
+#undef REGISTER_MKL_AVGPOOL_KERNELS
+
+#define REGISTER_MKL_AVGPOOL_GRAD_KERNELS(T)                                  \
   REGISTER_KERNEL_BUILDER(                                                    \
       Name("_MklAvgPoolGrad")                                                 \
           .Device(DEVICE_CPU)                                                 \
           .TypeConstraint<T>("T")                                             \
           .Label(mkl_op_registry::kMklLayoutDependentOpLabel),                \
       MklAvgPoolingGradOp<CPUDevice, T>);                                     \
-  REGISTER_KERNEL_BUILDER(Name("_MklNativeAvgPool")                           \
-                              .Device(DEVICE_CPU)                             \
-                              .TypeConstraint<T>("T")                         \
-                              .Label(mkl_op_registry::kMklNameChangeOpLabel), \
-                          MklAvgPoolingOp<CPUDevice, T, true>);               \
   REGISTER_KERNEL_BUILDER(Name("_MklNativeAvgPoolGrad")                       \
                               .Device(DEVICE_CPU)                             \
                               .TypeConstraint<T>("T")                         \
                               .Label(mkl_op_registry::kMklNameChangeOpLabel), \
                           MklAvgPoolingGradOp<CPUDevice, T, true>);
 
-TF_CALL_float(REGISTER_MKL_AVGPOOL_KERNELS);
-TF_CALL_bfloat16(REGISTER_MKL_AVGPOOL_KERNELS);
-#undef REGISTER_MKL_AVGPOOL_KERNELS
+#ifndef ENABLE_ONEDNN_V3
+TF_CALL_float(REGISTER_MKL_AVGPOOL_GRAD_KERNELS);
+TF_CALL_bfloat16(REGISTER_MKL_AVGPOOL_GRAD_KERNELS);
+#endif  // !ENABLE_ONEDNN_V3
+#undef REGISTER_MKL_AVGPOOL_GRAD_KERNELS
 
+#ifndef ENABLE_ONEDNN_V3
 REGISTER_KERNEL_BUILDER(Name("_MklQuantizedAvgPool")
                             .Device(DEVICE_CPU)
                             .TypeConstraint<quint8>("T")
@@ -380,6 +408,7 @@ REGISTER_KERNEL_BUILDER(Name("_MklQuantizedAvgPool")
                             .TypeConstraint<qint8>("T")
                             .Label(mkl_op_registry::kMklQuantizedOpLabel),
                         MklAvgPoolingOp<CPUDevice, qint8, true>);
+#endif  // !ENABLE_ONEDNN_V3
 
 }  // namespace tensorflow
 
