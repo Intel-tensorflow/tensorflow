@@ -187,7 +187,6 @@ class MklAvgPoolingOp : public MklPoolingForwardOpBase<T> {
   engine cpu_engine_ = engine(engine::kind::cpu, 0);
 };  // MklAvgPoolingOp
 
-#ifndef ENABLE_ONEDNN_V3
 template <class Device, class T, bool native_format = false>
 class MklAvgPoolingGradOp : public MklPoolingBackwardOpBase<T> {
  public:
@@ -234,7 +233,12 @@ class MklAvgPoolingGradOp : public MklPoolingBackwardOpBase<T> {
                                   output_shape);
 
       memory::dims filter_dims, strides, padding_left, padding_right;
+#ifndef ENABLE_ONEDNN_V3
       this->PoolParamsToDims(&pool_params, &filter_dims, &strides,
+#else
+      memory::dims dilations;
+      this->PoolParamsToDims(&pool_params, &filter_dims, &strides, &dilations,
+#endif  // !ENABLE_ONEDNN_V3
                              &padding_left, &padding_right, is_pool2d);
 
       memory::dims orig_input_dims_mkl_order =
@@ -272,7 +276,11 @@ class MklAvgPoolingGradOp : public MklPoolingBackwardOpBase<T> {
       // that is used in the backward pass.
       MklPoolingParams bwdParams(
           orig_input_dims_mkl_order, output_dims_mkl_order, filter_dims,
+#ifndef ENABLE_ONEDNN_V3
           strides, padding_left, padding_right,
+#else
+          strides, dilations, padding_left, padding_right,
+#endif  // !ENABLE_ONEDNN_V3
           dnnl::algorithm::pooling_avg_exclude_padding,
           prop_kind::forward_training,
           static_cast<memory::format_tag>(this->data_format_mkldnn_), src_md,
@@ -322,7 +330,6 @@ class MklAvgPoolingGradOp : public MklPoolingBackwardOpBase<T> {
   const int kInputTensorIndexInputGradient = 1;
   engine cpu_engine_ = engine(engine::kind::cpu, 0);
 };  // MklAvgPoolingGradOp
-#endif  // !ENABLE_ONEDNN_V3
 
 #define REGISTER_MKL_AVGPOOL3D_KERNELS(T)                                     \
   REGISTER_KERNEL_BUILDER(                                                    \
@@ -354,10 +361,8 @@ TF_CALL_bfloat16(REGISTER_MKL_AVGPOOL3D_KERNELS);
                               .Label(mkl_op_registry::kMklNameChangeOpLabel), \
                           MklAvgPoolingGradOp<CPUDevice, T, true>);
 
-#ifndef ENABLE_ONEDNN_V3
 TF_CALL_float(REGISTER_MKL_AVGPOOL3D_GRAD_KERNELS);
 TF_CALL_bfloat16(REGISTER_MKL_AVGPOOL3D_GRAD_KERNELS);
-#endif  // !ENABLE_ONEDNN_V3
 #undef REGISTER_MKL_AVGPOOL3D_GRAD_KERNELS
 
 #define REGISTER_MKL_AVGPOOL_KERNELS(T)                                       \
@@ -390,10 +395,8 @@ TF_CALL_bfloat16(REGISTER_MKL_AVGPOOL_KERNELS);
                               .Label(mkl_op_registry::kMklNameChangeOpLabel), \
                           MklAvgPoolingGradOp<CPUDevice, T, true>);
 
-#ifndef ENABLE_ONEDNN_V3
 TF_CALL_float(REGISTER_MKL_AVGPOOL_GRAD_KERNELS);
 TF_CALL_bfloat16(REGISTER_MKL_AVGPOOL_GRAD_KERNELS);
-#endif  // !ENABLE_ONEDNN_V3
 #undef REGISTER_MKL_AVGPOOL_GRAD_KERNELS
 
 #ifndef ENABLE_ONEDNN_V3
