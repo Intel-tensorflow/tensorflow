@@ -237,7 +237,6 @@ class MklPoolingFwdPrimitiveFactory : public MklPrimitiveFactory<T> {
   }
 };
 
-#ifndef ENABLE_ONEDNN_V3
 template <typename T>
 class MklPoolingBwdPrimitive : public MklPrimitive {
  public:
@@ -294,8 +293,10 @@ class MklPoolingBwdPrimitive : public MklPrimitive {
     std::shared_ptr<dnnl::memory::desc> dst_md;
 
     // Forward and backward pooling descriptors and primitive descriptors.
+#ifndef ENABLE_ONEDNN_V3
     std::shared_ptr<dnnl::pooling_forward::desc> fwd_desc;
     std::shared_ptr<dnnl::pooling_backward::desc> bwd_desc;
+#endif  // !ENABLE_ONEDNN_V3
     std::shared_ptr<PoolingFwdPd> fwd_pd;
     std::shared_ptr<PoolingBwdPd> bwd_pd;
 
@@ -315,8 +316,10 @@ class MklPoolingBwdPrimitive : public MklPrimitive {
           diff_dst_mem(nullptr),
           src_md(nullptr),
           dst_md(nullptr),
+#ifndef ENABLE_ONEDNN_V3
           fwd_desc(nullptr),
           bwd_desc(nullptr),
+#endif  // !ENABLE_ONEDNN_V3
           fwd_pd(nullptr),
           bwd_pd(nullptr),
           bwd(nullptr) {}
@@ -368,6 +371,9 @@ class MklPoolingBwdPrimitiveFactory : public MklPrimitiveFactory<T> {
     key_creator.AddAsKey(bwdParams.dst_dims);
     key_creator.AddAsKey(bwdParams.filter_dims);
     key_creator.AddAsKey(bwdParams.strides);
+#ifdef ENABLE_ONEDNN_V3
+    key_creator.AddAsKey(bwdParams.dilations);
+#endif  // ENABLE_ONEDNN_V3
     key_creator.AddAsKey(bwdParams.padding_left);
     key_creator.AddAsKey(bwdParams.padding_right);
     key_creator.AddAsKey<int>(static_cast<int>(bwdParams.alg_kind));
@@ -384,7 +390,6 @@ class MklPoolingBwdPrimitiveFactory : public MklPrimitiveFactory<T> {
     this->SetOp(key, op);
   }
 };
-#endif  // !ENABLE_ONEDNN_V3
 
 typedef Eigen::ThreadPoolDevice CPUDevice;
 
@@ -746,7 +751,6 @@ class MklPoolingForwardOpBase : public MklPoolingOpBase<T> {
   const int kOutputTensorIndexOutput = 0;
 };  // MklPoolingForwardBaseOp
 
-#ifndef ENABLE_ONEDNN_V3
 template <class T>
 class MklPoolingBackwardOpBase : public MklPoolingOpBase<T> {
  public:
@@ -766,7 +770,7 @@ class MklPoolingBackwardOpBase : public MklPoolingOpBase<T> {
     memory::desc dst_pd = pool_bkwd_prim_desc.diff_src_desc();
     MklDnnShape output_mkl_shape;
     output_mkl_shape.SetMklTensor(true);
-    output_mkl_shape.SetMklLayout(&dst_pd);
+    output_mkl_shape.SET_MKL_LAYOUT(dst_pd);
     output_mkl_shape.SetElemType(MklDnnType<T>());
     output_mkl_shape.SetTfLayout(output_dims_mkl_order.size(),
                                  output_dims_mkl_order, output_tf_format);
@@ -782,7 +786,6 @@ class MklPoolingBackwardOpBase : public MklPoolingOpBase<T> {
     DCHECK(*output_tensor);
   }
 };
-#endif  // !ENABLE_ONEDNN_V3
 
 #undef GET_DIMS
 #undef SET_MKL_LAYOUT

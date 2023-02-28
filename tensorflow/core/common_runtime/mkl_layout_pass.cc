@@ -546,18 +546,16 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
     rinfo_.push_back(
         {csinfo_.max_pool, mkl_op_registry::GetMklOpName(csinfo_.max_pool),
          CopyAttrsAll, NonDepthBatchWisePoolRewrite, GetRewriteCause()});
-#ifndef ENABLE_ONEDNN_V3
     rinfo_.push_back({csinfo_.max_pool_grad,
                       mkl_op_registry::GetMklOpName(csinfo_.max_pool_grad),
                       CopyAttrsAll, MaxpoolGradRewrite, GetRewriteCause()});
-#endif  // !ENABLE_ONEDNN_V3
     rinfo_.push_back(
         {csinfo_.max_pool3d, mkl_op_registry::GetMklOpName(csinfo_.max_pool3d),
          CopyAttrsAll, NonDepthBatchWisePoolRewrite, GetRewriteCause()});
-#ifndef ENABLE_ONEDNN_V3
     rinfo_.push_back({csinfo_.max_pool3d_grad,
                       mkl_op_registry::GetMklOpName(csinfo_.max_pool3d_grad),
                       CopyAttrsAll, Maxpool3DGradRewrite, GetRewriteCause()});
+#ifndef ENABLE_ONEDNN_V3
     rinfo_.push_back(
         {csinfo_.maximum, mkl_op_registry::GetMklOpName(csinfo_.maximum),
          CopyAttrsAll, RewriteIfAtleastOneMklInput, GetRewriteCause()});

@@ -145,11 +145,12 @@ template class MklPoolingFwdPrimitive<quint8>;
 template class MklPoolingFwdPrimitive<qint8>;
 #endif  // !ENABLE_ONEDNN_V3
 
-#ifndef ENABLE_ONEDNN_V3
 template <typename T>
 void MklPoolingBwdPrimitive<T>::Setup(const MklPoolingParams& bwdParams) {
   DCHECK(bwdParams.alg_kind == dnnl::algorithm::pooling_max ||
+#ifndef ENABLE_ONEDNN_V3
          bwdParams.alg_kind == dnnl::algorithm::pooling_avg ||
+#endif  // !ENABLE_ONEDNN_V3
          bwdParams.alg_kind == dnnl::algorithm::pooling_avg_include_padding ||
          bwdParams.alg_kind == dnnl::algorithm::pooling_avg_exclude_padding)
       << "Pooling algorithm kind is not supported";
@@ -158,12 +159,13 @@ void MklPoolingBwdPrimitive<T>::Setup(const MklPoolingParams& bwdParams) {
   // Create memory descriptor.
   context_.src_md.reset(new memory::desc({bwdParams.src_dims}, MklDnnType<T>(),
                                          memory::format_tag::any));
-  context_.src_md.reset(new memory::desc(bwdParams.src_md.data));
+  context_.src_md.reset(new memory::desc(bwdParams.GET_MEMORY_DESC(src_md)));
   context_.dst_md.reset(new memory::desc({bwdParams.dst_dims}, MklDnnType<T>(),
                                          bwdParams.native_format
                                              ? bwdParams.src_format
                                              : memory::format_tag::any));
 
+#ifndef ENABLE_ONEDNN_V3
   // Create a backward primitive. The implementation for backward must comply to
   // the workspace format it gets from forward pass, so we directly use src_md
   // and dst_md here.
@@ -180,6 +182,16 @@ void MklPoolingBwdPrimitive<T>::Setup(const MklPoolingParams& bwdParams) {
       new pooling_forward::primitive_desc(*context_.fwd_desc, cpu_engine_));
   context_.bwd_pd.reset(new pooling_backward::primitive_desc(
       *context_.bwd_desc, cpu_engine_, *context_.fwd_pd));
+#else
+  context_.fwd_pd.reset(new pooling_forward::primitive_desc(
+      cpu_engine_, bwdParams.prop_kind, bwdParams.alg_kind, *context_.src_md,
+      *context_.dst_md, bwdParams.strides, bwdParams.filter_dims,
+      bwdParams.dilations, bwdParams.padding_left, bwdParams.padding_right));
+  context_.bwd_pd.reset(new pooling_backward::primitive_desc(
+      cpu_engine_, bwdParams.alg_kind, *context_.src_md, *context_.dst_md,
+      bwdParams.strides, bwdParams.filter_dims, bwdParams.dilations,
+      bwdParams.padding_left, bwdParams.padding_right, *context_.fwd_pd));
+#endif  // !ENABLE_ONEDNN_V3
 
   // Create oneDNN internal memory object with dummy data.
   context_.diff_src_mem.reset(new memory(context_.bwd_pd.get()->diff_src_desc(),
@@ -242,7 +254,6 @@ void MklPoolingBwdPrimitive<T>::Execute(const T* diff_dst_data,
 
 template class MklPoolingBwdPrimitive<float>;
 template class MklPoolingBwdPrimitive<bfloat16>;
-#endif  // !ENABLE_ONEDNN_V3
 
 // Initialization for TensorFlow format
 void MklPoolParameters::Init(OpKernelContext* context,

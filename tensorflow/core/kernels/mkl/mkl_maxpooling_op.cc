@@ -235,7 +235,6 @@ class MklMaxPoolingOp : public MklPoolingForwardOpBase<T> {
   }
 };
 
-#ifndef ENABLE_ONEDNN_V3
 // The operation to compute MaxPool gradients.
 // It takes three inputs:
 //   - The original input tensor
@@ -288,7 +287,12 @@ class MklMaxPoolingGradOp : public MklPoolingBackwardOpBase<T> {
                                   orig_input_shape);
 
       memory::dims filter_dims, strides, padding_left, padding_right;
+#ifndef ENABLE_ONEDNN_V3
       this->PoolParamsToDims(&pool_params, &filter_dims, &strides,
+#else
+      memory::dims dilations;
+      this->PoolParamsToDims(&pool_params, &filter_dims, &strides, &dilations,
+#endif  // !ENABLE_ONEDNN_V3
                              &padding_left, &padding_right, is_pool2d);
 
       memory::dims orig_input_dims_mkl_order =
@@ -326,7 +330,12 @@ class MklMaxPoolingGradOp : public MklPoolingBackwardOpBase<T> {
 
       MklPoolingParams bwdParams(
           orig_input_dims_mkl_order, output_dims_mkl_order, filter_dims,
+#ifndef ENABLE_ONEDNN_V3
           strides, padding_left, padding_right, dnnl::algorithm::pooling_max,
+#else
+          strides, dilations, padding_left, padding_right,
+          dnnl::algorithm::pooling_max,
+#endif  // !ENABLE_ONEDNN_V3
           prop_kind::forward_training,
           static_cast<memory::format_tag>(this->data_format_mkldnn_), src_md,
           this->native_format_);
@@ -386,7 +395,6 @@ class MklMaxPoolingGradOp : public MklPoolingBackwardOpBase<T> {
   const int kInputTensorIndexWorkspace = 3;
   engine cpu_engine_ = engine(engine::kind::cpu, 0);
 };  // MklMaxPoolingGradOp
-#endif  // !ENABLE_ONEDNN_V3
 
 #define REGISTER_MKL_MAXPOOL3D_KERNELS(T)                                     \
   REGISTER_KERNEL_BUILDER(                                                    \
@@ -415,10 +423,8 @@ TF_CALL_bfloat16(REGISTER_MKL_MAXPOOL3D_KERNELS);
                               .TypeConstraint<T>("T")                         \
                               .Label(mkl_op_registry::kMklNameChangeOpLabel), \
                           MklMaxPoolingGradOp<CPUDevice, T, true>);
-#ifndef ENABLE_ONEDNN_V3
 TF_CALL_float(REGISTER_MKL_MAXPOOL3D_GRAD_KERNELS);
 TF_CALL_bfloat16(REGISTER_MKL_MAXPOOL3D_GRAD_KERNELS);
-#endif  // !ENABLE_ONEDNN_V3
 
 #define REGISTER_MKL_MAXPOOL_KERNELS(T)                                       \
   REGISTER_KERNEL_BUILDER(                                                    \
@@ -447,10 +453,10 @@ TF_CALL_bfloat16(REGISTER_MKL_MAXPOOL_KERNELS);
                               .TypeConstraint<T>("T")                         \
                               .Label(mkl_op_registry::kMklNameChangeOpLabel), \
                           MklMaxPoolingGradOp<CPUDevice, T, true>);
-#ifndef ENABLE_ONEDNN_V3
 TF_CALL_float(REGISTER_MKL_MAXPOOL_GRAD_KERNELS);
 TF_CALL_bfloat16(REGISTER_MKL_MAXPOOL_GRAD_KERNELS);
 
+#ifndef ENABLE_ONEDNN_V3
 REGISTER_KERNEL_BUILDER(Name("_MklQuantizedMaxPool")
                             .Device(DEVICE_CPU)
                             .TypeConstraint<quint8>("T")
