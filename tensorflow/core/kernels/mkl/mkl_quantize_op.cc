@@ -545,7 +545,7 @@ class MklQuantizeV2Op : public OpKernel {
     MklReorderWithScaleFwdParams fwdParams(src_dims, src_md, dst_md, scale_md);
     Tensor scale_tensor;
     OP_REQUIRES_OK(ctx, ctx->allocate_temp(DT_FLOAT, {1}, &scale_tensor));
-    scale_tensor.flat<float>()(0) = scale_factor;
+    scale_tensor.flat<float>()(0) = 1 / scale_factor;
     scale.SetUsrMem(scale_md, &scale_tensor);
 #else
     MklReorderWithScaleFwdParams fwdParams(src_dims, src_md, dst_md);
