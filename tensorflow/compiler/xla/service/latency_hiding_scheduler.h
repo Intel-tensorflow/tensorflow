@@ -46,6 +46,7 @@ enum class ResourceType {
   kSendHost = 6,
   kRecvHost = 7,
   kNumResources = 8,
+  kTargetDefinedResourcesBound = 10000,
 };
 
 enum class ResourceUsageType {
@@ -54,11 +55,11 @@ enum class ResourceUsageType {
   kResourceRelease,
 };
 
-constexpr int ResourceTypeToIndex(ResourceType resource_type) {
-  return static_cast<int>(resource_type);
+constexpr int64_t ResourceTypeToIndex(ResourceType resource_type) {
+  return static_cast<int64_t>(resource_type);
 }
 
-using ResourcePair = std::pair<ResourceType, ResourceUsageType>;
+using ResourcePair = std::pair<int64_t, ResourceUsageType>;
 using ResourcesVector = absl::InlinedVector<ResourcePair, 1>;
 
 class HloGraphNode;
@@ -127,7 +128,7 @@ class AsyncTracker {
   // Returns if this is an Async op start that the scheduler supports.
   virtual bool IsSupportedAsyncStart(const HloInstruction& hlo) const;
 
-  // Returns resource used and if it occupies or releases a resource.
+  // Returns resources used (i.e., occupied or released) by this instruction
   virtual ResourcesVector GetResourcesFromInstruction(
       const HloInstruction& hlo) const;
 
@@ -137,17 +138,37 @@ class AsyncTracker {
       HloScheduleGraph* schedule_graph,
       const LatencyEstimator* latency_estimator) const {}
 
-  // Returns the number of collective instructions of the opcode 'async_done'
-  // started by this instruction.
-  virtual int64_t CollectivesPerInstruction(ResourceType async_done,
-                                            const HloInstruction& instr) const;
+  // Returns the number of resources (of type resource_type) that are used by
+  // this instruction.
+  virtual int64_t GetNumResourcesPerInstruction(
+      ResourceType resource_type, const HloInstruction& instr) const;
+  virtual int64_t GetNumResourcesPerInstruction(
+      int64_t resource_type, const HloInstruction& instr) const;
+
+  // Sets the maximum allowed number of instances for each resource
+  virtual void SetConcurrentResourceLimits(
+      absl::flat_hash_map<int64_t, int64_t>& max_concurrent_resource) const;
+
+  // Returns the name of the given resource
+  virtual absl::string_view GetResourceName(int64_t resource_type) const;
+
+  // Returns the first target defined resource's id, regardless of if it exits
+  static int64_t GetFirstTargetDefinedResource() {
+    return static_cast<int64_t>(ResourceType::kTargetDefinedResourcesBound) + 1;
+  }
+
+  // Returns the number of target defined resources
+  virtual int64_t GetNumTargetDefinedResources() const;
+
+  // Returns how many instructions using the given resource_type we can overlap
+  virtual int64_t GetNumAvailableResources(int64_t resource_type) const;
 
   explicit AsyncTracker(const SchedulerConfig& config) : config_(config) {}
 
  private:
   const SchedulerConfig config_;
   mutable absl::flat_hash_map<const HloComputation*,
-                              absl::flat_hash_map<ResourceType, int64_t>>
+                              absl::flat_hash_map<int64_t, int64_t>>
       async_in_computation_cache_;
 };
 
@@ -214,9 +235,18 @@ class HloGraphNode {
     });
   }
   std::optional<ResourceUsageType> UsesResourceType(ResourceType res) const {
-    for (auto& resource : resources_) {
-      if (resource.first == res) {
-        return resource.second;
+    int64_t res_type = ResourceTypeToIndex(res);
+    for (const auto& [resource_type, usage_type] : resources_) {
+      if (resource_type == res_type) {
+        return usage_type;
+      }
+    }
+    return std::nullopt;
+  }
+  std::optional<ResourceUsageType> UsesResourceType(int64_t res) const {
+    for (const auto& [resource_type, usage_type] : resources_) {
+      if (resource_type == res) {
+        return usage_type;
       }
     }
     return std::nullopt;
@@ -516,7 +546,7 @@ class ModulePressureState {
 class DefaultSchedulerCore : public SchedulerCore {
  public:
   using ReadyQueueSet = std::vector<HloGraphNode*>;
-  using OpcodeIntMap = absl::flat_hash_map<ResourceType, int64_t>;
+  using ResourceMap = absl::flat_hash_map<int64_t, int64_t>;
   using ShouldSkipNodeFunction = std::function<bool(const HloGraphNode*)>;
 
   // Class used to cache expensive information. Currently memory pressure
@@ -579,21 +609,20 @@ class DefaultSchedulerCore : public SchedulerCore {
     // Ready set for the nodes. Its ordered by our heuristic defined in
     // ReadySetLt.
     ReadyQueueSet ready_set;
-    // Map containing the maximum number of async ops per type that we allow can
-    // happen concurrently.
-    OpcodeIntMap max_concurrent_async;
+    // Maximum allowed number of overlapping instructions using the key resource
+    // type.
+    ResourceMap max_concurrent_resource;
     // New scheduling sequence produced by the scheduler. This is in reversed
     // order (because we schedule bottom up). This will be required to be
     // reversed before assigning to the HloSchedule.
     std::vector<HloInstruction*> new_sequence_reversed;
     // Units of time passed in the schedule. To keep track of latency hiding.
     HloGraphNode::TimeCost current_time = 0;
-    // Number of async collectives in flight.
-    OpcodeIntMap collectives_in_flight;
-    // Number of instructions using a certain resource in the set waiting to be
-    // scheduled.
-    std::array<int, ResourceTypeToIndex(ResourceType::kNumResources)>
-        resource_users_in_queue;
+    // Number of resources in flight.
+    ResourceMap resources_in_flight;
+    // Number of instructions using the key resource type in the set waiting to
+    // be scheduled.
+    ResourceMap resource_users_in_queue;
     // Number of nodes scheduled.
     int64_t scheduled_count = 0;
     // Class returning information about instruction cost and latency between
@@ -621,7 +650,6 @@ class DefaultSchedulerCore : public SchedulerCore {
           async_tracker(async_tracker),
           memory_pressure_tracker(memory_pressure_tracker),
           config(config) {
-      absl::c_fill(resource_users_in_queue, 0);
     }
   };
 

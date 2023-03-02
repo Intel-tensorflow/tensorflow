@@ -14,6 +14,7 @@ limitations under the License.
 ==============================================================================*/
 
 #include <iterator>
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -29,6 +30,7 @@ limitations under the License.
 #include "mlir/Support/LogicalResult.h"  // from @llvm-project
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"  // from @llvm-project
 #include "tensorflow/compiler/mlir/lite/quantization/quantization_utils.h"
+#include "tensorflow/compiler/mlir/quantization/tensorflow/passes/remove_identity_op_pattern.h"
 #include "tensorflow/compiler/mlir/quantization/tensorflow/passes/utils.h"
 #include "tensorflow/compiler/mlir/tensorflow/ir/tf_dialect.h"
 #include "tensorflow/compiler/mlir/tensorflow/ir/tf_ops.h"
@@ -42,6 +44,10 @@ class PrepareLiftingPass
     : public PassWrapper<PrepareLiftingPass, OperationPass<func::FuncOp>> {
  public:
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(PrepareLiftingPass)
+
+  PrepareLiftingPass() = default;
+
+  explicit PrepareLiftingPass(const OpSet op_set) : op_set_(op_set) {}
 
   StringRef getArgument() const final {
     // This is the argument used to refer to the pass in
@@ -60,6 +66,9 @@ class PrepareLiftingPass
   }
 
   void runOnOperation() override;
+
+ private:
+  OpSet op_set_;
 };
 
 // Check if given indices in `val1` has same number of elements as given
@@ -251,36 +260,6 @@ Value MultiplyFakeQuantValue(OpBuilder& builder, Location loc, Value value,
   return ConstantFoldOpIfPossible(dequantize).front();
 }
 
-// Copied from tensorflow/compiler/mlir/lite/transforms/prepare_tf.cc.
-// By removing identity ops, constant operands with dynamic shapes have static
-// shape information which is necessary for correct pattern matching in this
-// pass.
-struct RemoveIdentity : public OpRewritePattern<TF::IdentityOp> {
-  using OpRewritePattern<TF::IdentityOp>::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(TF::IdentityOp identity,
-                                PatternRewriter& rewriter) const override {
-    for (Operation* user : identity->getUsers()) {
-      // Replace the op with the input if output is only used by TF ops.
-      // Currently this is more on the conservative side since we need to ensure
-      // every consumer op to be a TF op before applying this pattern. We can
-      // consider to revisit this in the future if this turns out to be too
-      // restrictive.
-      if (user->getDialect()->getNamespace() != "tf") {
-        return failure();
-      }
-      // Identity ops of returning values might be helpful for some other
-      // compilers, so avoid removing these Identity ops.
-      if (user->hasTrait<OpTrait::IsTerminator>()) {
-        return failure();
-      }
-    }
-
-    rewriter.replaceOp(identity, identity.getInput());
-    return success();
-  }
-};
-
 #include "tensorflow/compiler/mlir/quantization/tensorflow/passes/prepare_lifting.inc"
 
 void PrepareLiftingPass::runOnOperation() {
@@ -291,7 +270,15 @@ void PrepareLiftingPass::runOnOperation() {
   // with a constant operand to a preceding affine operation.
   RewritePatternSet patterns(ctx);
   populateWithGenerated(patterns);
-  patterns.add<TF::ConvertTFEinsumOp, RemoveIdentity>(ctx);
+  patterns.add<RemoveIdentity>(ctx);
+  if (op_set_ != OpSet::XLA) {
+    // Convert Einsum into BatchMatMul for non-XLA opsets.
+    // For the uniform opset, it is requested to maintain the BatchMatmul logic.
+    // For the TF opset, since we need to test the effect we remain it as a
+    // future work.
+    patterns.add<TF::ConvertTFEinsumOp>(ctx);
+  }
+
   if (failed(applyPatternsAndFoldGreedily(func, std::move(patterns)))) {
     func.emitError() << "quant-internal-prepare-lifting failed.";
     signalPassFailure();
@@ -300,8 +287,9 @@ void PrepareLiftingPass::runOnOperation() {
 
 }  // namespace
 
-std::unique_ptr<OperationPass<func::FuncOp>> CreatePrepareLiftingPass() {
-  return std::make_unique<PrepareLiftingPass>();
+std::unique_ptr<OperationPass<func::FuncOp>> CreatePrepareLiftingPass(
+    const OpSet target_opset) {
+  return std::make_unique<PrepareLiftingPass>(target_opset);
 }
 
 static PassRegistration<PrepareLiftingPass> pass;

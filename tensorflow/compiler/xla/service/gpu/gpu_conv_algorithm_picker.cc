@@ -34,7 +34,6 @@ limitations under the License.
 #include "tensorflow/compiler/xla/hlo/ir/hlo_instructions.h"
 #include "tensorflow/compiler/xla/literal_util.h"
 #include "tensorflow/compiler/xla/service/gpu/backend_configs.pb.h"
-#include "tensorflow/compiler/xla/service/gpu/convolution_thunk.h"
 #include "tensorflow/compiler/xla/service/gpu/gpu_asm_opts_util.h"
 #include "tensorflow/compiler/xla/service/gpu/gpu_autotuning.pb.h"
 #include "tensorflow/compiler/xla/service/gpu/hlo_algorithm_denylist.h"
@@ -314,10 +313,6 @@ StatusOr<bool> CheckRedzones(const se::RedzoneAllocator& allocator,
 }
 #endif
 
-using ConvCacheKey =
-    std::tuple<std::string /* stream_exec->GetDeviceDescription().model_str()*/,
-               std::string /* conv->ToString(HloPrintOptions::Canonical()) */>;
-
 struct ConvCacheStats {
   int64_t cache_hits = 0;
   int64_t cache_misses = 0;
@@ -328,18 +323,9 @@ struct ConvCacheStats {
   }
 };
 
-ConvCacheKey AutotuneCacheKeyfromInstruction(
-    const HloCustomCallInstruction* conv,
-    absl::string_view device_description_str) {
-  auto options = HloPrintOptions::Canonical();
-  options.set_print_backend_config(true);
-  return std::make_tuple(std::string(device_description_str),
-                         conv->ToString(options));
-}
-
 absl::Mutex autotune_cache_mu(absl::kConstInit);
 auto& autotune_cache ABSL_GUARDED_BY(autotune_cache_mu) =
-    *new absl::flat_hash_map<ConvCacheKey, AutotuneResult>();
+    *new absl::flat_hash_map<AutotuneCacheKey, AutotuneResult>();
 auto& autotune_cache_stats ABSL_GUARDED_BY(autotune_cache_mu) =
     *new ConvCacheStats();
 
@@ -400,8 +386,8 @@ StatusOr<AutotuneResult> GpuConvAlgorithmPicker::PickBestAlgorithm(
   // If in deviceless mode, return the result from the autotune_cache.
   if (auto deviceless_config = std::get_if<DevicelessConfig>(&config_)) {
     auto device_description_str = deviceless_config->model_str;
-    ConvCacheKey key =
-        AutotuneCacheKeyfromInstruction(instr, device_description_str);
+    AutotuneCacheKey key =
+        AutotuneCacheKeyFromInstruction(instr, device_description_str);
     absl::MutexLock autotune_lock(&autotune_cache_mu);
     auto it = autotune_cache.find(key);
     if (it != autotune_cache.end()) {
@@ -428,7 +414,7 @@ StatusOr<AutotuneResult> GpuConvAlgorithmPicker::PickBestAlgorithm(
   // which can greatly improve both stability (deterministic numeric results
   // within a process for a given input) and performance (2x speedup on some
   // models).
-  ConvCacheKey key = AutotuneCacheKeyfromInstruction(
+  AutotuneCacheKey key = AutotuneCacheKeyFromInstruction(
       instr, stream_exec->GetDeviceDescription().model_str());
   {
     absl::MutexLock autotune_lock(&autotune_cache_mu);
@@ -544,14 +530,14 @@ GpuConvAlgorithmPicker::AutotuneRuntimeArguments::FromInstruction(
   initialize_buffer(result_buffer, result_shape);
 
   // Get canonical HLO.
-  std::string canonical_hlo = std::get<1>(AutotuneCacheKeyfromInstruction(
+  std::string canonical_hlo = std::get<1>(AutotuneCacheKeyFromInstruction(
       instr, stream_exec->GetDeviceDescription().model_str()));
 
   TF_ASSIGN_OR_RETURN(GpuConvConfig gpu_conv_config, GetGpuConvConfig(instr));
 
   GpuConvAlgorithmPicker::AutotuneRuntimeArguments runtime_arguments = {
       result_shape,           hlo_module_config, operand_buffers, result_buffer,
-      input_output_allocator, gpu_conv_config,   canonical_hlo};
+      input_output_allocator, gpu_conv_config,   {canonical_hlo}};
 
   return runtime_arguments;
 }
@@ -727,28 +713,30 @@ GpuConvAlgorithmPicker::AutotuneOneConvRunner(
 
   if (!input_output_allocator_redzone_clear ||
       !scratch_allocator_redzone_clear) {
-    auto canonical_hlo = runtime_arguments.canonical_hlo;
-    std::string blas_version;
-    if (auto* blas = stream_exec->AsBlas()) {
-      (void)blas->GetVersion(&blas_version);
+    if (runtime_arguments.canonical_hlo.has_value()) {
+      std::string canonical_hlo = runtime_arguments.canonical_hlo.value();
+      std::string blas_version;
+      if (auto* blas = stream_exec->AsBlas()) {
+        (void)blas->GetVersion(&blas_version);
+      }
+
+      AlgorithmDenylist proto;
+      auto entry = proto.add_entries();
+      entry->set_hlo(canonical_hlo);
+      *entry->mutable_cc() = GetComputeCapability(stream_exec);
+      *entry->mutable_cudnn_version() = GetCudnnVersion(stream_exec);
+      entry->set_blas_version(blas_version);
+      auto algo = entry->add_algos();
+      algo->set_id(alg.algo_id());
+      algo->set_tensor_ops(alg.tensor_ops_enabled());
+
+      LOG(ERROR) << "To denylist this algorithm for this convolution, "
+                    "copy-paste the following "
+                    "proto to the denylist file pointed by XLA_FLAGS "
+                    "--xla_gpu_algorithm_denylist_path="
+                 << GetDebugOptionsFromFlags().xla_gpu_algorithm_denylist_path()
+                 << " : " << proto.ShortDebugString();
     }
-
-    AlgorithmDenylist proto;
-    auto entry = proto.add_entries();
-    entry->set_hlo(canonical_hlo);
-    *entry->mutable_cc() = GetComputeCapability(stream_exec);
-    *entry->mutable_cudnn_version() = GetCudnnVersion(stream_exec);
-    entry->set_blas_version(blas_version);
-    auto algo = entry->add_algos();
-    algo->set_id(alg.algo_id());
-    algo->set_tensor_ops(alg.tensor_ops_enabled());
-
-    LOG(ERROR) << "To denylist this algorithm for this convolution, "
-                  "copy-paste the following "
-                  "proto to the denylist file pointed by XLA_FLAGS "
-                  "--xla_gpu_algorithm_denylist_path="
-               << GetDebugOptionsFromFlags().xla_gpu_algorithm_denylist_path()
-               << " : " << proto.ShortDebugString();
 
     // CheckRedzones has modified the result in-place to include a failure.
     return result;
@@ -828,9 +816,11 @@ GpuConvAlgorithmPicker::PickBestAlgorithmNoCacheCuda(
   }
 
   absl::Span<const AlgorithmDesc> disabled_algos;
-  disabled_algos = GetDisabledConvAlgorithms(
-      GetComputeCapability(stream_exec), GetCudnnVersion(stream_exec),
-      blas_version, runtime_arguments.canonical_hlo);
+  if (runtime_arguments.canonical_hlo.has_value()) {
+    disabled_algos = GetDisabledConvAlgorithms(
+        GetComputeCapability(stream_exec), GetCudnnVersion(stream_exec),
+        blas_version, runtime_arguments.canonical_hlo.value());
+  }
 
   const bool cudnn_frontend_enabled =
       debug_options.xla_gpu_enable_cudnn_frontend();
@@ -858,8 +848,10 @@ GpuConvAlgorithmPicker::PickBestAlgorithmNoCacheCuda(
   // they include some very slow algorithms.
   if (!reference_result) {
     LOG(WARNING) << "None of the algorithms provided by cuDNN heuristics "
-                    "worked; trying fallback algorithms.  Conv: "
-                 << runtime_arguments.canonical_hlo;
+                    "worked; trying fallback algorithms.";
+    if (runtime_arguments.canonical_hlo.has_value()) {
+      LOG(WARNING) << "Conv: " << runtime_arguments.canonical_hlo.value();
+    }
 
     TF_ASSIGN_OR_RETURN(std::vector<MaybeFusedConvRunner> fallback_runners,
                         GetAlgorithms(runtime_arguments.gpu_conv_config, stream,

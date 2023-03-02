@@ -166,7 +166,7 @@ static absl::Status CollectivePermuteImplCommon(
     absl::Span<const int64_t> replica_group_values,
     absl::Span<const int64_t> source_peers,
     absl::Span<const int64_t> target_peers) {
-  NcclExecuteParams params(*run_options, run_options->stream());
+  NcclExecuteParams params(*run_options, stream->parent());
 
   auto comm = GetNcclComm(params, group_mode, op_id, replica_group_offsets,
                           replica_group_values);
@@ -309,6 +309,25 @@ XLA_RUNTIME_DEFINE_CUSTOM_CALL(
 // AllGather.
 //===----------------------------------------------------------------------===//
 
+#if XLA_ENABLE_XCCL
+static absl::Status AllGatherImplCommon(
+    const ServiceExecutableRunOptions* run_options, se::Stream* stream,
+    CustomCall::RemainingArgs args, int32_t uid, int64_t group_mode,
+    int64_t op_id, absl::Span<const int64_t> replica_group_offsets,
+    absl::Span<const int64_t> replica_group_values) {
+  NcclExecuteParams params(*run_options, stream->parent());
+
+  auto comm = GetNcclComm(params, group_mode, op_id, replica_group_offsets,
+                          replica_group_values);
+  if (!comm.ok()) return ToAbslStatus(comm.status());
+
+  auto device_buffers = GetDeviceBufferPairs(args);
+  if (!device_buffers.ok()) return ToAbslStatus(device_buffers.status());
+
+  return ToAbslStatus(RunAllGather(*device_buffers, *stream, **comm));
+}
+#endif  // XLA_ENABLE_XCCL
+
 static absl::Status AllGatherImpl(
     const ServiceExecutableRunOptions* run_options,
     CollectivesSupport* collectives, CustomCall::RemainingArgs args,
@@ -318,17 +337,10 @@ static absl::Status AllGatherImpl(
 #if XLA_ENABLE_XCCL
   VLOG(3) << "Running AllGather";
   se::Stream* stream = run_options->stream();
-  NcclExecuteParams params(*run_options, stream);
-
-  auto comm = GetNcclComm(params, group_mode, op_id, replica_group_offsets,
-                          replica_group_values);
-  if (!comm.ok()) return ToAbslStatus(comm.status());
-
-  auto device_buffers = GetDeviceBufferPairs(args);
-  if (!device_buffers.ok()) return ToAbslStatus(device_buffers.status());
-
-  auto st = RunAllGather(*device_buffers, *stream, **comm);
-  if (!st.ok()) return ToAbslStatus(st);
+  auto status =
+      AllGatherImplCommon(run_options, stream, args, uid, group_mode, op_id,
+                          replica_group_offsets, replica_group_values);
+  if (!status.ok()) return status;
 
   int32_t device_ordinal = stream->parent()->device_ordinal();
   return collectives->MaybeBlockAfterFirstRun(uid, device_ordinal, stream);
@@ -350,6 +362,60 @@ XLA_RUNTIME_DEFINE_CUSTOM_CALL(
         .Attr<absl::Span<const int64_t>>("replica_group_values"));
 
 //===----------------------------------------------------------------------===//
+// AllGatherStart.
+//===----------------------------------------------------------------------===//
+
+static absl::Status AllGatherStartImpl(
+    const ServiceExecutableRunOptions* run_options,
+    AsyncCollectivesSupport* async_collectives, CustomCall::RemainingArgs args,
+    int64_t group_mode, int64_t op_id,
+    absl::Span<const int64_t> replica_group_offsets,
+    absl::Span<const int64_t> replica_group_values, int32_t uid) {
+#if XLA_ENABLE_XCCL
+  VLOG(3) << "Running AllGatherStart";
+  se::Stream* stream = run_options->stream();
+  se::Stream* async_stream = async_collectives->async_comm_stream();
+
+  // Wait until compute inputs are ready.
+  async_stream->ThenWaitFor(stream);
+
+  auto status =
+      AllGatherImplCommon(run_options, async_stream, args, uid, group_mode,
+                          op_id, replica_group_offsets, replica_group_values);
+  if (!status.ok()) return status;
+
+  return async_collectives->RecordEvent(uid);
+#else   // XLA_ENABLE_XCCL
+  return absl::InternalError("NCCL disabled");
+#endif  // XLA_ENABLE_XCCL
+}
+
+XLA_RUNTIME_DEFINE_CUSTOM_CALL(
+    AllGatherStart, FunctionWrapper<AllGatherStartImpl>(), checks,
+    CustomCall::Bind("xla.gpu.all_gather_start")
+        .UserData<const ServiceExecutableRunOptions*>()
+        .UserData<AsyncCollectivesSupport*>()
+        .RemainingArgs()              // args
+        .Attr<int64_t>("group_mode")  // CollectiveOpGroupMode
+        .Attr<int64_t>("op_id")
+        .Attr<absl::Span<const int64_t>>("replica_group_offsets")
+        .Attr<absl::Span<const int64_t>>("replica_group_values")
+        .Attr<int32_t>("uid"));
+
+//===----------------------------------------------------------------------===//
+// AllGatherDone.
+//===----------------------------------------------------------------------===//
+
+XLA_RUNTIME_DEFINE_CUSTOM_CALL(
+    AllGatherDone, FunctionWrapper<AsyncDoneImpl>(), checks,
+    CustomCall::Bind("xla.gpu.all_gather_done")
+        .UserData<const ServiceExecutableRunOptions*>()
+        .UserData<CollectivesSupport*>()
+        .UserData<AsyncCollectivesSupport*>()
+        .Value("AllGatherDone")
+        .Attr<int32_t>("uid"));
+
+//===----------------------------------------------------------------------===//
 // AllReduce.
 //===----------------------------------------------------------------------===//
 
@@ -359,7 +425,7 @@ static absl::Status AllReduceImplCommon(
     CustomCall::RemainingArgs args, int64_t group_mode, int64_t op_id,
     int64_t reduction_kind, absl::Span<const int64_t> replica_group_offsets,
     absl::Span<const int64_t> replica_group_values) {
-  NcclExecuteParams params(*run_options, run_options->stream());
+  NcclExecuteParams params(*run_options, stream->parent());
 
   auto comm = GetNcclComm(params, group_mode, op_id, replica_group_offsets,
                           replica_group_values);
@@ -476,7 +542,7 @@ static absl::Status AllToAllImpl(
 #if XLA_ENABLE_XCCL
   VLOG(3) << "Running AllToAll";
   se::Stream* stream = run_options->stream();
-  NcclExecuteParams params(*run_options, stream);
+  NcclExecuteParams params(*run_options, stream->parent());
 
   auto comm = GetNcclComm(params, group_mode, op_id, replica_group_offsets,
                           replica_group_values);
@@ -521,7 +587,7 @@ static absl::Status ReduceScatterImpl(
 #if XLA_ENABLE_XCCL
   VLOG(3) << "Running ReduceScatter";
   se::Stream* stream = run_options->stream();
-  NcclExecuteParams params(*run_options, stream);
+  NcclExecuteParams params(*run_options, stream->parent());
 
   auto comm = GetNcclComm(params, group_mode, op_id, replica_group_offsets,
                           replica_group_values);
@@ -562,7 +628,7 @@ static absl::Status ReplicaIdImpl(
     const ServiceExecutableRunOptions* run_options, FlatMemrefView result) {
   VLOG(3) << "Running ReplicaId";
   se::Stream* stream = run_options->stream();
-  NcclExecuteParams params(*run_options, stream);
+  NcclExecuteParams params(*run_options, stream->parent());
 
   StatusOr<GlobalDeviceId> global_device_id = params.GetGlobalDeviceId();
   if (!global_device_id.ok()) return ToAbslStatus(global_device_id.status());
@@ -572,8 +638,8 @@ static absl::Status ReplicaIdImpl(
   if (!logical_id.ok()) return ToAbslStatus(logical_id.status());
 
   se::DeviceMemoryBase result_data = GetDeviceAddress(result);
-  params.stream->ThenMemset32(&result_data, logical_id.value().replica_id,
-                              /*size=*/4);
+  stream->ThenMemset32(&result_data, logical_id.value().replica_id,
+                       /*size=*/4);
 
   return absl::OkStatus();
 }
@@ -592,7 +658,7 @@ static absl::Status PartitionIdImpl(
     const ServiceExecutableRunOptions* run_options, FlatMemrefView result) {
   VLOG(3) << "Running PartitionId";
   se::Stream* stream = run_options->stream();
-  NcclExecuteParams params(*run_options, stream);
+  NcclExecuteParams params(*run_options, stream->parent());
 
   StatusOr<GlobalDeviceId> global_device_id = params.GetGlobalDeviceId();
   if (!global_device_id.ok()) return ToAbslStatus(global_device_id.status());
@@ -602,8 +668,8 @@ static absl::Status PartitionIdImpl(
   if (!logical_id.ok()) return ToAbslStatus(logical_id.status());
 
   se::DeviceMemoryBase result_data = GetDeviceAddress(result);
-  params.stream->ThenMemset32(&result_data, logical_id.value().computation_id,
-                              /*size=*/4);
+  stream->ThenMemset32(&result_data, logical_id.value().computation_id,
+                       /*size=*/4);
 
   return absl::OkStatus();
 }
@@ -622,6 +688,8 @@ void RegisterCollectiveCustomCalls(
   registry.Register("xla.gpu.collective_permute_done", CollectivePermuteDone);
   registry.Register("xla.gpu.collective_permute_start", CollectivePermuteStart);
   registry.Register("xla.gpu.all_gather", AllGather);
+  registry.Register("xla.gpu.all_gather_done", AllGatherDone);
+  registry.Register("xla.gpu.all_gather_start", AllGatherStart);
   registry.Register("xla.gpu.all_reduce", AllReduce);
   registry.Register("xla.gpu.all_reduce_done", AllReduceDone);
   registry.Register("xla.gpu.all_reduce_start", AllReduceStart);

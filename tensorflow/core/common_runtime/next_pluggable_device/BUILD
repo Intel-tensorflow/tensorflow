@@ -75,6 +75,7 @@ cc_library(
     deps = [
         ":next_pluggable_device",
         ":next_pluggable_device_api",
+        ":pjrt_compile_on_demand_op",
         "//tensorflow/c:tf_status_headers",
         "//tensorflow/c:tf_status_helper",
         "//tensorflow/core:framework",
@@ -98,6 +99,8 @@ cc_library(
         ":utils",
         "//tensorflow/c:tf_status_helper",
         "//tensorflow/compiler/jit:device_compiler_client",
+        "//tensorflow/compiler/jit:variable_info",
+        "//tensorflow/compiler/jit:variable_info_util",
         "//tensorflow/compiler/jit:xla_device",
         "//tensorflow/compiler/jit:xla_launch_util",
         "//tensorflow/compiler/tf2xla:common",
@@ -107,7 +110,7 @@ cc_library(
         "//tensorflow/core:lib_proto_parsing",
         "//tensorflow/core/platform:status",
         "//tensorflow/core/tfrt/common:async_value_tensor",
-        "//tensorflow/core/tfrt/common:pjrt_util",
+        "//tensorflow/core/tfrt/common:create_pjrt_client_util",
         "//tensorflow/core/tpu:tpu_defs",
         "//tensorflow/core/util:determinism",
         "//tensorflow/tsl/platform:errors",
@@ -311,7 +314,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":plugin_variable",
-        "//tensorflow/compiler/jit:xla_launch_util",
+        "//tensorflow/compiler/jit:variable_info",
         "//tensorflow/tsl/platform:status",
     ],
 )
@@ -327,7 +330,6 @@ cc_library(
         "//tensorflow/c:tf_tensor_internal",
         "//tensorflow/c/experimental/next_pluggable_device:c_api_hdrs",
         "//tensorflow/core:framework",
-        "//tensorflow/core/platform:status",
         "//tensorflow/tsl/platform:errors",
         "//tensorflow/tsl/platform:status",
     ],

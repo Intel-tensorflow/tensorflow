@@ -6,8 +6,8 @@ def repo():
     """Imports TFRT."""
 
     # Attention: tools parse and update these lines.
-    TFRT_COMMIT = "298cb43575c16bcd98524c505a1990a11f383b3b"
-    TFRT_SHA256 = "13fac53ce8ee261fea576114f6bec81079cd8a1a0f6994093e5bcb11ffa89d07"
+    TFRT_COMMIT = "85488e9aae621ec5175b94fc5e31e41b7e5e06ac"
+    TFRT_SHA256 = "906abbdb2dd0e8517ea9d079a3c2ad1677dc21aaf1607451f953d4b0c55207f2"
 
     tf_http_archive(
         name = "tf_runtime",

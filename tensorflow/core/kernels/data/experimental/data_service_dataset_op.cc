@@ -342,8 +342,8 @@ class DataServiceDatasetOp::Dataset : public DatasetBase {
    protected:
     std::shared_ptr<model::Node> CreateNode(
         IteratorContext* ctx, model::Node::Args args) const override {
-      return model::MakeKnownRatioNode(std::move(args),
-                                       /*ratio=*/1);
+      return model::MakeAsyncKnownRatioNode(std::move(args),
+                                            /*ratio=*/1, {});
     }
 
     Status SaveInternal(SerializationContext* ctx,
@@ -449,9 +449,6 @@ DataServiceDatasetOp::DataServiceDatasetOp(OpKernelConstruction* ctx)
   if (ctx->HasAttr(kDataTransferProtocol)) {
     OP_REQUIRES_OK(
         ctx, ctx->GetAttr(kDataTransferProtocol, &data_transfer_protocol_));
-  }
-  if (data_transfer_protocol_.empty()) {
-    data_transfer_protocol_ = kGrpcTransferProtocol;
   }
 
   std::string target_workers_str = "AUTO";

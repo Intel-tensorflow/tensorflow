@@ -20,7 +20,6 @@ limitations under the License.
 #include "mlir/Conversion/BufferizationToMemRef/BufferizationToMemRef.h"
 #include "mlir/Conversion/ComplexToStandard/ComplexToStandard.h"
 #include "mlir/Conversion/ShapeToStandard/ShapeToStandard.h"
-#include "mlir/Conversion/VectorToSCF/VectorToSCF.h"
 #include "mlir/Dialect/Bufferization/Transforms/Passes.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/Transforms/Passes.h"
@@ -119,6 +118,7 @@ void CreateTfJitRtPipeline(OpPassManager& pm,
 
   pm.addNestedPass<FuncOp>(mlir::mhlo::createGroupReductionDimensionsPass());
   pm.addNestedPass<FuncOp>(mlir::mhlo::createHloCanonicalizeScatterPass());
+  pm.addNestedPass<FuncOp>(mlir::mhlo::createHloCanonicalizeDotPass());
 
   // Also, try to simplify reshape operations.
   pm.addNestedPass<FuncOp>(mlir::mhlo::createSymbolicShapeOptimizationPass());
@@ -203,14 +203,7 @@ void CreateTfJitRtPipeline(OpPassManager& pm,
   pm.addPass(mlir::createCSEPass());
   pm.addPass(mlir::createCanonicalizerPass());
 
-  pm.addNestedPass<FuncOp>(mlir::gml_st::createRewriteVectorTransposePass());
-
-  mlir::VectorTransferToSCFOptions vec_to_scf_options;
-  vec_to_scf_options.unroll = true;
-  pm.addNestedPass<FuncOp>(
-      mlir::createConvertVectorToSCFPass(vec_to_scf_options));
-  pm.addNestedPass<FuncOp>(
-      mlir::gml_st::createRewriteVectorMultiReductionPass());
+  pm.addNestedPass<FuncOp>(mlir::gml_st::createLowerVectorsPass());
 
   pm.addNestedPass<FuncOp>(CreateMathApproximationPass({"all"}));
 }

@@ -94,6 +94,7 @@ py_library(
         "//tensorflow/python:util",
         "//tensorflow/python/eager:context",
         "//tensorflow/python/eager:function",
+        "//tensorflow/python/ops/numpy_ops:numpy",
         "//tensorflow/python/ops/signal",
     ],
 )
@@ -163,7 +164,6 @@ cuda_py_test(
     srcs = ["array_test.py"],
     tags = [
         "nogpu",  # b/217374776
-        "notsan",  # TODO(b/170999669): Data race
     ],
     deps = [
         ":control_flow_ops",

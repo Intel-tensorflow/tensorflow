@@ -16,6 +16,7 @@ limitations under the License.
 #ifndef TENSORFLOW_COMPILER_XLA_PJRT_C_PJRT_C_API_WRAPPER_IMPL_H_
 #define TENSORFLOW_COMPILER_XLA_PJRT_C_PJRT_C_API_WRAPPER_IMPL_H_
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -108,8 +109,22 @@ struct PJRT_DeviceTopology {
   std::unique_ptr<xla::PjRtDeviceTopology> topology;
 };
 
-namespace pjrt {
+struct PJRT_Chunk {
+  xla::PjRtChunk chunk;
+};
 
+struct PJRT_TransferMetadata {
+  // Decompose xla::Shape into C API type fields, without any Tuple information.
+  // TODO(b/238999986) support other `xla::Shape` fields when they are fully
+  // implemented.
+  xla::Shape device_shape;
+};
+
+struct PJRT_CopyToDeviceStream {
+  std::unique_ptr<xla::CopyToDeviceStream> stream;
+};
+
+namespace pjrt {
 // C API definitions
 
 void PJRT_Error_Destroy(PJRT_Error_Destroy_Args* args);
@@ -149,6 +164,9 @@ PJRT_Error* PJRT_Device_ToString(PJRT_Device_ToString_Args* args);
 
 PJRT_Error* PJRT_Executable_Destroy(PJRT_Executable_Destroy_Args* args);
 PJRT_Error* PJRT_Executable_Name(PJRT_Executable_Name_Args* args);
+PJRT_Error* PJRT_Executable_NumReplicas(PJRT_Executable_NumReplicas_Args* args);
+PJRT_Error* PJRT_Executable_NumPartitions(
+    PJRT_Executable_NumPartitions_Args* args);
 PJRT_Error* PJRT_LoadedExecutable_AddressableDevices(
     PJRT_LoadedExecutable_AddressableDevices_Args* args);
 PJRT_Error* PJRT_Executable_NumOutputs(PJRT_Executable_NumOutputs_Args* args);
@@ -289,6 +307,8 @@ constexpr PJRT_Api CreatePjrtApi(
 
       .PJRT_Executable_Destroy = pjrt::PJRT_Executable_Destroy,
       .PJRT_Executable_Name = pjrt::PJRT_Executable_Name,
+      .PJRT_Executable_NumReplicas = pjrt::PJRT_Executable_NumReplicas,
+      .PJRT_Executable_NumPartitions = pjrt::PJRT_Executable_NumPartitions,
       .PJRT_Executable_NumOutputs = pjrt::PJRT_Executable_NumOutputs,
       .PJRT_Executable_SizeOfGeneratedCodeInBytes =
           pjrt::PJRT_Executable_SizeOfGeneratedCodeInBytes,

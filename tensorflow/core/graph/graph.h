@@ -102,7 +102,6 @@ class Node {
   const NodeDef& def() const;
   const OpDef& op_def() const;
 
-  // TODO(mdan): This is only used by control_flow_deps_o_chains. Remove?
   NodeDef* mutable_def();
 
   // input and output types
@@ -539,7 +538,7 @@ class Graph {
   // Clone the current graph into a new one.
   std::unique_ptr<Graph> Clone();
 
-  static const int kControlSlot;
+  static constexpr int kControlSlot = -1;
 
   // The GraphDef version range of this graph (see graph.proto).
   const VersionDef& versions() const;
@@ -688,7 +687,6 @@ class Graph {
   const OpRegistryInterface* op_registry() const { return &ops_; }
   const FunctionLibraryDefinition& flib_def() const { return ops_; }
 
-  // TODO(mdan): This is only used by control_flow_deps_o_chains. Remove?
   FunctionLibraryDefinition* mutable_flib_def() { return &ops_; }
 
   void CheckDeviceNameIndex(int index) {
@@ -751,6 +749,22 @@ class Graph {
   ConstructionContext GetConstructionContextInternal() const {
     return construction_context_;
   }
+
+  // Set full type information for a node given its name.
+  // Note that if this is called in a loop iterating over all the nodes
+  // elsewhere it would be O(n^2) complexity. If this case was important in the
+  // future, an alternative method could be added that takes in a flat_hash_map
+  // of name: type and simply iterates through the graph once and annotates all
+  // nodes.
+  void SetNodeType(StringPiece name, const FullTypeDef& type);
+
+  // Get full type information for a node given its name.
+  // Note that if this is called in a loop iterating over all the nodes
+  // elsewhere it would be O(n^2) complexity. If this case was important in the
+  // future, an alternative method could be added that takes in flat_hash_map of
+  // name: type and simply iterates through the graph once and stores all the
+  // information in the map.
+  void NodeType(StringPiece name, const FullTypeDef** result);
 
   // TODO(josh11b): uint64 hash() const;
 

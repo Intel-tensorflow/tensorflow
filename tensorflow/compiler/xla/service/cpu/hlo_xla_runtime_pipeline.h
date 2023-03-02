@@ -30,6 +30,8 @@ struct HloXlaRuntimePipelineOptions {
   bool enable_tiling_and_fusion = false;
   bool sparse_bufferization = true;
   bool outline_with_xla_framework = false;
+  bool experimental_deallocation = false;
+  bool enable_avx2 = true;
 };
 
 // Creates a pipeline that lowers modules from HLO to Linalg on buffers.

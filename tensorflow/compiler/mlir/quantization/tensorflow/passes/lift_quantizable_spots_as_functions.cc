@@ -125,6 +125,16 @@ class CheckQuantizableOps
                                                     enable_two_input_tensors_));
     }
 
+    // Only the composite functions with f32 inputs are quantizable.
+    if (call_op.getResults().size() == 1 && !call_op->getResult(0)
+                                                 .getType()
+                                                 .cast<ShapedType>()
+                                                 .getElementType()
+                                                 .isF32()) {
+      check_status.Update(absl::InternalError(
+          "Composite functions for quantization should be f32 type."));
+    }
+
     // The OK status means this op is quantizable. Return failure since the
     // pattern doesn't rewrite anything yet.
     if (check_status.ok()) return failure();
@@ -183,9 +193,11 @@ class CheckQuantizableOps
       }
 
       if (!is_weight_constant) {
-        if (!enable_two_input_tensors || !function_name.contains("matmul")) {
+        if (!enable_two_input_tensors || (!function_name.contains("matmul") &&
+                                          !function_name.contains("einsum"))) {
           return absl::InternalError(
-              "Non-constant weights are not supported at the moment.");
+              "Non-constant weights are not supported at the moment,"
+              " except matmul and einsum.");
         }
       }
     }

@@ -17,12 +17,14 @@ limitations under the License.
 
 #include <memory>
 #include <string>
+#include <utility>
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"  // from @llvm-project
 #include "mlir/IR/BuiltinOps.h"  // from @llvm-project
 #include "mlir/Pass/PassManager.h"  // from @llvm-project
 #include "mlir/Transforms/Passes.h"  // from @llvm-project
 #include "tensorflow/compiler/jit/flags.h"
+#include "tensorflow/compiler/mlir/tensorflow/ir/tf_dialect.h"
 #include "tensorflow/compiler/mlir/tensorflow/transforms/passes.h"
 #include "tensorflow/compiler/mlir/tensorflow/utils/bridge_logger.h"
 #include "tensorflow/compiler/mlir/tensorflow/utils/dump_mlir_util.h"
@@ -54,6 +56,17 @@ namespace {
 tensorflow::Status RunTFXLABridge(
     ModuleOp module, bool enable_logging,
     llvm::function_ref<void(OpPassManager &pm)> pipeline_builder) {
+  // Explicitly check that the TensorFlow dialect can constant fold ops.
+  // Constant folding is essential for the bridge. Without this check, the
+  // bridge may fail with an error that is difficult to understand and not
+  // actionable.
+  if (!TF::TensorFlowDialect::HasConstantFoldHook()) {
+    return tensorflow::errors::Internal(
+        "TensorFlow dialect missing constant fold hook in TFXLA bridge phase "
+        "1; this could happen if the binary doesn't link the constant fold "
+        "hook registration library.");
+  }
+
   PassManager bridge(module.getContext());
   ::tensorflow::applyTensorflowAndCLOptions(bridge);
 
@@ -194,6 +207,7 @@ void CreateTPUBridgePipelineImpl(OpPassManager &pm) {
 }  // namespace
 
 void CreateTPUBridgePipeline(OpPassManager &pm) {
+  pm.addPass(CreateTPUValidateInputsPass());
   pm.addNestedPass<func::FuncOp>(
       TF::CreateCanonicalizeCompileAndReplicateAttributesPass());
   CreateTPUBridgePipelineImpl(pm);
@@ -259,6 +273,8 @@ tensorflow::Status TPUBridgeV1Compat(ModuleOp module, bool enable_logging,
 
 namespace TF {
 
+void NoCanonicalization(OpPassManager &pm) {}
+
 void AddGraphExportLoweringPasses(OpPassManager &pm) {
   auto add_pass = [&](std::unique_ptr<Pass> pass) {
     pm.addNestedPass<func::FuncOp>(std::move(pass));
@@ -276,7 +292,9 @@ void AddGraphExportLoweringPasses(OpPassManager &pm) {
   pm.addPass(createSymbolDCEPass());
   if (tensorflow::GetMlirCommonFlags()
           ->tf_mlir_enable_convert_control_to_data_outputs_pass) {
-    pm.addPass(tf_executor::CreateTFExecutorConvertControlToDataOutputsPass());
+    pm.addPass(tf_executor::CreateTFExecutorConvertControlToDataOutputsPass(
+        tensorflow::GetMlirCommonFlags()
+            ->tf_mlir_enable_coarse_data_token_optimization));
   }
   pm.addPass(CreateVerifySuitableForExportPass());
 }
@@ -307,7 +325,9 @@ void AddGraphExportLoweringPassesV2(OpPassManager &pm) {
   pm.addPass(createSymbolDCEPass());
   if (tensorflow::GetMlirCommonFlags()
           ->tf_mlir_enable_convert_control_to_data_outputs_pass) {
-    pm.addPass(tf_executor::CreateTFExecutorConvertControlToDataOutputsPass());
+    pm.addPass(tf_executor::CreateTFExecutorConvertControlToDataOutputsPass(
+        tensorflow::GetMlirCommonFlags()
+            ->tf_mlir_enable_coarse_data_token_optimization));
   }
   pm.addPass(CreateVerifySuitableForExportPass());
 }
@@ -369,10 +389,24 @@ void CreateTFXLABridgePipeline(OpPassManager &pm) {
   // shapes.
   pm.addPass(TF::CreateTFShapeInferencePass());
   pm.addNestedPass<func::FuncOp>(createCanonicalizerPass());
+  // Inline all the function calls. Do not call canonicalizer to prevent it from
+  // moving the definition of any constant operand of ops within a cluster to
+  // its outside. This may cause the op to fail to verify after the cluster is
+  // outlined, as the constant operand is replaced by an argument.
+  pm.addPass(mlir::createInlinerPass({}, NoCanonicalization));
+  // Lift resource operations out of device computation. This step needs to be
+  // done after inlining.
   pm.addPass(TFDevice::CreateResourceOpLiftingPass());
+  // TODO(b/267193636): Remove this flag when outside compilation
+  // for generic pipeline is landed.
+  if (tensorflow::GetMlirCommonFlags()
+          ->tf_mlir_enable_generic_outside_compilation) {
+    pm.addPass(TFDevice::CreateMarkOpsForOutsideCompilationPass());
+  }
+  // Outline clusters into cluster functions.
+  pm.addPass(TFDevice::CreateClusterOutliningPass());
+  // Rewrite cluster functions into XLA  launch ops.
   pm.addPass(TFDevice::CreateXlaRewritePass());
-  // Inline the cluster ops.
-  pm.addPass(TFDevice::CreateXlaInlineDeviceOpsPass());
   // Re-run the canonicalizer pass as some cleanup during resource op lifting
   // pass opens up some opportunities for canonicalization of cluster ops.
   // Specifically, we want to eliminate pass through results from the cluster

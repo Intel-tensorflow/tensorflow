@@ -29,7 +29,6 @@ limitations under the License.
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/Optional.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/SmallVector.h"
@@ -101,8 +100,10 @@ class OptimizePass : public impl::OptimizePassBase<OptimizePass> {
 
   OptimizePass() = default;
   OptimizePass(const OptimizePass &) {}
-  explicit OptimizePass(bool enable_canonicalization) {
+  explicit OptimizePass(bool enable_canonicalization,
+                        bool disable_fuse_mul_and_fc = false) {
     this->enable_canonicalization_ = enable_canonicalization;
+    this->disable_fuse_mul_and_fc_ = disable_fuse_mul_and_fc;
   }
 
   void runOnOperation() override;
@@ -1538,7 +1539,7 @@ struct OptimizeTopK : public OpRewritePattern<TFL::TopKV2Op> {
 
   // It computes the last dim k of slice size of value.user.
   // If value has no use then return 0.
-  llvm::Optional<int32_t> ComputeSliceK(Value value) const {
+  std::optional<int32_t> ComputeSliceK(Value value) const {
     if (value.use_empty()) return 0;
     auto slice_op =
         llvm::dyn_cast_or_null<TFL::SliceOp>(value.getUses().begin().getUser());
@@ -1663,10 +1664,13 @@ void OptimizePass::runOnOperation() {
   // following ops in a second pattern match.
   TFL::populateWithGenerated(patterns);
   patterns.add<FuseFullyConnectedAndAdd, FuseAddAndFullyConnected,
-               FuseFullyConnectedAndMul, FuseMulAndFullyConnected,
+               FuseFullyConnectedAndMul,
                FuseFullyConnectedAndReluX<TFL::ReluOp, kRelu>,
                FuseFullyConnectedAndReluX<TFL::Relu6Op, kRelu6>,
                FuseFullyConnectedAndReluX<TFL::Relu1Op, kRelu1>>(ctx);
+  if (!this->disable_fuse_mul_and_fc_) {
+    patterns.add<FuseMulAndFullyConnected>(ctx);
+  }
   if (this->enable_canonicalization_)
     AddCanonicalizationPatterns(ctx, &patterns);
   (void)applyPatternsAndFoldGreedily(func, std::move(patterns));
@@ -1678,8 +1682,7 @@ void OptimizePass::runOnOperation() {
       ScalarizeSplatConstantForAdd, ScalarizeSplatConstantForSub,
       ScalarizeSplatConstantForMul, ScalarizeSplatConstantForDiv,
       FuseFullyConnectedAndAdd, FuseAddAndFullyConnected,
-      FuseFullyConnectedAndMul, FuseMulAndFullyConnected,
-      FuseFullyConnectedAndReluX<TFL::ReluOp, kRelu>,
+      FuseFullyConnectedAndMul, FuseFullyConnectedAndReluX<TFL::ReluOp, kRelu>,
       FuseFullyConnectedAndReluX<TFL::Relu6Op, kRelu6>,
       FuseFullyConnectedAndReluX<TFL::Relu1Op, kRelu1>,
       FuseBinaryOpToFollowingConv2D, FuseBinaryOpToFollowingDepthwiseConv2D,
@@ -1687,6 +1690,9 @@ void OptimizePass::runOnOperation() {
       FuseDepthwiseConv2DAndMulWithQDQs, ConvertTrivialTransposeOpToReshapeOp,
       RemoveReshapeAfterFullyConnected, RemoveReshapeBeforeFullyConnected,
       FuseUnpackAndConcatToReshape, OptimizeTopK>(ctx);
+  if (!this->disable_fuse_mul_and_fc_) {
+    phase_2_patterns.add<FuseMulAndFullyConnected>(ctx);
+  }
   if (this->enable_canonicalization_)
     AddCanonicalizationPatterns(ctx, &phase_2_patterns);
   (void)applyPatternsAndFoldGreedily(func, std::move(phase_2_patterns));
@@ -1695,8 +1701,9 @@ void OptimizePass::runOnOperation() {
 
 // Creates an instance of the TensorFlow Lite dialect Optimize pass.
 std::unique_ptr<OperationPass<func::FuncOp>> CreateOptimizePass(
-    bool enable_canonicalization) {
-  return std::make_unique<OptimizePass>(enable_canonicalization);
+    bool enable_canonicalization, bool disable_fuse_mul_and_fc) {
+  return std::make_unique<OptimizePass>(enable_canonicalization,
+                                        disable_fuse_mul_and_fc);
 }
 
 std::unique_ptr<OperationPass<func::FuncOp>> CreateOptimizePass() {

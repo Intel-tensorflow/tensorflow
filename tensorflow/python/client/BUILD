@@ -44,6 +44,7 @@ tf_python_pybind_extension(
     ],
     deps = [
         "//third_party/eigen3",
+        "@pybind11_protobuf//pybind11_protobuf:native_proto_caster",
         "//tensorflow/python/lib/core:pybind11_lib",
         "//tensorflow/python/lib/core:pybind11_status",
         "//tensorflow/python/lib/core:safe_pyobject_ptr",
@@ -355,7 +356,6 @@ tf_py_test(
     tags = [
         "no_gpu",
         "no_pip_gpu",
-        "notsan",  # data race due to b/62910646
     ],
     deps = [
         ":client",

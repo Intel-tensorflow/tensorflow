@@ -15,7 +15,9 @@ xla_cc_binary(
     testonly = True,
     srcs = ["hlo_runner_main.cc"],
     tags = [
+        "gpu",
         "noasan",  # Exceeds linker limit.
+        "nomac",
     ],
     deps = [
         ":functional_hlo_runner",
@@ -86,7 +88,9 @@ xla_test(
     data = [
         "data/sharded_2_devices.hlo",
         "data/single_device.hlo",
+        "data/single_device_tupled.hlo",
     ],
+    tags = ["nomac"],
     deps = [
         ":functional_hlo_runner",
         "//tensorflow/tsl/lib/core:status_test_util",

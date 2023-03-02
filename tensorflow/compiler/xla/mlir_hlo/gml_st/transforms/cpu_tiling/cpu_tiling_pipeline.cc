@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "gml_st/transforms/passes.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/Func/Transforms/Passes.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/Passes.h"
@@ -36,17 +37,36 @@ void addCPUTilingPipeline(OpPassManager& pm,
                           const GmlStCPUTilingOptions& options) {
   using func::FuncOp;
 
+  if (options.enableFusionClusters) {
+    pm.addNestedPass<FuncOp>(createFusionPlanningForCpuPass());
+  }
+
+  // Outline and deduplicate fusion clusters.
+  if (options.enableFusionClusterOutlining) {
+    pm.addPass(createFusionOutliningPass());
+    pm.addPass(func::createDuplicateFunctionEliminationPass());
+  }
+
   pm.addNestedPass<FuncOp>(createTransformScatterForCpuPass());
   pm.addNestedPass<FuncOp>(createTransformReduceForCpuPass(
       options.vectorSize, options.reduction1DTileSize,
       options.reduction2DTileSizes));
+  MatmulSizes fixedTileSizes = {options.matmulTileSizes[0],
+                                options.matmulTileSizes[1],
+                                options.matmulTileSizes[2]};
+  pm.addNestedPass<FuncOp>(createTransformDotForCpuPass(
+      [=](MatmulSizes) { return fixedTileSizes; }));
   pm.addNestedPass<FuncOp>(createTransformMatmulForCpuPass(
-      options.matmulTileSizes, options.lowerToMmt4d));
+      [=](MatmulSizes) { return fixedTileSizes; }, options.lowerToMmt4d));
+  // TODO(b/270534416): Re-enable.
+  // pm.addNestedPass<FuncOp>(createTransformGenericForCpuPass());
   pm.addNestedPass<FuncOp>(createTransformTransposeForCpuPass());
   pm.addNestedPass<FuncOp>(createTransformMapForCpuPass(options.vectorSize));
   pm.addNestedPass<FuncOp>(createTransformSortForCpuPass());
   pm.addNestedPass<mlir::func::FuncOp>(
       mlir::gml_st::createTransformReverseForCpuPass());
+
+  pm.addNestedPass<FuncOp>(createInlineFusionClustersPass());
 
   pm.addPass(createCSEPass());
   pm.addPass(createCanonicalizerPass());
@@ -57,8 +77,6 @@ void addCPUTilingPipeline(OpPassManager& pm,
   // Tile remaining ops by size one and scalarize what we can.
   pm.addNestedPass<FuncOp>(createTileByOnePass());
   pm.addNestedPass<FuncOp>(createScalarizationPass());
-
-  pm.addNestedPass<FuncOp>(createRewriteVectorContractPass());
 }
 
 void addDefaultCPUTilingPipeline(OpPassManager& pm) {
