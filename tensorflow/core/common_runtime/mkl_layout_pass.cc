@@ -573,7 +573,7 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
                                  : csinfo_.mkl_pad_with_fused_conv2d,
                       CopyAttrsAllCheckConstFilter, AlwaysRewrite,
                       GetRewriteCause()});
-#ifndef ENABLE_ONEDNN_V3
+// #ifndef ENABLE_ONEDNN_V3
     rinfo_.push_back({csinfo_.quantized_avg_pool,
                       mkl_op_registry::GetMklOpName(csinfo_.quantized_avg_pool),
                       CopyAttrsAll, AlwaysRewrite, kRewriteForOpNameChange});
@@ -685,7 +685,7 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
              csinfo_
                  .quantized_depthwise_conv2d_with_bias_and_relu_and_requantize),
          CopyAttrsQuantizedConv2D, AlwaysRewrite, kRewriteForOpNameChange});
-#endif  // !ENABLE_ONEDNN_V3
+// #endif  // !ENABLE_ONEDNN_V3
     rinfo_.push_back({csinfo_.quantize_v2,
                       mkl_op_registry::GetMklOpName(csinfo_.quantize_v2),
                       CopyAttrsAll, QuantizeOpRewrite,
