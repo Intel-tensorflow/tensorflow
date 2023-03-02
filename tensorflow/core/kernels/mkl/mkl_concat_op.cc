@@ -302,7 +302,7 @@ class MklConcatFwdPrimitive : public MklPrimitive {
 #endif
     DCHECK_EQ(in_data.size(), context_.data_mem.size());
     for (size_t i = 0; i < concat_fwd_dims.num_inputs; i++) {
-#ifndef ENABLE_ONEDNN_OPENMP && !defined(ENABLE_ONEDNN_V3)
+#if !defined(ENABLE_ONEDNN_OPENMP) && !defined(ENABLE_ONEDNN_V3)
       context_.data_mem_shdptr[i]->set_data_handle(
           static_cast<void*>(in_data[i].get_data_handle()), *fwd_stream);
     }
