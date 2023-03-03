@@ -470,21 +470,26 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
     rinfo_.push_back(
         {csinfo_.dequantize, mkl_op_registry::GetMklOpName(csinfo_.dequantize),
          CopyAttrsAll, DequantizeRewrite, kRewriteForOpNameChange});
+#endif  // !ENABLE_ONEDNN_V3
     rinfo_.push_back({csinfo_.fused_batch_norm,
                       mkl_op_registry::GetMklOpName(csinfo_.fused_batch_norm),
                       CopyAttrsAll, AlwaysRewrite, GetRewriteCause()});
+#ifndef ENABLE_ONEDNN_V3
     rinfo_.push_back(
         {csinfo_.fused_batch_norm_grad,
          mkl_op_registry::GetMklOpName(csinfo_.fused_batch_norm_grad),
          CopyAttrsAll, AlwaysRewrite, GetRewriteCause()});
+#endif  // !ENABLE_ONEDNN_V3
     rinfo_.push_back(
         {csinfo_.fused_batch_norm_v2,
          mkl_op_registry::GetMklOpName(csinfo_.fused_batch_norm_v2),
          CopyAttrsAll, AlwaysRewrite, GetRewriteCause()});
+#ifndef ENABLE_ONEDNN_V3
     rinfo_.push_back(
         {csinfo_.fused_batch_norm_grad_v2,
          mkl_op_registry::GetMklOpName(csinfo_.fused_batch_norm_grad_v2),
          CopyAttrsAll, AlwaysRewrite, GetRewriteCause()});
+#endif  // !ENABLE_ONEDNN_V3
 
     // Using CopyAttrsAll for V3 on CPU, as there are no additional
     // attributes.
@@ -492,16 +497,17 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
         {csinfo_.fused_batch_norm_v3,
          mkl_op_registry::GetMklOpName(csinfo_.fused_batch_norm_v3),
          CopyAttrsAll, FusedBatchNormV3Rewrite, GetRewriteCause()});
+#ifndef ENABLE_ONEDNN_V3
     rinfo_.push_back(
         {csinfo_.fused_batch_norm_grad_v3,
          mkl_op_registry::GetMklOpName(csinfo_.fused_batch_norm_grad_v3),
          CopyAttrsAll, FusedBatchNormV3Rewrite, GetRewriteCause()});
+#endif  // !ENABLE_ONEDNN_V3
     rinfo_.push_back({csinfo_.fused_batch_norm_ex,
                       native_fmt ? csinfo_.mkl_native_fused_batch_norm_ex
                                  : csinfo_.mkl_fused_batch_norm_ex,
                       CopyAttrsAll, FusedBatchNormExRewrite,
                       GetRewriteCause()});
-#endif  // !ENABLE_ONEDNN_V3
     rinfo_.push_back({csinfo_.fused_conv2d,
                       native_fmt ? csinfo_.mkl_native_fused_conv2d
                                  : csinfo_.mkl_fused_conv2d,

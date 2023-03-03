@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#if defined(INTEL_MKL) && !defined(ENABLE_ONEDNN_V3)
+#ifdef INTEL_MKL
 
 #include "tensorflow/cc/ops/const_op.h"
 #include "tensorflow/cc/ops/image_ops.h"
@@ -501,14 +501,20 @@ TYPED_TEST_P(FusedBatchNormOpTest, InferenceIgnoreAvgFactor) {
   this->VerifyFusedBatchNorm(exponential_avg_factor, is_training);
 }
 
+#ifndef ENABLE_ONEDNN_V3
 TYPED_TEST_P(FusedBatchNormOpTest, FusedBatchNormGradV3) {
   const float epsilon = 0.001;
   this->VerifyFusedBatchNormGradWithConv2D(epsilon);
 }
+#endif  // !ENABLE_ONEDNN_V3
 
 REGISTER_TYPED_TEST_SUITE_P(FusedBatchNormOpTest, Training, TrainingRunningMean,
+#ifndef ENABLE_ONEDNN_V3
                             Inference, InferenceIgnoreAvgFactor,
                             FusedBatchNormGradV3);
+#else
+                            Inference, InferenceIgnoreAvgFactor);
+#endif  // !ENABLE_ONEDNN_V3
 
 using FusedBatchNormDataTypes = ::testing::Types<float>;
 INSTANTIATE_TYPED_TEST_SUITE_P(Test, FusedBatchNormOpTest,
