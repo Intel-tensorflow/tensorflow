@@ -345,7 +345,7 @@ class FusedBatchNormOpTest : public OpsTestBase {
   }
 
   void VerifyFusedBatchNormGradWithConv2D(const float epsilon) {
-#ifdef ENABLE_MKL
+#if defined(ENABLE_MKL) && !defined(ENABLE_ONEDNN_V3)
     // This test only runs with MKL blocked format.
     const GraphRunnerGrad run =
         [this](const Tensor& input, const Tensor& filter,
@@ -471,7 +471,7 @@ class FusedBatchNormOpTest : public OpsTestBase {
         };
 
     CommonTestUtilities<T>::VerifyTensorsCloseForGrad(epsilon, run, run_mkl);
-#endif  // ENABLE_MKL
+#endif  // ENABLE_MKL && !ENABLE_ONEDNN_V3
   }
 };
 
@@ -501,20 +501,14 @@ TYPED_TEST_P(FusedBatchNormOpTest, InferenceIgnoreAvgFactor) {
   this->VerifyFusedBatchNorm(exponential_avg_factor, is_training);
 }
 
-#ifndef ENABLE_ONEDNN_V3
 TYPED_TEST_P(FusedBatchNormOpTest, FusedBatchNormGradV3) {
   const float epsilon = 0.001;
   this->VerifyFusedBatchNormGradWithConv2D(epsilon);
 }
-#endif  // !ENABLE_ONEDNN_V3
 
 REGISTER_TYPED_TEST_SUITE_P(FusedBatchNormOpTest, Training, TrainingRunningMean,
-#ifndef ENABLE_ONEDNN_V3
                             Inference, InferenceIgnoreAvgFactor,
                             FusedBatchNormGradV3);
-#else
-                            Inference, InferenceIgnoreAvgFactor);
-#endif  // !ENABLE_ONEDNN_V3
 
 using FusedBatchNormDataTypes = ::testing::Types<float>;
 INSTANTIATE_TYPED_TEST_SUITE_P(Test, FusedBatchNormOpTest,
