@@ -91,6 +91,7 @@ class CPUIDInfo {
         have_avx512_4vnniw_(0),
         have_avx512_4fmaps_(0),
         have_avx512_bf16_(0),
+        have_avx512_fp16_(0),
         have_avx512_vnni_(0),
         have_avx_vnni_(0),
         have_bmi1_(0),
@@ -219,6 +220,10 @@ class CPUIDInfo {
     cpuid->have_amx_int8_ = (edx >> 25) & 0x1;
     cpuid->have_amx_bf16_ = (edx >> 22) & 0x1;
 
+    // Check avx512_fp16, using the information from Xbyak in oneDNN
+    // https://github.com/oneapi-src/oneDNN/blob/acf8d214cedfe7e24c9446bacc1f9f648c9273f8/src/cpu/x64/xbyak/xbyak_util.h#L516
+    cpuid->have_avx512_fp16_ = have_avx512 && ((edx >> 23) & 0x1);
+
     // Get more Structured Extended Feature info by issuing CPUID with
     // sub-leaf = 1 (eax = 7, ecx = 1)
     if (kMaxNumSubLeaves >= 1) {
@@ -251,6 +256,7 @@ class CPUIDInfo {
       case AVX512_4VNNIW: return cpuid->have_avx512_4vnniw_;
       case AVX512_4FMAPS: return cpuid->have_avx512_4fmaps_;
       case AVX512_BF16:   return cpuid->have_avx512_bf16_;
+      case AVX512_FP16:   return cpuid->have_avx512_fp16_;
       case AVX512_VNNI:   return cpuid->have_avx512_vnni_;
       case AVX_VNNI:      return cpuid->have_avx_vnni_;
       case BMI1:          return cpuid->have_bmi1_;
@@ -306,6 +312,7 @@ class CPUIDInfo {
   int have_avx512_4vnniw_ : 1;
   int have_avx512_4fmaps_ : 1;
   int have_avx512_bf16_ : 1;
+  int have_avx512_fp16_ : 1;
   int have_avx512_vnni_ : 1;
   int have_avx_vnni_ : 1;
   int have_bmi1_ : 1;

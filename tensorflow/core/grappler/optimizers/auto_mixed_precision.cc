@@ -43,6 +43,7 @@ limitations under the License.
 #include "tensorflow/core/lib/strings/numbers.h"
 #include "tensorflow/core/lib/strings/str_util.h"
 #include "tensorflow/core/lib/strings/strcat.h"
+#include "tensorflow/core/platform/cpu_info.h"
 #include "tensorflow/core/platform/logging.h"
 #include "tensorflow/core/platform/status.h"
 #include "tensorflow/core/platform/statusor.h"
@@ -1028,6 +1029,8 @@ std::unordered_map<string, DeviceProperties> GetDevices(Cluster* cluster) {
   return devices;
 }
 
+int GetNumGPUs(const Cluster& cluster);
+
 class AutoMixedPrecisionImpl {
  public:
   // CastType indicates the type of inserted Cast op
@@ -1053,7 +1056,8 @@ class AutoMixedPrecisionImpl {
         target_dtype_((mode_ == AutoMixedPrecisionMode::CUDA ||
                        mode_ == AutoMixedPrecisionMode::CPU)
                           ? DT_HALF
-                          : DT_BFLOAT16) {}
+                          : DT_BFLOAT16),
+        num_gpus_(GetNumGPUs(*cluster))  {}
 
   Status Optimize();
 
@@ -1147,6 +1151,7 @@ class AutoMixedPrecisionImpl {
   gtl::FlatSet<string> f16_clearlist_;
   absl::flat_hash_set<const NodeDef*> should_process_nodes_;
   DataType target_dtype_;  // Either DT_HALF or DT_BFLOAT16
+  int num_gpus_ = 0;
 };
 
 NodeDef AutoMixedPrecisionImpl::BuildCastNode(
@@ -1316,6 +1321,7 @@ bool AutoMixedPrecisionImpl::SupportsF16(const NodeTypeId& node_type) const {
   Status status =
       OpRegistry::Global()->LookUpOpDef(node_type.node->op(), &op_def);
   if (!status.ok()) return false;
+
   return AllowedDataTypes(*op_def, node_type.type_attr)
              .Contains(target_dtype_) &&
          NodeHasF16KernelForTypeAttr(*node_type.node, node_type.type_attr);
@@ -1421,10 +1427,16 @@ Status AutoMixedPrecisionImpl::Optimize() {
     string device_type;
     switch (mode_) {
       case AutoMixedPrecisionMode::CUDA:
-        device_type = DEVICE_GPU;
-        should_process =
+        if (num_gpus_ >= 1 ) {
+          device_type = DEVICE_GPU;
+          should_process =
             !MustPreserve(node) && IsOnDevice(node, device_type) &&
             (ShouldIgnorePerformance() || IsOnSuitableGPUArch(node));
+        } else {
+          device_type = DEVICE_CPU;
+          should_process =
+              !MustPreserve(node) && IsOnDevice(node, device_type);
+        }
         break;
       case AutoMixedPrecisionMode::BF16:
       case AutoMixedPrecisionMode::CPU:
@@ -1828,7 +1840,7 @@ void AutoMixedPrecisionImpl::PropagateAllowThroughClear(
         TypeTraversalDirection::kFollowInputsAndOutputs,
         DfsTypePredicates::Enter([&](int idx) -> bool {
           const NodeTypeId& item = *graph_type_view_.GetNode(idx);
-          return idx == root_idx ||
+          return (idx == root_idx ||
                  (!allow_set->count(idx) && !deny_set.count(idx) &&
                   ShouldProcess(*item.node) && IsFloat32(item) &&
                   SupportsF16(item) &&
@@ -1837,7 +1849,7 @@ void AutoMixedPrecisionImpl::PropagateAllowThroughClear(
                   // Variables because it can break the behavior of TensorBoard
                   // visualization and/or (in the case of Enter nodes) the model
                   // itself. This is only a problem for non-resource variables.
-                  !NodeImplicitlyReadsNonResourceVariable(*item.node));
+                  !NodeImplicitlyReadsNonResourceVariable(*item.node)));
         }),
         DfsTypeCallbacks::PreOrder([&](int idx) {
           clear_prop_set.insert(idx);
@@ -2299,10 +2311,16 @@ Status AutoMixedPrecision::Optimize(Cluster* cluster, const GrapplerItem& item,
 
   int num_gpus = GetNumGPUs(*cluster);
   if (num_gpus < 1 && mode_ == AutoMixedPrecisionMode::CUDA) {
-    // AutoMixedPrecision is currently only tuned for GPU.
-    LOG(WARNING) << "No (suitable) GPUs detected, skipping " << name()
-                 << " graph optimizer";
-    return OkStatus();
+    // No GPUS to run AutoMixedPrecision in FP16.
+    // Check if CPU supports
+    if (!HasCpuFP16Support()) {
+      LOG(INFO) << "No support for " << name() << " graph optimizer on CPU/GPU";
+      return OkStatus();
+    } else {
+      LOG(INFO) << "Running " << name() << " graph optimizer on CPU";
+    }
+  } else {
+    LOG(INFO) << "Running " << name() << " graph optimizer on GPU";
   }
 
   if (num_gpus >= 1 && mode_ == AutoMixedPrecisionMode::BF16) {
@@ -2316,7 +2334,7 @@ Status AutoMixedPrecision::Optimize(Cluster* cluster, const GrapplerItem& item,
   if (item.id == "tf_graph") {
     LOG(INFO) << "Running " << name() << " graph optimizer";
   } else {
-    VLOG(1) << "Running " << name() << " graph optimizer on " << item.id;
+    VLOG(INFO) << "Running " << name() << " graph optimizer on " << item.id;
   }
   Status status = optimizer.Optimize();
   if (!status.ok()) {

@@ -93,7 +93,7 @@ void VerifyGraphsEquivalent(const GraphDef& original_graph,
 // because otherwise the optimizer will not turn clearlist nodes to float16.
 // When looking at clearlist nodes, this optimizer checks if the nodes have a
 // float16 GPU OpKernel, but without CUDA/HIP there are no GPU OpKernels at all.
-#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM || INTEL_MKL
 
 const std::pair<int, int> kMinGPUArch = {7, 0};
 
@@ -112,18 +112,24 @@ class AutoMixedPrecisionTest : public GrapplerTest {
     if (gpu_available_) {
       virtual_cluster_.reset(new SingleMachine(/* timeout_s = */ 10, 1, 1));
     } else {
-      DeviceProperties device_properties;
-      device_properties.set_type("GPU");
+      if( !IsMKLEnabled()) {
+        DeviceProperties device_properties;
+        device_properties.set_type("GPU");
 #if GOOGLE_CUDA
-      device_properties.mutable_environment()->insert({"architecture", "7"});
-      device_properties.mutable_environment()->insert({"cuda", "9010"});
+        device_properties.mutable_environment()->insert({"architecture", "7"});
+        device_properties.mutable_environment()->insert({"cuda", "9010"});
 #else
-      device_properties.mutable_environment()->insert(
-          {"architecture", "gfx906"});
+        device_properties.mutable_environment()->insert(
+            {"architecture", "gfx906"});
 #endif
-      virtual_cluster_.reset(
-          new VirtualCluster({{"/GPU:1", device_properties}}));
-    }
+        virtual_cluster_.reset(
+            new VirtualCluster({{"/GPU:1", device_properties}}));
+      } else {
+        DeviceProperties device_properties;
+        device_properties.set_type("CPU");
+        virtual_cluster_.reset(new SingleMachine(/* timeout_s = */ 10, 1, 0));
+      }
+    } 
     TF_CHECK_OK(virtual_cluster_->Provision());
   }
 
@@ -172,6 +178,9 @@ class AutoMixedPrecisionTest : public GrapplerTest {
       double input_min, double input_max, double atol, double rtol,
       const std::function<Output(const tensorflow::Scope&, Output)>&
           test_op_factory) {
+    if (!IsGpuAvailable() && IsMKLEnabled() && !HasCpuFP16Support())
+      return;
+
     int size = 128;
     tensorflow::Scope s = tensorflow::Scope::NewRootScope();
     Output eye = ops::Const(s.WithOpName("eye"),
@@ -208,6 +217,10 @@ class AutoMixedPrecisionTest : public GrapplerTest {
     for (int i = 0; i < item.fetch.size(); ++i) {
       test::ExpectClose(tensors_expected[i], tensors[i], atol, rtol);
     }
+  }
+
+  bool IsGpuAvailable() {
+    return gpu_available_;
   }
 
   std::unique_ptr<Cluster> virtual_cluster_;
@@ -252,6 +265,8 @@ TEST_F(AutoMixedPrecisionTest, NoOp) {
 }
 
 TEST_F(AutoMixedPrecisionTest, AlreadyFp16) {
+  if (!IsGpuAvailable() && IsMKLEnabled() && !HasCpuFP16Support())
+    GTEST_SKIP() << "This CPU doesn't support FP16";
   tensorflow::Scope s = tensorflow::Scope::NewRootScope();
   Output input = ops::Const(s.WithOpName("input"), 1.f, {32, 32});
   Output cst1 = ops::Cast(s.WithOpName("cst1"), input, DT_HALF);
@@ -290,6 +305,9 @@ TEST_F(AutoMixedPrecisionTest, AlreadyFp16) {
 }
 
 TEST_F(AutoMixedPrecisionTest, Simple) {
+  if (!IsGpuAvailable() && IsMKLEnabled() && !HasCpuFP16Support())
+    GTEST_SKIP() << "This CPU doesn't support FP16";
+
   tensorflow::Scope s = tensorflow::Scope::NewRootScope();
   Output input = ops::Const(s.WithOpName("input"), 1.f / 32, {32, 32});
   Output deny1 = ops::Exp(s.WithOpName("deny1"), input);
@@ -339,6 +357,9 @@ TEST_F(AutoMixedPrecisionTest, Simple) {
 }
 
 TEST_F(AutoMixedPrecisionTest, NoInferOp) {
+  if (!IsGpuAvailable() && IsMKLEnabled() && !HasCpuFP16Support())
+    GTEST_SKIP() << "This CPU doesn't support FP16";
+
   setenv("TF_AUTO_MIXED_PRECISION_GRAPH_REWRITE_LEVEL", "TREAT_INFER_AS_DENY",
          1 /* replace */);
 
@@ -391,6 +412,9 @@ TEST_F(AutoMixedPrecisionTest, NoInferOp) {
 }
 
 TEST_F(AutoMixedPrecisionTest, BidirectionalClearChain) {
+  if (!IsGpuAvailable() && IsMKLEnabled() && !HasCpuFP16Support())
+    GTEST_SKIP() << "This CPU doesn't support FP16";
+
   tensorflow::Scope s = tensorflow::Scope::NewRootScope();
   Output input = ops::Const(s.WithOpName("input"), 1.f / 32, {32, 32});
   Output clr1 = ops::Relu(s.WithOpName("clr1"), input);
@@ -430,6 +454,8 @@ TEST_F(AutoMixedPrecisionTest, BidirectionalClearChain) {
 }
 
 TEST_F(AutoMixedPrecisionTest, PreserveFetches) {
+  if (!IsGpuAvailable() && IsMKLEnabled() && !HasCpuFP16Support())
+    GTEST_SKIP() << "This CPU doesn't support FP16";
   tensorflow::Scope s = tensorflow::Scope::NewRootScope();
   Output input = ops::Const(s.WithOpName("input"), 1.f / 32, {32, 32});
   Output allow1 = ops::MatMul(s.WithOpName("allow1"), input, input);
@@ -475,6 +501,9 @@ TEST_F(AutoMixedPrecisionTest, PreserveFetches) {
 }
 
 TEST_F(AutoMixedPrecisionTest, PreserveCPUNodes) {
+  if (!IsGpuAvailable() && IsMKLEnabled())
+    GTEST_SKIP() << "Test not applicable to auto-mixed precision on CPU";
+
   tensorflow::Scope s = tensorflow::Scope::NewRootScope();
   Output input = ops::Const(s.WithOpName("input"), 1.f / 32, {32, 32});
   Output clr1 = ops::Relu(s.WithOpName("clr1"), input);
@@ -516,6 +545,8 @@ TEST_F(AutoMixedPrecisionTest, PreserveCPUNodes) {
 }
 
 TEST_F(AutoMixedPrecisionTest, PreserveIdentityAfterVariable) {
+  if (!IsGpuAvailable() && IsMKLEnabled() && !HasCpuFP16Support())
+    GTEST_SKIP() << "This CPU doesn't support FP16";
   tensorflow::Scope s = tensorflow::Scope::NewRootScope();
   Output input = ops::Const(s.WithOpName("input"), 1.f / 32, {32, 32});
   Output var1 = ops::Variable(s.WithOpName("var1"), {32, 32}, DT_FLOAT);
@@ -560,6 +591,8 @@ TEST_F(AutoMixedPrecisionTest, PreserveIdentityAfterVariable) {
 }
 
 TEST_F(AutoMixedPrecisionTest, FusedBatchNorm) {
+  if (!IsGpuAvailable() && IsMKLEnabled() && !HasCpuFP16Support())
+    GTEST_SKIP() << "This CPU doesn't support FP16";
   tensorflow::Scope s = tensorflow::Scope::NewRootScope();
   // Uses NHWC data format because non-GPU execution does not support NCHW.
   Output input = ops::Const(s.WithOpName("input"), 1.f / 32, {8, 56, 56, 16});
@@ -619,6 +652,8 @@ TEST_F(AutoMixedPrecisionTest, FusedBatchNorm) {
 }
 
 TEST_F(AutoMixedPrecisionTest, RepeatedAndListTypeAttrs) {
+  if (!IsGpuAvailable() && IsMKLEnabled() && !HasCpuFP16Support())
+    GTEST_SKIP() << "This CPU doesn't support FP16";
   tensorflow::Scope s = tensorflow::Scope::NewRootScope();
   Output input = ops::Const(s.WithOpName("input"), 1.f / 32, {32, 32});
   Output allow1 = ops::MatMul(s.WithOpName("allow1"), input, input);
@@ -659,6 +694,8 @@ TEST_F(AutoMixedPrecisionTest, RepeatedAndListTypeAttrs) {
 }
 
 TEST_F(AutoMixedPrecisionTest, ExistingCast) {
+  if (!IsGpuAvailable() && IsMKLEnabled() && !HasCpuFP16Support())
+    GTEST_SKIP() << "This CPU doesn't support FP16";
   tensorflow::Scope s = tensorflow::Scope::NewRootScope();
   Output input = ops::Const(s.WithOpName("input"), true, {32, 32});
   Output cst1 = ops::Cast(s.WithOpName("cst1"), input, DT_FLOAT);
@@ -691,6 +728,8 @@ TEST_F(AutoMixedPrecisionTest, ExistingCast) {
 }
 
 TEST_F(AutoMixedPrecisionTest, RecurrentEdgeColorMismatch) {
+  if (!IsGpuAvailable() && IsMKLEnabled() && !HasCpuFP16Support())
+    GTEST_SKIP() << "This CPU doesn't support FP16";
   tensorflow::Scope s = tensorflow::Scope::NewRootScope();
   Output input = ops::Const(s.WithOpName("input"), 1.f / 32, {32, 32});
   Output deny1 = ops::Exp(s.WithOpName("deny1"), input);
@@ -753,6 +792,8 @@ TEST_F(AutoMixedPrecisionTest, RecurrentEdgeColorMismatch) {
 }
 
 TEST_F(AutoMixedPrecisionTest, TensorListSetGet) {
+  if (!IsGpuAvailable() && IsMKLEnabled() && !HasCpuFP16Support())
+    GTEST_SKIP() << "This CPU doesn't support FP16";
   tensorflow::Scope s = tensorflow::Scope::NewRootScope();
   tensorflow::Input shape = {32, 32};
   auto tl1 = ops::TensorListReserve(s.WithOpName("tl1"), {32, 32}, 8, DT_FLOAT);
@@ -824,6 +865,8 @@ TEST_F(AutoMixedPrecisionTest, TensorListSetGet) {
 }
 
 TEST_F(AutoMixedPrecisionTest, TensorListPushPop) {
+  if (!IsGpuAvailable() && IsMKLEnabled() && !HasCpuFP16Support())
+    GTEST_SKIP() << "This CPU doesn't support FP16";
   tensorflow::Scope s = tensorflow::Scope::NewRootScope();
   tensorflow::Input shape = {32, 32};
   auto tl1 = ops::EmptyTensorList(s.WithOpName("tl1"), {32, 32}, 8, DT_FLOAT);
@@ -887,6 +930,8 @@ TEST_F(AutoMixedPrecisionTest, TensorListPushPop) {
 }
 
 TEST_F(AutoMixedPrecisionTest, TensorListFromTensor) {
+  if (!IsGpuAvailable() && IsMKLEnabled() && !HasCpuFP16Support())
+    GTEST_SKIP() << "This CPU doesn't support FP16";
   tensorflow::Scope s = tensorflow::Scope::NewRootScope();
   tensorflow::Input shape = {32};
   Output input = ops::Const(s.WithOpName("input"), 1.f / 32, {32, 32});
@@ -937,6 +982,8 @@ TEST_F(AutoMixedPrecisionTest, TensorListFromTensor) {
 }
 
 TEST_F(AutoMixedPrecisionTest, TensorListPushBackBatchAndConcatLists) {
+  if (!IsGpuAvailable() && IsMKLEnabled() && !HasCpuFP16Support())
+    GTEST_SKIP() << "This CPU doesn't support FP16";
   tensorflow::Scope s = tensorflow::Scope::NewRootScope();
   tensorflow::Input shape = {32, 32};
   auto tl1 = ops::EmptyTensorList(s.WithOpName("tl1"), {32, 32}, 8, DT_FLOAT);
@@ -997,6 +1044,8 @@ TEST_F(AutoMixedPrecisionTest, TensorListPushBackBatchAndConcatLists) {
 }
 
 TEST_F(AutoMixedPrecisionTest, TensorListThroughFunction) {
+  if (!IsGpuAvailable() && IsMKLEnabled() && !HasCpuFP16Support())
+    GTEST_SKIP() << "This CPU doesn't support FP16";
   // This test passes a tensor list handle through a function with its own
   // Tensor List ops inside to test that the types are not changed to a
   // conflicting state.
@@ -1105,6 +1154,8 @@ bool IsSupportedGPU(const Cluster& cluster) {
 }
 
 TEST_F(AutoMixedPrecisionTest, BatchMatMul) {
+  if (!IsGpuAvailable() && IsMKLEnabled() && !HasCpuFP16Support())
+    GTEST_SKIP() << "This CPU doesn't support FP16";
   tensorflow::Scope s = tensorflow::Scope::NewRootScope();
   Output input = ops::Const(s.WithOpName("input"), 1.f / 33, {64, 32, 32});
   Output allow1 = ops::BatchMatMul(s.WithOpName("allow1"), input, input);
@@ -1437,6 +1488,7 @@ class AutoMixedPrecisionSimulateGpuTest : public GrapplerTest {
   }
 };
 
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 TEST_F(AutoMixedPrecisionSimulateGpuTest, Simple_NoGpu) {
   TestSimple(tensorflow::Scope::NewRootScope(), /* is_optimized= */ false);
 }
@@ -1454,8 +1506,8 @@ TEST_F(AutoMixedPrecisionSimulateGpuTest, Simple_SimulatedGpu_CpuScope) {
                  "/job:localhost/replica:0/task:0/device:CPU:0"),
              /* is_optimized= */ false);
 }
-
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM || INTEL_MKL
 
 #if INTEL_MKL
 

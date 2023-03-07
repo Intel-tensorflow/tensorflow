@@ -35,6 +35,7 @@ using tsl::port::AVX2;
 using tsl::port::AVX512_4FMAPS;
 using tsl::port::AVX512_4VNNIW;
 using tsl::port::AVX512_BF16;
+using tsl::port::AVX512_FP16;
 using tsl::port::AVX512_VNNI;
 using tsl::port::AVX512BW;
 using tsl::port::AVX512CD;

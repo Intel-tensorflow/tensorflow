@@ -21,6 +21,7 @@ limitations under the License.
 #include "tensorflow/core/lib/gtl/flatset.h"
 #include "tensorflow/core/lib/strings/str_util.h"
 #include "tensorflow/core/util/env_var.h"
+#include "tensorflow/core/util/util.h"
 
 namespace tensorflow {
 namespace grappler {
@@ -94,6 +95,24 @@ class AutoMixedPrecisionLists {
   }
 };
 
+/*bool HasCpuFP16Support() {
+#ifdef INTEL_MKL
+#ifdef __linux__
+  // Check if the CPU supports FP16
+  if (port::TestCPUFeature(port::CPUFeature::AVX512BW) &&
+      port::TestCPUFeature(port::CPUFeature::AVX512_FP16)) {
+    VLOG(2) << "CPU supports FP16\n";
+    return true;
+  } else {
+    return false;
+  }
+#else
+  return false;
+#endif  // __linux__
+#endif  // INTEL_MKL
+  return false;
+}*/
+
 class AutoMixedPrecisionListsCuda : public AutoMixedPrecisionLists {
  private:
   static bool IsPseudoFastMath() {
@@ -143,13 +162,13 @@ class AutoMixedPrecisionListsCuda : public AutoMixedPrecisionLists {
 #if TENSORFLOW_USE_ROCM
     if (true) {
 #else
-    if (cuda_version_ >= 9010) {
+    if (cuda_version_ >= 9010 || (IsMKLEnabled() && HasCpuFP16Support())) {
       // Fp16 BatchMatMul is slow before CUDA 9.1.
 #endif
       list.insert("BatchMatMul");
       list.insert("BatchMatMulV2");
     }
-    if (cudnn_version_ >= 7602) {
+    if (cudnn_version_ >= 7602 || (IsMKLEnabled() && HasCpuFP16Support())) {
       // Fp16 3D conv is slow before CUDNN 7.6.2.
       list.insert("Conv3D");
       list.insert("Conv3DBackpropFilter");
@@ -157,7 +176,7 @@ class AutoMixedPrecisionListsCuda : public AutoMixedPrecisionLists {
       list.insert("Conv3DBackpropInput");
       list.insert("Conv3DBackpropInputV2");
     }
-    if (cudnn_version_ >= 8000) {
+    if (cudnn_version_ >= 8000 || (IsMKLEnabled() && HasCpuFP16Support())) {
       list.insert("DepthwiseConv2dNative");
       list.insert("DepthwiseConv2dNativeBackpropFilter");
       list.insert("DepthwiseConv2dNativeBackpropInput");

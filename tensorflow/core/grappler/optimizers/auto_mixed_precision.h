@@ -28,6 +28,24 @@ namespace grappler {
 // CPU: emulate float16 on CPU without changing operator kernel
 enum class AutoMixedPrecisionMode { CUDA, BF16, CPU };
 
+static bool HasCpuFP16Support() {
+#ifdef INTEL_MKL
+#ifdef __linux__
+  // Check if the CPU supports FP16
+  if (port::TestCPUFeature(port::CPUFeature::AVX512BW) &&
+      port::TestCPUFeature(port::CPUFeature::AVX512_FP16)) {
+    VLOG(2) << "CPU supports FP16\n";
+    return true;
+  } else {
+    return false;
+  }
+#else
+  return false;
+#endif  // __linux__
+#endif  // INTEL_MKL
+  return false;
+}
+
 // Convert data types to float16 or bfloat16 where appropriate to improve
 // performance on GPUs or CPUs.
 class AutoMixedPrecision : public GraphOptimizer {

@@ -99,6 +99,9 @@ class CPUFeatureGuard {
 #ifdef __AVX512BF16__
     CheckFeatureOrDie(CPUFeature::AVX512_BF16, "AVX512_BF16");
 #endif  // __AVX512BF16__
+#ifdef __AVX512FP16__
+    CheckFeatureOrDie(CPUFeature::AVX512_FP16, "AVX512_FP16");
+#endif  // __AVX512FP16__
 #ifdef __AVXVNNI__
     CheckFeatureOrDie(CPUFeature::AVX_VNNI, "AVX_VNNI");
 #endif  // __AVXVNNI__
@@ -158,7 +161,11 @@ void InfoAboutUnusedCPUFeatures() {
 #ifndef __AVX512BF16__
     CheckIfFeatureUnused(CPUFeature::AVX512_BF16, "AVX512_BF16",
                          missing_instructions);
-#endif  // __AVX512BF16___
+#endif  // __AVX512BF16__
+#ifndef __AVX512FP16__
+    CheckIfFeatureUnused(CPUFeature::AVX512_FP16, "AVX512_FP16",
+                         missing_instructions);
+#endif  // __AVX512FP16__
 #ifndef __AVXVNNI__
     CheckIfFeatureUnused(CPUFeature::AVX_VNNI, "AVX_VNNI",
                          missing_instructions);
