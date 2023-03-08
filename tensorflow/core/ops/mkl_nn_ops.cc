@@ -1924,7 +1924,11 @@ REGISTER_OP("_MklLayerNorm")
 REGISTER_OP("_MklSoftmax")
     .Input("logits: T")
     .Output("softmax: T")
+#ifdef ENABLE_ONEDNN_V3
     .Attr("T: {bfloat16, float, half} = DT_FLOAT")
+#else
+    .Attr("T: {bfloat16, float} = DT_FLOAT")
+#endif
     .SetShapeFn([](InferenceContext* c) {
       return shape_inference::UnchangedShapeWithRankAtLeast(c, 1);
     })
