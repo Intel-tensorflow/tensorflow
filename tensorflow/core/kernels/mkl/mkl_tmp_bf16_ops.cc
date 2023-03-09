@@ -43,17 +43,7 @@ class RaiseBfloat16Error : public OpKernel {
 #define REGISTER_CPU(T)                                                       \
   REGISTER_KERNEL_BUILDER(                                                    \
       Name("_FusedConv2D").Device(DEVICE_CPU).TypeConstraint<T>("T"),         \
-      RaiseBfloat16Error);                                                    \
-  REGISTER_KERNEL_BUILDER(Name("FusedBatchNormV3")                            \
-                              .Device(DEVICE_CPU)                             \
-                              .TypeConstraint<bfloat16>("T")                  \
-                              .TypeConstraint<float>("U"),                    \
-                          RaiseBfloat16Error);                                \
-  REGISTER_KERNEL_BUILDER(Name("FusedBatchNormGradV3")                        \
-                              .Device(DEVICE_CPU)                             \
-                              .TypeConstraint<bfloat16>("T")                  \
-                              .TypeConstraint<float>("U"),                    \
-                          RaiseBfloat16Error);                                \
+      RaiseBfloat16Error);
 
 TF_CALL_bfloat16(REGISTER_CPU);
 #undef REGISTER_CPU

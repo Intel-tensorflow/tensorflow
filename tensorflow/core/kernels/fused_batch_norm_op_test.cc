@@ -219,6 +219,7 @@ TEST_F(FusedBatchNormGradOpTest, Simple) {
 
 using fp32 = float;
 using fp16 = Eigen::half;
+using bf16 = bfloat16;
 
 template <typename T>
 static Graph* FusedBatchNormInference(int n, int h, int w, int c,
