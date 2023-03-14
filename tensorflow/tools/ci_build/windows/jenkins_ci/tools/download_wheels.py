@@ -37,6 +37,7 @@ import sys
 import os
 import re
 
+from time import sleep, time
 from pathlib import Path
 from urllib import request, parse
 from typing import Optional, Tuple
@@ -79,6 +80,8 @@ def parse_args(test_args: Optional[str] = None) -> argparse.ArgumentParser:
     1
     >>> p.output
     WindowsPath('.')
+    >>> p.wait
+    False
     """
     p = argparse.ArgumentParser(
         description="Wait for a specific python package version from https://pypi.org/rss/project/package/releases.xml")
@@ -119,12 +122,17 @@ def parse_args(test_args: Optional[str] = None) -> argparse.ArgumentParser:
                    required=False,
                    default='.',
                    help="The output path")
+    p.add_argument("--wait",
+                   "-w",
+                   action="store_true",
+                   default=False,
+                   help="If there is no target wheels then wait for the release job till the timeout. Other")
     p.add_argument("--timeout",
                    "-t",
                    type=int,
                    default=1,
                    required=False,
-                   help="Timeout hours")
+                   help="Timeout hours to wait for jenkins server ready.")
 
     if isinstance(test_args, str):
         return p.parse_args(test_args.split())
@@ -190,7 +198,7 @@ def download_artifacts(urls: Iterable[str], output: Path, version: str):
             f.write(rp.read())
 
 
-def get_artifact_links(server: str, job: str, version: str, py_versions: Iterable[str], timeout_hour: int) -> Iterable[str]:
+def get_artifact_links(server: str, job: str, version: str, py_versions: Iterable[str], timeout_hour: int, is_wait: bool) -> Iterable[str]:
     """
     Get artifact links for the job from the server
 
@@ -215,35 +223,46 @@ def get_artifact_links(server: str, job: str, version: str, py_versions: Iterabl
     artifacts = []
     py_versions = list(py_versions)
     job_info = server.get_job_info(job)
-    for build in job_info['builds']:
-        build_number = build['number']
-        build_info = server.get_build_info(job, build_number)
-        if build_info['result'] == 'SUCCESS':
-            for a in build_info['artifacts']:
-                name: str = a['fileName']
-                if name and name.endswith('.whl'):
-                    wheel_version, py_version = get_versions(name)
-                    if wheel_version == version and py_version in py_versions:
-                        url = build_info['url']
-                        print(f'Found {job} version {version} artifact for Python {py_version} {url}')
-                        artifacts.append(url)
-                        py_versions.remove(py_version)
+    start = time()
+    while True:
+        for build in job_info['builds']:
+            build_number = build['number']
+            try:
+                build_info = server.get_build_info(job, build_number)
+            except Exception:
+                print(f'Warning: get {job} build {build_number} failed from server {server} with error')
+                continue
 
-                        if not py_versions:
-                            return artifacts
-                        else:
-                            break
-    if py_versions:
-        print_error(f"Error can't find all the required package version {version} for Python {py_versions}")
-        exit_error()
-    else:
-        return artifacts
+            if build_info['result'] == 'SUCCESS':
+                for a in build_info['artifacts']:
+                    name: str = a['fileName']
+                    if name and name.endswith('.whl'):
+                        wheel_version, py_version = get_versions(name)
+                        if wheel_version == version and py_version in py_versions:
+                            url = build_info['url']
+                            print(f'Found {job} version {version} artifact for Python {py_version} {url}')
+                            artifacts.append(url)
+                            py_versions.remove(py_version)
+
+                            if not py_versions:
+                                return artifacts
+                            else:
+                                break
+        if is_wait and ((time() - start) / 3600 < timeout_hour):
+            sleep(60)
+            job_info = server.get_job_info(job)
+            continue
+        elif py_versions:
+            print_error(f"Error can't find all the required package version {version} for Python {py_versions}")
+            exit_error()
+        else:
+            return artifacts
 
 
-def main(server: str, job: str, version: str, py_versions: Iterable[int], artifacts: Iterable[str], output: [str, Path], timeout_hour: int):
+def main(server: str, job: str, version: str, py_versions: Iterable[int], artifacts: Iterable[str], output: [str, Path], timeout_hour: int, is_wait: bool):
     if not artifacts:
         artifacts = get_artifact_links(
-            server, job, version, py_versions, timeout_hour)
+            server, job, version, py_versions, timeout_hour, is_wait)
     elif artifacts and py_versions:
         print('Warning: The artifact parameter exist. The py_versions parameter will be ignore')
 
@@ -263,4 +282,5 @@ if __name__ == "__main__":
              args.py_version,
              args.artifact,
              args.output,
-             args.timeout)
+             args.timeout,
+             args.wait)
