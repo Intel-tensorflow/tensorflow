@@ -21,19 +21,19 @@ limitations under the License.
 namespace tensorflow {
 
 // This file contains temporary registrations for some of the Eigen CPU backend
-// operators for BFloat16 type. The kernel registered for all these ops simply
-// raises an error. We do this so that MKL graph pass can rewrite these ops into
+// operators for BFloat16 and Float16 type. The kernels registered for all these ops simply
+// raise errors. We do this so that MKL graph pass can rewrite these ops into
 // corresponding MKL ops. Without such registrations, Placer component in
 // TensorFlow fails because Eigen CPU backend does not support these ops in
-// BFloat16 type.
+// BFloat16 or Float16 type.
 
 namespace {
-class RaiseBfloat16Error : public OpKernel {
+class RaiseIncompatibleDTypeError : public OpKernel {
  public:
-  explicit RaiseBfloat16Error(OpKernelConstruction* context)
+  explicit RaiseIncompatibleDTypeError(OpKernelConstruction* context)
       : OpKernel(context) {
     OP_REQUIRES(context, false,
-                errors::InvalidArgument("Op does not support bfloat16 inputs"));
+                errors::InvalidArgument("Op does not support bfloat16 or float16 inputs"));
   }
 
   void Compute(OpKernelContext* context) override {}
@@ -43,9 +43,10 @@ class RaiseBfloat16Error : public OpKernel {
 #define REGISTER_CPU(T)                                                       \
   REGISTER_KERNEL_BUILDER(                                                    \
       Name("_FusedConv2D").Device(DEVICE_CPU).TypeConstraint<T>("T"),         \
-      RaiseBfloat16Error);
+      RaiseIncompatibleDTypeError);
 
 TF_CALL_bfloat16(REGISTER_CPU);
+TF_CALL_half(REGISTER_CPU);
 #undef REGISTER_CPU
 
 }  // namespace tensorflow

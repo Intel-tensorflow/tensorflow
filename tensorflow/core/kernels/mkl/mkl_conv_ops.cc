@@ -3148,6 +3148,12 @@ TF_CALL_bfloat16(REGISTER_MKL_CPU_2D);
 
 #define REGISTER_MKL_CPU_2D_half(T)                                            \
   REGISTER_KERNEL_BUILDER(                                                     \
+      Name("_MklNativeConv2D")                                                 \
+          .Device(DEVICE_CPU)                                                  \
+          .TypeConstraint<T>("T")                                              \
+          .Label(mkl_op_registry::kMklNameChangeOpLabel),                      \
+      MklConvOp<CPUDevice, T, T, T, T, T, int32, false, false, false, true>);  \
+  REGISTER_KERNEL_BUILDER(                                                     \
       Name("_MklNativePadWithConv2D")                                          \
           .Device(DEVICE_CPU)                                                  \
           .TypeConstraint<T>("T")                                              \
