@@ -310,6 +310,7 @@ pytype_strict_library(
     srcs = [
         "__init__.py",
         "bfloat16.py",
+        "float16.py",
         "session_support.py",
         "tpu_optimizer.py",
         "tpu_strategy_util.py",
@@ -544,6 +545,17 @@ tf_py_strict_test(
         "//tensorflow/python/framework:dtypes",
         "//tensorflow/python/framework:ops",
         "//tensorflow/python/framework:test_lib",
+    ],
+)
+
+tf_py_strict_test(
+    name = "float16_test",
+    size = "small",
+    srcs = ["float16_test.py"],
+    deps = [
+        ":tpu",
+        "//tensorflow/python:client_testlib",
+        "//tensorflow/python:framework",
     ],
 )
 

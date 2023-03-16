@@ -20,6 +20,7 @@ for tf_export decorations.
 
 # pylint: disable=unused-import
 from tensorflow.python.tpu import bfloat16
+from tensorflow.python.tpu import float16
 from tensorflow.python.tpu import feature_column_v2
 from tensorflow.python.tpu import tpu
 from tensorflow.python.tpu import tpu_embedding
