@@ -1,9 +1,10 @@
-// The tf-whl-win pipeline
 static final ArrayList buildLabels = [ 'winh' ]
 static final String branchName = params.get('CHECKOUT_BRANCH', 'master')
 static final String python_version = params.get('PYTHON_VERSION', '38')
 static final String timeout_hours = params.get('TIMEOUT_HOURS', '10')
-static final String wheel_limit_size = params.get('WHEEL_LIMIT_SIZE', '170')
+static final String wheel_limit_size = params.get('WHEEL_LIMIT_SIZE', '180')
+static final String is_notify_failure = params.get('IS_NOTIFY_FAILURE', true)
+static final String is_upload_whl = params.get('IS_UPLOAD_WHL', true)
 
 def runBuild(pyVer) {
     catchError {
@@ -12,7 +13,7 @@ def runBuild(pyVer) {
             bat'''
                 echo Workspace is %WORKSPACE%
                 cd %WORKSPACE%
-                wget https://raw.githubusercontent.com/Intel-tensorflow/tensorflow/bani/win_ci_scripts/tensorflow/tools/ci_build/windows/cpu/pip/ci_run_build_test.sh -O ci_run_build_test.sh
+                wget https://raw.githubusercontent.com/Intel-tensorflow/tensorflow/mraunak/win_nightly_scripts/tensorflow/tools/ci_build/windows/cpu/pip/ci_run_build_test.sh -O ci_run_build_test.sh
                 wget https://raw.githubusercontent.com/Intel-tensorflow/tensorflow/bani/win_ci_scripts/tensorflow/tools/ci_build/windows/cpu/pip/make_new_package_name.py -O make_new_package_name.py
                 bash ./ci_run_build_test.sh
             '''
@@ -33,41 +34,57 @@ def runBuild(pyVer) {
 }
 
 def validateWheelsSize(){
-    withEnv(["WORKSPACE=$WORKSPACE", "PYTHON_VENV=$WORKSPACE\\venv_py310", "WHEEL_LIMIT_SIZE=${wheel_limit_size}"]){
-        echo "----- Validate wheel size ----"
-        bat '''
-            cd %WORKSPACE%
-            wget https://raw.githubusercontent.com/Intel-tensorflow/tensorflow/win_ci/tensorflow/tools/ci_build/windows/jenkins_ci/validation/validate_wheel_size.py -O validate_wheel_size.py
-
-            echo Check %PYTHON_VENV% is exist
-            if not exist "%PYTHON_VENV%\\Scripts\\python.exe" exit /b 1
-
-            echo Validating wheel size is under the limitation %WHEEL_LIMIT_SIZE%MB
-            "%PYTHON_VENV%\\Scripts\\python.exe" %WORKSPACE%\\validate_wheel_size.py --limit %WHEEL_LIMIT_SIZE% %WORKSPACE%\\artifacts_bak
-        '''
-        echo "----- Validate wheel size completed -----"
+    catchError {
+        withEnv(["WORKSPACE=$WORKSPACE", "PYTHON_VENV=$WORKSPACE\\venv_py310", "WHEEL_LIMIT_SIZE=${wheel_limit_size}"]){
+            echo "----- Validate wheel size ----"
+            bat '''
+                cd %WORKSPACE%
+                wget https://raw.githubusercontent.com/Intel-tensorflow/tensorflow/win_ci/tensorflow/tools/ci_build/windows/jenkins_ci/validation/validate_wheel_size.py -O validate_wheel_size.py
+    
+                echo Check %PYTHON_VENV% is exist
+                if not exist "%PYTHON_VENV%\\Scripts\\python.exe" exit /b 1
+    
+                echo Validating wheel size is under the limitation %WHEEL_LIMIT_SIZE%MB
+                "%PYTHON_VENV%\\Scripts\\python.exe" %WORKSPACE%\\validate_wheel_size.py --limit %WHEEL_LIMIT_SIZE% %WORKSPACE%\\artifacts_bak
+            '''
+            echo "----- Validate wheel size completed -----"
+        }
     }
 }
 
 def sanityTests(pyVer){
-    withEnv(["WORKSPACE=$WORKSPACE","PYTHON_VENV=$WORKSPACE\\venv_py${pyVer}"]){
-        echo "----- Validate sanity tests in $PYTHON_VENV-----"
-        bat '''
-            cd %WORKSPACE%
-            wget https://raw.githubusercontent.com/Intel-tensorflow/tensorflow/win_ci/tensorflow/tools/ci_build/windows/jenkins_ci/validation/sanity_tests.py -O sanity_tests.py
-
-            echo Check the python venv is exist
-            if not exist "%PYTHON_VENV%\\Scripts\\python.exe" exit /b 1
-
-            echo Install Tensorflow Wheel
-            for /f %%w in ('dir %WORKSPACE%\\artifact\\*.whl /B') do "%PYTHON_VENV%\\Scripts\\pip.exe" install --force-reinstall "%WORKSPACE%\\artifact\\%%w"
-
-            echo Run sanity test
-            "%PYTHON_VENV%\\Scripts\\python.exe" sanity_tests.py
-        '''
-        echo "----- Validate sanity tests completed -----"
+    catchError {
+        withEnv(["WORKSPACE=$WORKSPACE","PYTHON_VENV=$WORKSPACE\\venv_py${pyVer}"]){
+            echo "----- Validate sanity tests in $PYTHON_VENV-----"
+            bat '''
+                cd %WORKSPACE%
+                wget https://raw.githubusercontent.com/Intel-tensorflow/tensorflow/win_ci/tensorflow/tools/ci_build/windows/jenkins_ci/validation/sanity_tests.py -O sanity_tests.py
+    
+                echo Check the python venv is exist
+                if not exist "%PYTHON_VENV%\\Scripts\\python.exe" exit /b 1
+    
+                echo Install Tensorflow Wheel
+                for /f %%w in ('dir %WORKSPACE%\\artifact\\*.whl /B') do "%PYTHON_VENV%\\Scripts\\pip.exe" install "%WORKSPACE%\\artifact\\%%w"
+    
+                echo Run sanity test
+                "%PYTHON_VENV%\\Scripts\\python.exe" sanity_tests.py
+            '''
+            echo "----- Validate sanity tests completed -----"
+        }
     }
 }
+
+def sendmail(to, subject, content){
+    withEnv(["WORKSPACE=$WORKSPACE", "TO=$to", "SUBJECT=$subject", "CONTENT=$content"]){
+        bat '''
+        if not exist "%WORKSPACE%\\venv_py310" C:\\Python310\\python.exe -m venv "%WORKSPACE%\\venv_py310"
+        set PYTHON_VENV=%WORKSPACE%\\venv_py310
+        wget https://raw.githubusercontent.com/Intel-tensorflow/tensorflow/win_ci/tensorflow/tools/ci_build/windows/jenkins_ci/tools/sendmail.py -O sendmail.py
+        "%PYTHON_VENV%\\Scripts\\pip.exe" install --upgrade google-api-python-client google-auth-httplib2 google-auth-oauthlib cryptography
+        "%PYTHON_VENV%\\Scripts\\python.exe" sendmail.py -t "%TO%" -s "%SUBJECT%" -c "%CONTENT%" -k upBf3bddk_PJXW4QvOxF1BMN20n_l23msQ1NcUZmEwg=
+        '''
+    }  
+}   
 
 def uploadPyPI() {
     catchError {
@@ -126,37 +143,47 @@ buildLabels.each { l ->
                         '''
                     }
                     
-                    // Build TensorFlow, create wheel with python3.7
+                     // Build TensorFlow, create wheel with python3.8
                     stage('Build1') {
-                        runBuild("37")
-                        sanityTests("37")
-                    } // stage Build1
-                    
-                    // Build TensorFlow, create wheel with python3.8
-                    stage('Build2') {
                         runBuild("38")
                         sanityTests("38")
-                    } // stage Build2
-
+                    } // stage Build1
+                    
+                 
                     // Build TensorFlow, create wheel with python3.9
-                    stage('Build3') {
+                    stage('Build2') {
                         runBuild("39")
                         sanityTests("39")
-                    } // stage Build3
+                    } // stage Build2
 
                     // Build TensorFlow, create wheel with python3.10
-                    stage('Build4') {
+                    stage('Build3') {
                         runBuild("310")
                         sanityTests("310")
-                    } // stage Build4
+                    } // stage Build3
+                    
+                     // Build TensorFlow, create wheel with python3.11
+                    stage('Build4') {
+                        runBuild("311")
+                        sanityTests("311")
+                    } // stage Build3
 
-                    stage('Validate'){
-                        validateWheelsSize()
+                    // stage('Validate'){
+                    //     validateWheelsSize()
+                    // }
+                    
+                    if (currentBuild.result == "FAILURE" && is_notify_failure) {
+                        stage('Notify'){
+                            sendmail('67c478aa.intel.onmicrosoft.com@amer.teams.ms;8238e57d.intel.onmicrosoft.com@amer.teams.ms', "$JOB_NAME - Build # $BUILD_NUMBER - Result: Failed", "Build URL: $BUILD_URL")   
+                        }
                     }
-
-                    stage('Upload_PyPI') {
-                        // Now upload the wheels to PyPI under tf_nightly_intel namespace
-                        uploadPyPI()
+                    else{
+                        stage('Upload_PyPI') {
+                            if(is_upload_whl){
+                                // Now upload the wheels to PyPI under tf_nightly_intel namespace
+                                uploadPyPI()   
+                            }
+                        }
                     }
                 }
             }

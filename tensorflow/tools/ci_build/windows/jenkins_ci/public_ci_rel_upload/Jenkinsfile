@@ -1,0 +1,113 @@
+// tf-ref-upload job pipeline 
+static final ArrayList buildLabels = params.get('LABEL', 'winh').split()
+static final boolean isUploadToPypi = params.get('UPLOAD_TO_PYPI', false)
+static final String waitforTfRevision = params.get('WAIT_FOR_TENSORFLOW_RELEASE_VERSION', '')
+static final ArrayList pyWheelVersions = params.get('PYTHON_WHEEL_VERSIONS', '').split('\n')
+static final ArrayList buildUrls = params.get('RELEASE_WHEEL_BUILD_URLS', '').split('\n')
+static final String releaseJobName = params.get('RELEASE_JOB_NAME', '')
+static final String pyVersion = params.get('PYTHON_VERSION', '310')
+static final int timeout = params.get('TIMEOUT_HOURS', 48).toInteger()
+static final boolean isWaitforReleaseJob = params.get('WAIT_FOR_RELEASE_JOB_COMPLETE', false)
+
+def combineCommandLineOpts(values, flag){
+    opts = ''
+    values.each{value->
+        if(value){
+            opts += " ${flag} \"${value}\""   
+        }
+    }
+    return opts
+}
+
+def downloadReleaseWheels(pyWheelVersions, tfRevision, pyVersion, buildUrls, releaseJobName, isWaitforReleaseJob, timeout){
+    catchError {
+        withEnv(["WORKSPACE=$WORKSPACE", "PY_LOCATION=$WORKSPACE\\venv_py$pyVersion\\Scripts"]) {
+            dir(WORKSPACE) {
+                pyVersionsOpt = combineCommandLineOpts(pyWheelVersions, '-p')
+                buildUrlsOpt = combineCommandLineOpts(buildUrls, '-a')
+                isWaitForReleaseOpt = isWaitforReleaseJob? '-w':''
+                
+                
+                bat '''
+                wget https://raw.githubusercontent.com/Intel-tensorflow/tensorflow/win_ci/tensorflow/tools/ci_build/windows/jenkins_ci/tools/download_wheels.py -O download_wheels.py'
+                %PY_LOCATION%\\pip.exe install beautifulsoup4 python-jenkins
+                '''
+                bat "%PY_LOCATION%\\python.exe download_wheels.py -s https://tensorflow-ci.intel.com/ -j $releaseJobName $isWaitForReleaseOpt -t $timeout -v $tfRevision $pyVersionsOpt $buildUrlsOpt -o \"$WORKSPACE\\artifacts\""
+            }
+        }
+    }
+}
+
+
+def uploadPyPI(pyVer) {
+    catchError {
+        withEnv(["WORKSPACE=$WORKSPACE", "PYTHON_VERSION=${pyVer}"]) {
+            echo "----- Finally, uploading TF Windows Wheels to PyPI under tensorflow-intel namespace -----"
+            
+            echo "----- generate run_pypi_upload.bat -----"
+            dir("$WORKSPACE" + "/artifacts") {
+                sh '''#!/bin/bash -x
+                echo "echo This is run_pypi_upload.bat executing..." > ./run_pypi_upload.bat
+                echo "pip install wheel twine" >> ./run_pypi_upload.bat
+                echo "twine upload tensorflow_intel*.whl --non-interactive --disable-progress-bar --skip-existing" >> ./run_pypi_upload.bat
+                '''
+            }
+
+            withCredentials([usernamePassword(credentialsId: 'PYPI_INTEL_SECRET', usernameVariable: 'TWINE_USERNAME', passwordVariable: 'TWINE_PASSWORD')]) {
+                bat'''
+                set TWINE_REPOSITORY_URL=https://upload.pypi.org/legacy/
+                cd %WORKSPACE%\\artifacts
+                if not exist "%WORKSPACE%\\venv_py%PYTHON_VERSION%\\Scripts\\activate" exit /b 1
+
+                %WORKSPACE%\\venv_py%PYTHON_VERSION%\\Scripts\\activate && %WORKSPACE%\\artifacts\\run_pypi_upload.bat
+                cd %WORKSPACE%
+                rmdir /s /q %WORKSPACE%\\artifacts
+                echo Upload completed.
+                '''
+            }
+        }
+    }
+}
+
+Map parallelBuild = [:]
+buildLabels.each { l ->
+    parallelBuild += [
+        "${l}": {
+            node(l) {
+                stage('Prepare'){
+                    if (!waitforTfRevision){
+                        error("The parameter WAIT_FOR_TENSORFLOW_RELEASE_VERSION is required!")
+                    }
+                    
+                    dir(WORKSPACE) {
+                        deleteDir()
+                        bat "if exist \"$WORKSPACE\\artifacts\" rmdir /s /q \"$WORKSPACE\\artifacts\""
+                        bat 'mkdir artifacts'
+                        bat "C:\\Python${pyVersion}\\python.exe -m venv venv_py$pyVersion"
+                    }
+                }
+                
+                stage('Download artifacts'){
+                    downloadReleaseWheels(pyWheelVersions, waitforTfRevision, pyVersion, buildUrls, releaseJobName, isWaitforReleaseJob, timeout)
+                }
+                
+                stage('Waiting release'){
+                    catchError {
+                        dir(WORKSPACE){
+                            bat 'wget https://raw.githubusercontent.com/Intel-tensorflow/tensorflow/win_ci/tensorflow/tools/ci_build/windows/jenkins_ci/tools/wait_for_a_release.py -O wait_for_a_release.py'
+                            bat "C:\\Python${pyVersion}\\python.exe wait_for_a_release.py -p tensorflow -v $waitforTfRevision -t $timeout"
+                        }
+                    }
+                }   
+
+                if(isUploadToPypi && currentBuild.currentResult != "FAILURE") {
+                    stage('Upload') {
+                        // Now upload the wheels to PyPI under tf_nightly_intel namespace
+                        uploadPyPI(pyVersion)
+                    }
+                }
+            }
+        }
+    ]
+}
+parallel parallelBuild

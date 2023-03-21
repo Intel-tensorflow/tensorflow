@@ -1,0 +1,59 @@
+static final ArrayList buildLabels = params.get('LABELS', 'winh').split('\n')
+static final ArrayList directories = params.get('DIRECTORIES', "").split('\n')
+static final ArrayList globDirectories = params.get('GLOB_DIRECTORIES', "").split('\n')
+static final ArrayList rdDirectories = params.get('REMOVE_DIRECTORIES', "").split('\n')
+static final String pyVersion = params.get('PYTHON_VERSION', '310')
+static final Boolean isDryRun = params.get('IS_DRY_RUN', false)
+static final String timeoutHours = params.get('TIMEOUT_HOURS', '1')
+
+
+def combineCommandLineOpts(paths, flag){
+    opts = ''
+    paths.each{path->
+        if(path){
+            opts += " ${flag} \"${path}\""   
+        }
+    }
+    return opts
+}
+
+Map parallelBuild = [:]
+buildLabels.each { l ->
+    parallelBuild += [
+        "${l}": {
+            node(l) {
+                stage('Prepare') {
+                    dir(WORKSPACE){
+                        bat '''
+                        wget https://raw.githubusercontent.com/Intel-tensorflow/tensorflow/win_ci/tensorflow/tools/ci_build/windows/jenkins_ci/tools/clean.py -O clean.py
+                        '''    
+                    }
+                    
+                }
+                
+                stage('Cleanup') {
+                    timeout(unit: 'HOURS', time: timeoutHours) {
+                        dir(WORKSPACE){
+                            withEnv(["PYTHON_VERSION=${pyVersion}"]){
+                                pathOpts = combineCommandLineOpts(directories, '-p')
+                                globOpts = combineCommandLineOpts(globDirectories, '-g')
+                                rdOpts = combineCommandLineOpts(rdDirectories, '-r')
+
+                                if(isDryRun){
+                                    isDryOpt = ' -d'
+                                }
+                                else{
+                                    isDryOpt = ''
+                                }
+                                
+                                bat "C:\\Python${pyVersion}\\python.exe clean.py ${pathOpts} ${globOpts} ${rdOpts} ${isDryOpt}"    
+                            }
+                        }  
+                    }
+                }
+            }
+        }
+    ]
+}
+
+parallel parallelBuild

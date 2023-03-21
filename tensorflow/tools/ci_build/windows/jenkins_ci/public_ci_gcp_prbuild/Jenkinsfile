@@ -7,8 +7,13 @@ This job accepts params:
 - String Type :: CHECKOUT_BRANCH :: A string branch name to clone tensorflow/tensorflow from
 
 The tf-pr-win pipeline
-*/
+This job:
+1. Clones tensorflow/tensorflow at a given commit
+2. Calls the 'ci_run_build_test.sh' script
 
+This job accepts params:
+- String Type :: CHECKOUT_BRANCH :: A string branch name to clone tensorflow/tensorflow from
+*/
 import jenkins.model.*
 
 static final ArrayList buildLabels = [ 'winh' ]

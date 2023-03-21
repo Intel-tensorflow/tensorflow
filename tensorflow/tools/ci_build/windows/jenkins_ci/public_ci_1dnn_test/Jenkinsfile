@@ -1,0 +1,77 @@
+//tf-win-1dnntest job pipeline
+
+static final ArrayList buildLabels = [ 'winhtest' ]
+static final String customRepoName = params.get('CUSTOM_GIT_REPO', 'https://github.com/tensorflow/tensorflow')
+static final String branchName = params.get('CHECKOUT_BRANCH', 'master')
+static final String python_version = params.get('PYTHON_VERSION', '310')
+static final String test_target = params.get('TEST_TARGET', '//tensorflow/...')
+static final String extra_build_opts = params.get('EXTRA_BUILD_OPTS', '')
+static final String tf_tmpdir = params.get('TF_TMPDIR', 'C:')
+
+// bash ./ci_run_test.sh --extra_test_flags "--test_env=TF2_BEHAVIOR=1" --test_target "${test_target}" --enable_runfiles ${extra_build_opts}
+def runBuild(pyVer) {
+    catchError {
+        withEnv(["WORKSPACE=$WORKSPACE","PYTHON_VERSION=${pyVer}", "TF_ENABLE_ONEDNN_OPTS=1",
+                "TMP=C:\\tmp",
+                "TMPDIR=${tf_tmpdir}","TEST_TARGET=${test_target}"]) {
+            echo "----- Build TF Windows Wheels with Python Version ${pyVer} -----"
+            bat'''
+                echo Workspace is %WORKSPACE%
+                cd %WORKSPACE%
+                wget https://raw.githubusercontent.com/Intel-tensorflow/tensorflow/mraunak/win_ci_scripts/tensorflow/tools/ci_build/windows/cpu/bazel/ci_run_test.sh -O ci_run_test.sh
+                bazel --output_user_root=%TMPDIR% clean --expunge
+                set NUMBER_OF_PROCESSORS=16
+                bash ./ci_run_test.sh --extra_test_flags "--test_env=TF2_BEHAVIOR=1"
+            '''
+        }
+    }
+    
+    dir("$WORKSPACE" + "/artifact") {
+        archiveArtifacts artifacts: '*.log', excludes: null
+    }
+    
+}
+
+
+Map parallelBuild = [:]
+buildLabels.each { l ->
+    parallelBuild += [
+        "${l}": {
+            node(l) {
+                stage('Checkout') {
+                    if (fileExists('./tensorflow/.git/HEAD')) {
+                        sh 'cd tensorflow && git checkout . || true'
+                    }
+                    checkout([
+                        $class: 'GitSCM',
+                        branches: [[name: branchName]],
+                        doGenerateSubmoduleConfigurations: false, 
+                        extensions: [[$class           : 'RelativeTargetDirectory',
+                                      relativeTargetDir: 'tensorflow']],
+                        submoduleCfg: [],
+                        userRemoteConfigs: [[url: customRepoName]]
+                    ])
+                    dir("tensorflow") {
+                        strCommitID = sh(returnStdout: true, script: 'git rev-parse HEAD').trim()
+                    }
+                    echo "strCommitID=" + strCommitID
+                } // stage Checkout
+                
+                dir("$WORKSPACE") {
+                    bat'''
+                    if exist "%WORKSPACE%\\artifact" rmdir /s /q %WORKSPACE%\\artifact
+                    '''
+                }
+                
+                // Build TensorFlow, specifically execute bazel test
+                stage('Build') {
+                    runBuild(python_version)
+                } // stage Build
+                
+            }
+        }
+    ]
+}
+
+parallel parallelBuild
+
