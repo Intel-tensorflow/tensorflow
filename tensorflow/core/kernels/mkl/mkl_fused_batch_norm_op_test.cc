@@ -281,7 +281,6 @@ class FusedBatchNormOpTest : public OpsTestBase {
   }
 
   void VerifyFusedBatchNormGradWithConv2D(const float epsilon) {
-#ifndef ENABLE_ONEDNN_V3
     const GraphRunnerGrad run =
         [this](const Tensor& input, const Tensor& filter,
                const Tensor& y_backprop, const Tensor& scale,
@@ -384,7 +383,6 @@ class FusedBatchNormOpTest : public OpsTestBase {
         };
 
     CommonTestUtilities<T>::VerifyTensorsCloseForGrad(epsilon, run, run_mkl);
-#endif  // !ENABLE_ONEDNN_V3
   }
 };
 
