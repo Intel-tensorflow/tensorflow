@@ -1,0 +1,166 @@
+
+// h5py_whl pipeline
+static final ArrayList buildLabels = [ 'winh3' ]
+static final String python_version = params.get('PYTHON_VERSION', '311')
+static final String vs_version = params.get('VS_VERSION', '2019')
+static final String cpu_architecture = params.get('CPU_ARCHITECTURE', '64')
+static final String hdf5_src_url = params.get('HDF5_SRC_URL', 'https://support.hdfgroup.org/ftp/HDF5/releases/hdf5-1.10/hdf5-1.10.9/src/CMake-hdf5-1.10.9.tar.gz')
+static final String h5py_src_url = params.get('H5PY_SRC_URL', 'https://files.pythonhosted.org/packages/c5/40/7cf58e6230f0e76699f011c6d293dd47755997709a303a4e644823f3a753/h5py-3.7.0.tar.gz')
+static final String timeout_hours = params.get('TIMEOUT_HOURS', '3')
+static final String hdf5_package_name = hdf5_src_url.split("/")[-1].replace('.tar.gz', '').replace('CMake-', '')
+static final String h5py_package_name = h5py_src_url.split("/")[-1].replace('.tar.gz', '')
+
+def runBuild(pyVersion, vsVersion, cpuArc, hdf5Name, h5pyName) {
+    catchError {
+        withEnv(["WORKSPACE=$WORKSPACE",
+                "PYTHON_VERSION=$pyVersion",
+                "VS_VERSION=$vsVersion",
+                "CPU_ARC=$cpuArc",
+                "HDF5_PACKAGE_NAME=$hdf5Name",
+                "H5PY_PACKAGE_NAME=$h5pyName"]) {
+            bat'''
+            echo ----- Build hdf5 -----
+            cd %WORKSPACE%
+            wget https://github.com/Kitware/CMake/releases/download/v3.25.1/cmake-3.25.1-windows-x86_64.zip -O cmake-3.25.1-windows-x86_64.zip
+            unzip cmake-3.25.1-windows-x86_64.zip
+            set PATH=%PATH%;%WORKSPACE%\\cmake-3.25.1-windows-x86_64\\bin
+
+            set CMAKE_HDF5_PACKAGE_NAME=CMake-%HDF5_PACKAGE_NAME%
+            set HDF5_ZIP_NAME=%HDF5_PACKAGE_NAME%-win%CPU_ARC%
+            cd %WORKSPACE%\\%CMAKE_HDF5_PACKAGE_NAME%
+            if %CPU_ARC%==64 (set GENERATOR_TARGET=VS%VS_VERSION%%CPU_ARC%) else (set GENERATOR_TARGET=VS%VS_VERSION%)
+            ctest -S HDF5config.cmake,BUILD_GENERATOR=%GENERATOR_TARGET% -C Release -VV -O hdf5.log
+            unzip "%HDF5_ZIP_NAME%.zip"
+            copy "%HDF5_ZIP_NAME%\\bin\\*.dll" "%HDF5_ZIP_NAME%\\lib" /Y
+            echo "------Build hdf5 completed----"
+
+            echo "----- Build h5py -----"
+            if not exist "%WORKSPACE%\\venv_py%PYTHON_VERSION%" C:\\Python%PYTHON_VERSION%\\python.exe -m venv "%WORKSPACE%\\venv_py%PYTHON_VERSION%"
+            set PYTHON_VENV=%WORKSPACE%\\venv_py%PYTHON_VERSION%
+            cd %WORKSPACE%
+            set HDF5_DIR=%WORKSPACE%\\%CMAKE_HDF5_PACKAGE_NAME%\\%HDF5_ZIP_NAME%
+            set H5PY_DIR=%WORKSPACE%\\%H5PY_PACKAGE_NAME%
+            copy "%WORKSPACE%\\%CMAKE_HDF5_PACKAGE_NAME%\\%HDF5_ZIP_NAME%\\bin\\*.dll" "%H5PY_DIR%\\h5py" /Y
+
+            %PYTHON_VENV%\\Scripts\\pip.exe install wheel
+            %PYTHON_VENV%\\Scripts\\pip.exe install numpy
+            %PYTHON_VENV%\\Scripts\\pip.exe install Cython --install-option="--no-cython-compile"
+            cd "%H5PY_DIR%"
+            %PYTHON_VENV%\\Scripts\\python.exe setup.py bdist_wheel
+
+            if not exist "%WORKSPACE%\\artifact" mkdir "%WORKSPACE%\\artifact"
+            copy "%H5PY_DIR%\\dist\\*.whl" "%WORKSPACE%\\artifact"
+            copy "%WORKSPACE%\\%CMAKE_HDF5_PACKAGE_NAME%\\%HDF5_ZIP_NAME%.zip" "%WORKSPACE%\\artifact"
+            echo ------Build h5py completed----
+            '''
+        }
+    }
+}
+
+def runTest(pyVersion){
+    catchError{
+        withEnv(["WORKSPACE=$WORKSPACE",
+        "PYTHON_VERSION=$pyVersion"]) {
+            bat'''
+            cd %WORKSPACE%
+            set PYTHON_VENV=%WORKSPACE%\\venv_py%PYTHON_VERSION%
+            for /f %%w in ('dir %WORKSPACE%\\artifact\\*.whl /B') do ("%PYTHON_VENV%\\Scripts\\pip.exe" install --force-reinstall "%WORKSPACE%\\artifact\\%%w")
+            "%PYTHON_VENV%\\Scripts\\python.exe" -c "import h5py"
+            '''
+        }
+    }
+}
+
+def archiveWheel(){
+    dir("$WORKSPACE\\artifact") {
+        archiveArtifacts artifacts: '*.whl, *.zip', excludes: null
+    }
+}
+
+
+def sendmail(to, subject, content){
+    withEnv(["WORKSPACE=$WORKSPACE", "TO=$to", "SUBJECT=$subject", "CONTENT=$content"]){
+        bat '''
+        if not exist "%WORKSPACE%\\venv_py310" C:\\Python310\\python.exe -m venv "%WORKSPACE%\\venv_py310"
+        set PYTHON_VENV=%WORKSPACE%\\venv_py310
+        wget https://raw.githubusercontent.com/Intel-tensorflow/tensorflow/win_ci/tensorflow/tools/ci_build/windows/jenkins_ci/tools/sendmail.py -O sendmail.py
+        "%PYTHON_VENV%\\Scripts\\pip.exe" install --upgrade google-api-python-client google-auth-httplib2 google-auth-oauthlib cryptography
+        "%PYTHON_VENV%\\Scripts\\python.exe" sendmail.py -t "%TO%" -s "%SUBJECT%" -c "%CONTENT%" -k upBf3bddk_PJXW4QvOxF1BMN20n_l23msQ1NcUZmEwg=
+        '''
+    }
+}   
+
+def cleanup() {
+    try {
+        sh '''#!/bin/bash -x
+        cd $WORKSPACE
+        rm -rf *
+        '''
+        bat'''
+        if exist "%WORKSPACE%\\artifact" rmdir /s /q %WORKSPACE%\\artifact
+        '''
+    } catch(e) {
+        echo "==============================================="
+        echo "ERROR: Exception caught in cleanup()           "
+        echo "ERROR: ${e}"
+        echo "==============================================="
+        echo ' '
+        echo "Error while doing cleanup"
+    }  // catch
+}
+
+Map parallelBuild = [:]
+buildLabels.each { l ->
+    parallelBuild += [
+        "${l}": {
+            node(l) {
+                timeout(unit: 'HOURS', time: timeout_hours) {
+                    stage('Clean'){
+                        cleanup()
+                    }
+                    
+                    stage('Checkout') {
+                        catchError{
+                            withEnv(["WORKSPACE=$WORKSPACE", 
+                            "HDF5_PACKAGE_NAME=$hdf5_package_name",
+                            "HDF5_SRC_URL=$hdf5_src_url",
+                            "H5PY_SRC_URL=$h5py_src_url",
+                            "H5PY_PACKAGE_NAME=$h5py_package_name"]) {
+                                bat'''
+                                echo '--------Checking out hdf5--------'
+                                set CMAKE_HDF5_PACKAGE_NAME=CMake-%HDF5_PACKAGE_NAME%
+                                wget %HDF5_SRC_URL% -O %CMAKE_HDF5_PACKAGE_NAME%.tar.gz
+                                tar -xf %CMAKE_HDF5_PACKAGE_NAME%.tar.gz
+
+                                echo '--------Checking out h5py--------'
+                                wget %H5PY_SRC_URL% -O %H5PY_PACKAGE_NAME%.tar.gz
+                                tar -xf %H5PY_PACKAGE_NAME%.tar.gz
+                                '''
+                            }
+                        }
+                    } // stage Checkout
+
+                    stage('Build'){
+                        runBuild(python_version, vs_version, cpu_architecture, hdf5_package_name, h5py_package_name)
+                    }
+
+                    stage('Test'){
+                        runTest(python_version)
+                    }
+
+                    if (currentBuild.result == "FAILURE") {
+                        stage('Notify failure'){
+                            //sendmail('67c478aa.intel.onmicrosoft.com@amer.teams.ms;8238e57d.intel.onmicrosoft.com@amer.teams.ms', "$JOB_NAME - Build # $BUILD_NUMBER - Result: Failed", "Build URL: $BUILD_URL")
+                        }
+                    }
+                    else{
+                        stage('Archive') {
+                            archiveWheel()
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}
+parallel parallelBuild

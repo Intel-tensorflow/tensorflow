@@ -1,7 +1,7 @@
-static final ArrayList buildLabels = [ 'winhrel' ]
+// tf-rel-win job pipeline
+static final ArrayList buildLabels = [ 'winh5' ]
 static final String branchName = params.get('CHECKOUT_BRANCH', 'master')
 static final String python_version = params.get('PYTHON_VERSION', 'all')
-static final boolean upload_pypi = params.get('UPLOAD_PYPI', false)
 static final boolean is_replace_pypi_project_description = params.get('IS_REPLACE_PYPI_PROJECT_DESCRIPTION', false)
 static final String pypi_project_description = params.get('PYPI_PROJECT_DESCRIPTION', '')
 
@@ -58,36 +58,6 @@ def buildWheel(pyVer){
         runBuild(pyVer)
         sanityTests(pyVer)
         copyWheelToUploadArtifactsBak()
-    }
-}
-
-def uploadPyPI(pyVer) {
-    catchError {
-        withEnv(["WORKSPACE=$WORKSPACE", "PYTHON_VERSION=${pyVer}"]) {
-            echo "----- Finally, uploading TF Windows Wheels to PyPI under tensorflow-intel namespace -----"
-            
-            echo "----- generate run_pypi_upload.bat -----"
-            dir("$WORKSPACE" + "/artifacts_bak") {
-                sh '''#!/bin/bash -x
-                echo "echo This is run_pypi_upload.bat executing..." > ./run_pypi_upload.bat
-                echo "pip install wheel twine" >> ./run_pypi_upload.bat
-                echo "twine upload tensorflow_intel*.whl --non-interactive --disable-progress-bar --skip-existing" >> ./run_pypi_upload.bat
-                '''
-            }
-
-            withCredentials([usernamePassword(credentialsId: 'PYPI_INTEL_SECRET', usernameVariable: 'TWINE_USERNAME', passwordVariable: 'TWINE_PASSWORD')]) {
-                bat'''
-                set TWINE_REPOSITORY_URL=https://upload.pypi.org/legacy/
-                cd %WORKSPACE%\\artifacts_bak
-                if not exist "%WORKSPACE%\\venv_py%PYTHON_VERSION%\\Scripts\\activate" exit /b 1
-
-                %WORKSPACE%\\venv_py%PYTHON_VERSION%\\Scripts\\activate && %WORKSPACE%\\artifacts_bak\\run_pypi_upload.bat
-                cd %WORKSPACE%
-                rmdir /s /q %WORKSPACE%\\artifacts_bak
-                echo Upload completed.
-                '''
-            }
-        }
     }
 }
 
@@ -169,6 +139,7 @@ def replace_pypi_project_description(description){
     echo "-------------End replace-------------"
 }
 
+
 Map parallelBuild = [:]
 buildLabels.each { l ->
     parallelBuild += [
@@ -206,13 +177,6 @@ buildLabels.each { l ->
                 stage('BuildX') {
                     buildWheel(python_version)
                 }// stage BuildX
-
-                if(upload_pypi && currentBuild.currentResult != "FAILURE") {
-                    stage('Upload_PyPI') {
-                        // Now upload the wheels to PyPI under tf_nightly_intel namespace
-                        uploadPyPI(python_version)
-                    }
-                }
             }
         }
     ]
