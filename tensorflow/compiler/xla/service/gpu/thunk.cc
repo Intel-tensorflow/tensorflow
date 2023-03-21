@@ -54,12 +54,17 @@ Thunk::ExecuteParams::ExecuteParams(
     CASE(kNcclCollectivePermuteStart);
     CASE(kNcclCollectivePermuteDone);
     CASE(kNcclReduceScatter);
+    CASE(kNcclReduceScatterStart);
+    CASE(kNcclReduceScatterDone);
     CASE(kNcclAllToAll);
+    CASE(kNcclAllToAllStart);
+    CASE(kNcclAllToAllDone);
     CASE(kFft);
     CASE(kFor);
     CASE(kGemm);
     CASE(kInfeed);
     CASE(kKernel);
+    CASE(kReusableKernel);
     CASE(kMemset32BitValue);
     CASE(kMemzero);
     CASE(kOutfeed);
@@ -107,7 +112,8 @@ std::string ThunkSequence::ToString(
 
 bool IsReductionCollective(Thunk::Kind kind) {
   return kind == Thunk::kNcclAllReduce || kind == Thunk::kNcclAllReduceStart ||
-         kind == Thunk::kNcclReduceScatter;
+         kind == Thunk::kNcclReduceScatter ||
+         kind == Thunk::kNcclReduceScatterStart;
 }
 
 }  // namespace gpu

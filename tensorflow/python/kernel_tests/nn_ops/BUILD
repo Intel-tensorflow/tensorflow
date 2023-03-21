@@ -251,7 +251,7 @@ tf_py_test(
     size = "small",
     srcs = ["ctc_decoder_ops_test.py"],
     deps = [
-        "//tensorflow/python:array_ops",
+        "//tensorflow/python:array_ops_stack",
         "//tensorflow/python:client_testlib",
         "//tensorflow/python:ctc_ops",
         "//tensorflow/python:framework_for_generated_wrappers",
@@ -561,8 +561,9 @@ cuda_py_test(
     tags = ["no_windows"],  # b/139739217
     deps = [
         "//tensorflow/python:array_ops",
+        "//tensorflow/python:array_ops_stack",
         "//tensorflow/python:client_testlib",
-        "//tensorflow/python:control_flow_ops",
+        "//tensorflow/python:cond",
         "//tensorflow/python:control_flow_v2_toggles",
         "//tensorflow/python:framework_for_generated_wrappers",
         "//tensorflow/python:framework_test_lib",

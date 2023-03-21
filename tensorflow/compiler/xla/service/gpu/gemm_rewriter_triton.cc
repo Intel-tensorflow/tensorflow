@@ -16,6 +16,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/service/gpu/gemm_rewriter_triton.h"
 
 #include <array>
+#include <cstdint>
 #include <stack>
 #include <string>
 #include <tuple>
@@ -31,6 +32,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/shape_util.h"
 #include "tensorflow/compiler/xla/status.h"
 #include "tensorflow/compiler/xla/util.h"
+#include "tensorflow/compiler/xla/xla_data.pb.h"
 #include "tensorflow/tsl/platform/errors.h"
 #include "tensorflow/tsl/platform/statusor.h"
 
@@ -244,15 +246,34 @@ Status DimensionOrder::HandleBitcast(const HloInstruction* hlo) {
 }
 
 Status DimensionOrder::HandleCopyOrTranspose(const HloInstruction* hlo) {
-  const Layout& operand_layout = hlo->operand(0)->shape().layout();
+  // Every HLO dimension can correspond to a group of subdimensions in
+  // dim_order_. For the easier handling of permutations: group dim_order_ by
+  // dimension, apply permutations, then finally remove the grouping.
+  // Group subdimensions by iterating over them in the same order as over
+  // dimensions and matching by total size.
+  std::vector<DimOrderVector> out_physical;
+  out_physical.reserve(hlo->shape().rank());
+  auto dim_order_it = dim_order_.cbegin();
+  for (int64_t dim_index : hlo->shape().layout().minor_to_major()) {
+    const int64_t dim_size = hlo->shape().dimensions(dim_index);
+    int64_t subdim_size_accumulator = 1;
+    DimOrderVector subdim_group;
+    do {
+      subdim_size_accumulator *= dim_order_it->size;
+      subdim_group.push_back(*dim_order_it);
+      ++dim_order_it;
+    } while (subdim_size_accumulator < dim_size);
+    CHECK_EQ(subdim_size_accumulator, dim_size);
+    out_physical.push_back(subdim_group);
+  }
   // Out physical -> out logical.
-  DimOrderVector out_logical;
-  out_logical.resize(dim_order_.size());
-  for (int i = 0; i < dim_order_.size(); ++i) {
-    out_logical[hlo->shape().layout().minor_to_major(i)] = dim_order_[i];
+  std::vector<DimOrderVector> out_logical;
+  out_logical.resize(out_physical.size());
+  for (int i = 0; i < out_physical.size(); ++i) {
+    out_logical[hlo->shape().layout().minor_to_major(i)] = out_physical[i];
   }
   // Out logical -> operand logical.
-  DimOrderVector operand_logical;
+  std::vector<DimOrderVector> operand_logical;
   if (hlo->opcode() == HloOpcode::kTranspose) {
     auto transpose = ::xla::Cast<HloTransposeInstruction>(hlo);
     operand_logical.resize(out_logical.size());
@@ -265,9 +286,13 @@ Status DimensionOrder::HandleCopyOrTranspose(const HloInstruction* hlo) {
     CHECK(ShapeUtil::SameDimensions(hlo->shape(), operand_shape));
     operand_logical = out_logical;
   }
-  // Operand logical -> operand physical.
-  for (int i = 0; i < dim_order_.size(); ++i) {
-    dim_order_[i] = operand_logical[operand_layout.minor_to_major(i)];
+  // Operand logical -> operand physical and ungroup subdimensions.
+  const Layout& operand_layout = hlo->operand(0)->shape().layout();
+  dim_order_.clear();
+  for (int64_t dim_idx : operand_layout.minor_to_major()) {
+    for (const DimDescription& subdim : operand_logical[dim_idx]) {
+      dim_order_.push_back(subdim);
+    }
   }
   return OkStatus();
 }
@@ -334,7 +359,8 @@ class GemmRewriterTritonVisitor : public DfsHloRewriteVisitor {
 
     // TODO(b/266857789): also fuse convert(dot()) at output if present:
     // seen on s8xf32->bf16
-    HloComputation::Builder builder(absl::StrCat("triton_gemm_", dot->name()));
+    std::string suggested_name = absl::StrCat("triton_gemm_", dot->name());
+    HloComputation::Builder builder(suggested_name);
     // Original instruction -> fused one.
     absl::flat_hash_map<const HloInstruction*, HloInstruction*>
         old_to_new_mapping;
@@ -424,6 +450,8 @@ class GemmRewriterTritonVisitor : public DfsHloRewriteVisitor {
         dot->parent()->AddInstruction(HloInstruction::CreateFusion(
             dot->shape(), HloInstruction::FusionKind::kCustom, call_operands,
             computation));
+    dot_fusion->GetModule()->SetAndUniquifyInstrName(dot_fusion,
+                                                     suggested_name);
     dot_fusion->set_raw_backend_config_string(
         std::string(kTritonGemmBackendConfig));
     if (dot->IsRoot()) {
@@ -522,7 +550,9 @@ DotFusionAnalysis::DotFusionAnalysis(const HloInstruction* root) {
 bool IsTritonHandledGEMM(
     const HloInstruction& dot,
     const se::CudaComputeCapability cuda_compute_capability) {
-  if (dot.opcode() != HloOpcode::kDot) {
+  if (dot.opcode() != HloOpcode::kDot ||
+      absl::c_any_of(dot.precision_config().operand_precision(),
+                     [](int x) { return x != PrecisionConfig::DEFAULT; })) {
     return false;
   }
   const DotDimensionNumbers& dimension_numbers = dot.dot_dimension_numbers();

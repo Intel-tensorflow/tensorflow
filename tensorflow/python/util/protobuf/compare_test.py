@@ -15,8 +15,8 @@
 """Tests for python.util.protobuf.compare."""
 
 import copy
-import math
 import re
+import sys
 import textwrap
 
 import six
@@ -204,31 +204,28 @@ class ProtoEqTest(googletest.TestCase):
     self.assertNotEquals('medium < smalls < strings: "a" > >',
                          'small < strings: "b" >')
 
-  def testNans(self):
-    pb = compare_test_pb2.Floats(float_=1)
-    self.assertFalse(compare.FindNans(pb))
-    pb = compare_test_pb2.Floats(float_=float('nan'))
-    self.assertTrue(compare.FindNans(pb))
-
-  def testNansRepeatedField(self):
-    pb = compare_test_pb2.RepeatedFloats(
-        float_=(x for x in [1, 2, float('nan')])
-    )
-    self.assertTrue(compare.FindNans(pb))
-
-  def testNansMap(self):
-    pb = compare_test_pb2.Floats(float_=float('nan'))
-    self.assertTrue(compare.FindNans(pb))
-
   def testIsClose(self):
     self.assertTrue(compare.isClose(1, 1, 1e-10))
     self.assertTrue(compare.isClose(65061.0420, 65061.0322, 1e-5))
     self.assertFalse(compare.isClose(65061.0420, 65061.0322, 1e-7))
-    # Special floats: Nans, inf and denormalized numbers
-    self.assertFalse(compare.isClose(float('nan'), float('nan'), 1e-10))
-    self.assertFalse(compare.isClose(float('inf'), float('inf'), 1e-10))
-    self.assertTrue(compare.isClose(math.ulp(0.0), math.ulp(0.0), 1e-10))
-    self.assertFalse(compare.isClose(math.ulp(0.0), 1, 1e-10))
+
+  def testIsCloseNan(self):
+    self.assertTrue(compare.isClose(float('nan'), float('nan'), 1e-10))
+    self.assertFalse(compare.isClose(float('nan'), 1, 1e-10))
+    self.assertFalse(compare.isClose(1, float('nan'), 1e-10))
+    self.assertFalse(compare.isClose(float('nan'), float('inf'), 1e-10))
+
+  def testIsCloseInf(self):
+    self.assertTrue(compare.isClose(float('inf'), float('inf'), 1e-10))
+    self.assertTrue(compare.isClose(float('-inf'), float('-inf'), 1e-10))
+    self.assertFalse(compare.isClose(float('-inf'), float('inf'), 1e-10))
+    self.assertFalse(compare.isClose(float('inf'), 1, 1e-10))
+    self.assertFalse(compare.isClose(1, float('inf'), 1e-10))
+
+  def testIsCloseSubnormal(self):
+    x = sys.float_info.min * sys.float_info.epsilon
+    self.assertTrue(compare.isClose(x, x, 1e-10))
+    self.assertFalse(compare.isClose(x, 1, 1e-10))
 
 
 class NormalizeNumbersTest(googletest.TestCase):

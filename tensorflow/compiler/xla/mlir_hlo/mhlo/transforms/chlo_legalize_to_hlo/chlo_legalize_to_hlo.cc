@@ -682,7 +682,7 @@ Value erfInv32(ConversionPatternRewriter &b, Location loc, ValueRange args) {
       b.create<mhlo::CompareOp>(loc, b.create<mhlo::AbsOp>(loc, x),
                                 getConstantLike(b, loc, 1, x),
                                 mhlo::ComparisonDirection::EQ),
-      b.create<mhlo::MulOp>(loc, x, getConstantLikeMaxFiniteValue(b, loc, x)),
+      b.create<mhlo::MulOp>(loc, x, getConstantLikeInfValue(b, loc, x, false)),
       result);
 }
 
@@ -790,7 +790,7 @@ Value erfInv64(ConversionPatternRewriter &b, Location loc, ValueRange args) {
       b.create<mhlo::CompareOp>(loc, b.create<mhlo::AbsOp>(loc, x),
                                 getConstantLike(b, loc, 1, x),
                                 mhlo::ComparisonDirection::EQ),
-      b.create<mhlo::MulOp>(loc, x, getConstantLikeMaxFiniteValue(b, loc, x)),
+      b.create<mhlo::MulOp>(loc, x, getConstantLikeInfValue(b, loc, x, false)),
       result);
 }
 

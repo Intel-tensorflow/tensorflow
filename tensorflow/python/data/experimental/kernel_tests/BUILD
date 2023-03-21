@@ -222,6 +222,9 @@ tf_py_test(
     name = "io_test",
     size = "medium",
     srcs = ["io_test.py"],
+    tags = [
+        "notap",  # b/272281090
+    ],
     deps = [
         "//tensorflow/python:client_testlib",
         "//tensorflow/python:errors",
@@ -396,7 +399,6 @@ tf_py_test(
         "//tensorflow/python/data/experimental/ops:testing",
         "//tensorflow/python/data/kernel_tests:test_base",
         "//tensorflow/python/data/ops:dataset_ops",
-        "//tensorflow/python/data/ops:map_op",
         "@absl_py//absl/testing:parameterized",
     ],
 )

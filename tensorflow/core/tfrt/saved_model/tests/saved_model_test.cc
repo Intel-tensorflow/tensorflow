@@ -830,7 +830,7 @@ TEST(SavedModelTest, Error) {
 
   ASSERT_FALSE(status.ok());
 
-  EXPECT_EQ(status.code(), tensorflow::error::INVALID_ARGUMENT);
+  EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
 
   EXPECT_TRUE(absl::StrContains(
       status.error_message(), "You must feed a value for placeholder tensor"));
@@ -982,9 +982,6 @@ TEST(SavedModelTest, DeadlineExceeded) {
 
   auto runtime = DefaultTfrtRuntime(/*num_threads=*/1);
   auto options = DefaultSavedModelOptions(runtime.get());
-
-  // TODO(chky): Implement cancellation in MLRT.
-  if (options.graph_execution_options.enable_mlrt) return;
 
   auto saved_model = SavedModelImpl::LoadSavedModel(options, saved_model_dir,
                                                     /*tags=*/{"serve"});

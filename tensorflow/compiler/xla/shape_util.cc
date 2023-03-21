@@ -592,7 +592,7 @@ ShapeUtil::MakeShapeWithDescendingLayoutAndSamePhysicalLayout(
 }
 
 /* static */ bool ShapeUtil::IsEmptyTuple(const Shape& shape) {
-  return shape.IsTuple() && TupleElementCount(shape) == 0;
+  return shape.IsTuple() && shape.tuple_shapes().empty();
 }
 
 /* static */ int64_t ShapeUtil::TupleElementCount(const Shape& shape) {
@@ -602,7 +602,6 @@ ShapeUtil::MakeShapeWithDescendingLayoutAndSamePhysicalLayout(
 
 /* static */ const Shape& ShapeUtil::GetTupleElementShape(const Shape& shape,
                                                           int64_t index) {
-  CHECK(shape.IsTuple());
   CHECK_GT(TupleElementCount(shape), index);
   TF_DCHECK_OK(ValidateShapeWithOptionalLayout(shape.tuple_shapes(index)));
   return shape.tuple_shapes(index);
@@ -619,8 +618,8 @@ ShapeUtil::MakeShapeWithDescendingLayoutAndSamePhysicalLayout(
                                          int64_t limit) {
   TF_DCHECK_OK(ValidateShapeWithOptionalLayout(tuple));
   CHECK(tuple.IsTuple());
-  CHECK_LE(start, TupleElementCount(tuple));
-  CHECK_LE(limit, TupleElementCount(tuple));
+  CHECK_LE(start, tuple.tuple_shapes_size());
+  CHECK_LE(limit, tuple.tuple_shapes_size());
 
   std::vector<Shape> new_elements(tuple.tuple_shapes().begin() + start,
                                   tuple.tuple_shapes().begin() + limit);
@@ -1935,9 +1934,24 @@ ShapeUtil::GetNormalizedLogicalTransposeShape(
     // Only works on default layouts.
     return std::nullopt;
   }
+  // Drop degenerate dimensions.
+  std::vector<int64_t> delta(input_shape.rank() + 1, 0);
+  for (int i = 0; i < input_shape.rank(); ++i) {
+    delta[i + 1] = delta[i];
+    if (input_shape.dimensions(i) == static_cast<int64_t>(1)) {
+      ++delta[i + 1];
+    }
+  }
+  std::vector<int64_t> new_dimensions;
+  for (int i = 0; i < dimensions.size(); i++) {
+    if (output_shape.dimensions(i) != 1) {
+      new_dimensions.push_back(dimensions[i] - delta[dimensions[i]]);
+    }
+  }
 
   return GetNormalizedTransposeShapeHelper(
-      input_shape, InversePermutation(dimensions), permutation);
+      DropDegenerateDimensions(input_shape), InversePermutation(new_dimensions),
+      permutation);
 }
 
 /* static */ std::optional<Vector3> ShapeUtil::GetNormalizedTransposeShape(

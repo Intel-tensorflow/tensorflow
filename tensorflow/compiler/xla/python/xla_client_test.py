@@ -42,6 +42,22 @@ ops = xla_client.ops
 xla_computation_to_mlir_module = (
     xla_client._xla.mlir.xla_computation_to_mlir_module)
 
+
+# pylint: disable=invalid-name
+def jax_array_convert_to_array(self):
+  return self._single_device_array_to_np_array()
+
+
+def jax_array_device(self):
+  return self._sharding._device
+
+
+Array = xla_client.ArrayImpl
+Array.__array__ = jax_array_convert_to_array
+Array.device = jax_array_device
+# pylint: enable=invalid-name
+
+
 FLAGS = flags.FLAGS
 
 # We choose to ignore pylint's complaints about complex comprehensions, which we
@@ -2941,14 +2957,18 @@ def TestFactory(xla_backend,
       self.assertIsInstance(results[0], list)
       self.assertLen(results[0], 1)
       results[0][0].block_until_ready()
-      self.assertIsInstance(results[0][0], xla_client.Buffer)
+      self.assertIsInstance(
+          results[0][0], (xla_client.Buffer, xla_client.ArrayImpl)
+      )
 
       results, _ = compiled_c.execute_sharded_on_local_devices_with_tokens([])
       self.assertLen(results, 1)
       self.assertIsInstance(results[0], list)
       self.assertLen(results[0], 1)
       results[0][0].block_until_ready()
-      self.assertIsInstance(results[0][0], xla_client.Buffer)
+      self.assertIsInstance(
+          results[0][0], (xla_client.Buffer, xla_client.ArrayImpl)
+      )
 
     def testExecuteShardedOverloadBufferInput(self):
       arg = np.arange(12, dtype=np.int16).reshape(3, 4)
@@ -2967,7 +2987,9 @@ def TestFactory(xla_backend,
       self.assertIsInstance(results[0], list)
       self.assertLen(results[0], 1)
       results[0][0].block_until_ready()
-      self.assertIsInstance(results[0][0], xla_client.Buffer)
+      self.assertIsInstance(
+          results[0][0], (xla_client.Buffer, xla_client.ArrayImpl)
+      )
 
       results, _ = compiled_c.execute_sharded_on_local_devices_with_tokens(
           [[buffer]])
@@ -2975,7 +2997,9 @@ def TestFactory(xla_backend,
       self.assertIsInstance(results[0], list)
       self.assertLen(results[0], 1)
       results[0][0].block_until_ready()
-      self.assertIsInstance(results[0][0], xla_client.Buffer)
+      self.assertIsInstance(
+          results[0][0], (xla_client.Buffer, xla_client.ArrayImpl)
+      )
 
   tests.append(ExecuteShardedOverloadTest)
 

@@ -16,8 +16,8 @@
 
 import collections
 import copy
-import math
 import random
+import sys
 import threading
 import time
 import unittest
@@ -44,7 +44,7 @@ from tensorflow.python.framework import random_seed
 from tensorflow.python.framework import test_ops
 from tensorflow.python.framework import test_util
 from tensorflow.python.ops import array_ops
-from tensorflow.python.ops import control_flow_ops
+from tensorflow.python.ops import control_flow_assert
 from tensorflow.python.ops import lookup_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import random_ops
@@ -218,14 +218,39 @@ class TestUtilTest(test_util.TensorFlowTestCase, parameterized.TestCase):
         relative_tolerance=1e-7,
     )
 
+  def test_float_relative_tolerance_nan(self):
+    pb1 = compare_test_pb2.Floats(float_=float("nan"))
+    pb2 = compare_test_pb2.Floats(float_=float("nan"))
+    self.assertProtoEquals(pb1, pb2, relative_tolerance=1e-7)
+    pb2 = compare_test_pb2.Floats(float_=2)
+    self.assertRaises(
+        AssertionError,
+        self.assertProtoEquals,
+        pb1,
+        pb2,
+        relative_tolerance=1e-7,
+    )
+
   def test_float_relative_tolerance_inf(self):
     pb1 = compare_test_pb2.Floats(float_=float("inf"))
     pb2 = compare_test_pb2.Floats(float_=float("inf"))
     self.assertProtoEquals(pb1, pb2, relative_tolerance=1e-5)
+    pb1 = compare_test_pb2.Floats(float_=1)
+    self.assertRaises(
+        AssertionError,
+        self.assertProtoEquals,
+        pb1,
+        pb2,
+        relative_tolerance=1e-7,
+    )
 
   def test_float_relative_tolerance_denormal(self):
-    pb1 = compare_test_pb2.Floats(float_=math.ulp(0.0))
-    pb2 = compare_test_pb2.Floats(float_=math.ulp(0.0))
+    pb1 = compare_test_pb2.Floats(
+        float_=sys.float_info.min * sys.float_info.epsilon
+    )
+    pb2 = compare_test_pb2.Floats(
+        float_=sys.float_info.min * sys.float_info.epsilon
+    )
     self.assertProtoEquals(pb1, pb2, relative_tolerance=1e-5)
 
   def test_repeated_float_relative_tolerance(self):
@@ -505,7 +530,7 @@ class TestUtilTest(test_util.TensorFlowTestCase, parameterized.TestCase):
         # seems sensible
         x = constant_op.constant(True)
         y = [15]
-        control_flow_ops.Assert(x, y).run()
+        control_flow_assert.Assert(x, y).run()
 
   @test_util.run_in_graph_and_eager_modes
   def testAssertAllCloseAccordingToType(self):

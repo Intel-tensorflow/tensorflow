@@ -32,7 +32,10 @@ py_library(
     name = "async_checkpoint_helper",
     srcs = ["async_checkpoint_helper.py"],
     srcs_version = "PY3",
-    deps = ["//tensorflow/python/tpu:tpu_embedding_v2"],
+    deps = [
+        ":checkpoint_context",
+        "//tensorflow/python/tpu:tpu_embedding_v2",
+    ],
 )
 
 py_library(
@@ -51,6 +54,7 @@ py_library(
     ],
     srcs_version = "PY3",
     deps = [
+        ":checkpoint_context",
         ":checkpoint_options",
         ":checkpoint_view",
         ":functional_saver",
@@ -121,11 +125,20 @@ tf_py_test(
         "//tensorflow/python/eager:context",
         "//tensorflow/python/eager:def_function",
         "//tensorflow/python/eager:test",
+        "//tensorflow/python/framework:stack",
         "//tensorflow/python/saved_model:save",
         "//tensorflow/python/trackable:autotrackable",
         "//tensorflow/python/trackable:base",
         "@absl_py//absl/testing:parameterized",
     ],
+)
+
+py_library(
+    name = "checkpoint_context",
+    srcs = [
+        "checkpoint_context.py",
+    ],
+    srcs_version = "PY3",
 )
 
 tf_py_test(
@@ -284,7 +297,6 @@ py_library(
         "//tensorflow/python:util",
         "//tensorflow/python:variables",
         "//tensorflow/python/trackable:trackable_utils",
-        "//tensorflow/python/training:optimizer",
     ],
 )
 

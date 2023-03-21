@@ -181,18 +181,20 @@ typedef PJRT_Error* PJRT_Event_OnReady(PJRT_Event_OnReady_Args* args);
 
 // ------------------------ Other Common Data Types ----------------------------
 
+typedef enum {
+  PJRT_NamedValue_kString = 0,
+  PJRT_NamedValue_kInt64,
+  PJRT_NamedValue_kInt64List,
+  PJRT_NamedValue_kFloat,
+} PJRT_NamedValue_Type;
+
 // Named value for key-value pairs.
 struct PJRT_NamedValue {
   size_t struct_size;
   void* priv;
   const char* name;
   size_t name_size;
-  enum {
-    PJRT_NamedValue_kString = 0,
-    PJRT_NamedValue_kInt64,
-    PJRT_NamedValue_kInt64List,
-    PJRT_NamedValue_kFloat
-  } type;
+  PJRT_NamedValue_Type type;
   union {
     const char* string_value;
     int64_t int64_value;
@@ -216,6 +218,9 @@ typedef struct PJRT_Buffer PJRT_Buffer;
 struct PJRT_Client_Create_Args {
   size_t struct_size;
   void* priv;
+  // Extra platform-specific options to create a client.
+  PJRT_NamedValue* create_options;
+  size_t num_options;
   PJRT_Client* client;  // out
 };
 PJRT_DEFINE_STRUCT_TRAITS(PJRT_Client_Create_Args, client);
@@ -751,8 +756,14 @@ PJRT_DEFINE_STRUCT_TRAITS(PJRT_LoadedExecutable_IsDeleted_Args, is_deleted);
 typedef PJRT_Error* PJRT_LoadedExecutable_IsDeleted(
     PJRT_LoadedExecutable_IsDeleted_Args* args);
 
-// TODO(b/263390038) implement C API to access PJRT_Chunk data and to destroy.
-typedef struct PJRT_Chunk PJRT_Chunk;
+struct PJRT_Chunk {
+  void* data;
+  size_t size;
+  void (*deleter)(void* data, void* deleter_arg);
+  // `deleter_arg` will be passed to `deleter` as `deleter_arg` argument.
+  void* deleter_arg;
+};
+
 // TODO(b/263390934) implement C API that calls `AddChunk` and other
 // `xla::CopyToDeviceStream`.
 typedef struct PJRT_CopyToDeviceStream PJRT_CopyToDeviceStream;
@@ -760,7 +771,9 @@ typedef struct PJRT_CopyToDeviceStream PJRT_CopyToDeviceStream;
 struct PJRT_TransferMetadata;
 
 // Returns bool because the caller can't create PJRT_Error, which should be
-// returned by C API only. False indicates an error.
+// returned by C API only. False indicates an error. The callback must call
+// `chunk->deleter(chunk->data, chunk->deleter_arg)` when it's finished with
+// `chunk`.
 // TODO(b/267255088) need to bubble up the callback error message to the caller.
 typedef bool (*PJRT_SendCallback)(PJRT_TransferMetadata* metadata,
                                   PJRT_Chunk* chunk, size_t total_size_in_bytes,
@@ -977,6 +990,8 @@ struct PJRT_Buffer_OnDeviceTrimmedShape_Args {
   Int64List dimensions;         // out
   BoolList dynamic_dimensions;  // out
   bool has_layout;
+  // Whether it calls logical_on_device_shape.
+  bool is_logical_on_device_shape;
   XLA_Layout layout;  // out
 };
 PJRT_DEFINE_STRUCT_TRAITS(PJRT_Buffer_OnDeviceTrimmedShape_Args, layout);
@@ -1115,6 +1130,68 @@ PJRT_DEFINE_STRUCT_TRAITS(PJRT_Buffer_UnsafePointer_Args, buffer_pointer);
 // not guaranteed to be the physical/device address.
 typedef PJRT_Error* PJRT_Buffer_UnsafePointer(
     PJRT_Buffer_UnsafePointer_Args* args);
+
+// ---------------------------- CopyToDeviceStream -----------------------------
+
+struct PJRT_CopyToDeviceStream_AddChunk_Args {
+  size_t struct_size;
+  void* priv;
+  PJRT_CopyToDeviceStream* stream;
+  // Takes ownership of `chunk` (i.e. implementation will call chunk.deleter).
+  PJRT_Chunk* chunk;
+  PJRT_Event* transfer_complete;  // out
+};
+PJRT_DEFINE_STRUCT_TRAITS(PJRT_CopyToDeviceStream_AddChunk_Args, chunk);
+
+// Emplaces a new chunk of data to copy to the device. The transfer is started
+// immediately, and the returned event is triggered when the transfer completes
+// or fails.
+//
+// The returned event will indicate an error if the chunk's size causes the
+// amount of transferred data to exceed the total bytes, if the stream is
+// already complete, or if the chunk is not a multiple of the granule size.
+typedef PJRT_Error* PJRT_CopyToDeviceStream_AddChunk(
+    PJRT_CopyToDeviceStream_AddChunk_Args* args);
+
+struct PJRT_CopyToDeviceStream_TotalBytes_Args {
+  size_t struct_size;
+  void* priv;
+  PJRT_CopyToDeviceStream* stream;
+  int64_t total_bytes;  // out
+};
+PJRT_DEFINE_STRUCT_TRAITS(PJRT_CopyToDeviceStream_TotalBytes_Args, total_bytes);
+
+// Returns the total amount of data the stream expects to be transferred.
+typedef PJRT_Error* PJRT_CopyToDeviceStream_TotalBytes(
+    PJRT_CopyToDeviceStream_TotalBytes_Args* args);
+
+struct PJRT_CopyToDeviceStream_GranuleSize_Args {
+  size_t struct_size;
+  void* priv;
+  PJRT_CopyToDeviceStream* stream;
+  int64_t granule_size_in_bytes;  // out
+};
+PJRT_DEFINE_STRUCT_TRAITS(PJRT_CopyToDeviceStream_GranuleSize_Args,
+                          granule_size_in_bytes);
+
+// Returns the granule size in bytes. The size of the chunk added to this stream
+// must be a multiple of this number.
+typedef PJRT_Error* PJRT_CopyToDeviceStream_GranuleSize(
+    PJRT_CopyToDeviceStream_GranuleSize_Args* args);
+
+struct PJRT_CopyToDeviceStream_CurrentBytes_Args {
+  size_t struct_size;
+  void* priv;
+  PJRT_CopyToDeviceStream* stream;
+  int64_t current_bytes;  // out
+};
+PJRT_DEFINE_STRUCT_TRAITS(PJRT_CopyToDeviceStream_CurrentBytes_Args,
+                          current_bytes);
+
+// Returns the amount of data the stream currently has either transferred or has
+// buffered to transfer.
+typedef PJRT_Error* PJRT_CopyToDeviceStream_CurrentBytes(
+    PJRT_CopyToDeviceStream_CurrentBytes_Args* args);
 
 // ------------------------------ Device Topology ------------------------------
 
@@ -1271,6 +1348,11 @@ typedef struct {
   _PJRT_API_STRUCT_FIELD(PJRT_Buffer_IsOnCpu);
   _PJRT_API_STRUCT_FIELD(PJRT_Buffer_ReadyEvent);
   _PJRT_API_STRUCT_FIELD(PJRT_Buffer_UnsafePointer);
+
+  _PJRT_API_STRUCT_FIELD(PJRT_CopyToDeviceStream_AddChunk);
+  _PJRT_API_STRUCT_FIELD(PJRT_CopyToDeviceStream_TotalBytes);
+  _PJRT_API_STRUCT_FIELD(PJRT_CopyToDeviceStream_GranuleSize);
+  _PJRT_API_STRUCT_FIELD(PJRT_CopyToDeviceStream_CurrentBytes);
 
   _PJRT_API_STRUCT_FIELD(PJRT_DeviceTopology_Create);
   _PJRT_API_STRUCT_FIELD(PJRT_DeviceTopology_Destroy);

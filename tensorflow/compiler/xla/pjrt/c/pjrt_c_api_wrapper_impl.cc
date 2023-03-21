@@ -104,7 +104,8 @@ static xla::Status PopulateExecutableCostAnalysisIfNeeded(
       const xla::PjRtValueType& property_value = property.second;
       CHECK(std::holds_alternative<float>(property_value))
           << property_value.index();
-      cost_analysis_property.type = PJRT_NamedValue::PJRT_NamedValue_kFloat;
+      cost_analysis_property.type =
+          PJRT_NamedValue_Type::PJRT_NamedValue_kFloat;
       cost_analysis_property.float_value = std::get<float>(property_value);
       cost_analysis_property.value_size = 1;
 
@@ -147,7 +148,8 @@ PJRT_Error* PJRT_Error_GetCode(PJRT_Error_GetCode_Args* args) {
   PJRT_RETURN_IF_ERROR(CheckMatchingStructSizes(
       "PJRT_Error_GetCode_Args", PJRT_Error_GetCode_Args_STRUCT_SIZE,
       args->struct_size));
-  args->code = StatusCodeToPjrtErrorCode(args->error->status.code());
+  args->code = StatusCodeToPjrtErrorCode(
+      static_cast<absl::StatusCode>(args->error->status.code()));
   return nullptr;
 }
 
@@ -711,7 +713,7 @@ static xla::SendCallback CSendCallbackToCpp(
           const xla::PjRtTransferMetadata& metadata, xla::PjRtChunk input,
           size_t total_size_in_bytes, bool done) -> xla::Status {
         PJRT_TransferMetadata c_metadata{metadata.device_shape};
-        PJRT_Chunk c_chunk{std::move(input)};
+        PJRT_Chunk c_chunk = ConvertFromCppChunk(std::move(input));
 
         // TODO(b/267255088) retrieve up the callback error message.
         bool success = callback(&c_metadata, &c_chunk, total_size_in_bytes,
@@ -719,12 +721,12 @@ static xla::SendCallback CSendCallbackToCpp(
         if (success) {
           return tsl::OkStatus();
         }
-        return xla::Status(tsl::error::UNKNOWN,
+        return xla::Status(absl::StatusCode::kUnknown,
                            "PJRT_SendCallback returned false (error).");
       }};
 }
 
-// TODO(yeounoh) Create new libtpu C++ callbacks that does the following:
+// Create new libtpu C++ callbacks that does the following:
 // - convert libtpu PjRtTransferMetadata to PJRT_TransferMetadata, etc.
 // - call C API callback with the converted arguments
 static void CSendCallbackListsToCpp(
@@ -984,7 +986,13 @@ PJRT_Error* PJRT_Buffer_OnDeviceTrimmedShape(
       "PJRT_Buffer_OnDeviceTrimmedShape_Args",
       PJRT_Buffer_OnDeviceTrimmedShape_Args_STRUCT_SIZE, args->struct_size));
 
-  const xla::Shape& shape = args->buffer->buffer->on_device_shape();
+  xla::Shape shape;
+  if (args->is_logical_on_device_shape) {
+    PJRT_ASSIGN_OR_RETURN(shape,
+                          args->buffer->buffer->logical_on_device_shape());
+  } else {
+    shape = args->buffer->buffer->on_device_shape();
+  }
   args->element_type = shape.element_type();
   ApiConverter::CreateVector(shape.dimensions(), &args->dimensions);
   ApiConverter::CreateVector(shape.dynamic_dimensions(),
@@ -1120,6 +1128,51 @@ PJRT_Error* PJRT_Buffer_UnsafePointer(PJRT_Buffer_UnsafePointer_Args* args) {
   PJRT_ASSIGN_OR_RETURN(args->buffer_pointer,
                         args->buffer->client->client->UnsafeBufferPointer(
                             args->buffer->buffer.get()));
+  return nullptr;
+}
+
+// ---------------------------- CopyToDeviceStream -----------------------------
+
+PJRT_Error* PJRT_CopyToDeviceStream_AddChunk(
+    PJRT_CopyToDeviceStream_AddChunk_Args* args) {
+  PJRT_RETURN_IF_ERROR(CheckMatchingStructSizes(
+      "PJRT_CopyToDeviceStream_AddChunk_Args",
+      PJRT_CopyToDeviceStream_AddChunk_Args_STRUCT_SIZE, args->struct_size));
+
+  xla::PjRtFuture<xla::Status> future =
+      args->stream->stream->AddChunk(ConvertToCppChunk(*args->chunk));
+  args->transfer_complete = new PJRT_Event{std::move(future)};
+  return nullptr;
+}
+
+PJRT_Error* PJRT_CopyToDeviceStream_TotalBytes(
+    PJRT_CopyToDeviceStream_TotalBytes_Args* args) {
+  PJRT_RETURN_IF_ERROR(CheckMatchingStructSizes(
+      "PJRT_CopyToDeviceStream_TotalBytes_Args",
+      PJRT_CopyToDeviceStream_TotalBytes_Args_STRUCT_SIZE, args->struct_size));
+
+  args->total_bytes = args->stream->stream->total_bytes();
+  return nullptr;
+}
+
+PJRT_Error* PJRT_CopyToDeviceStream_GranuleSize(
+    PJRT_CopyToDeviceStream_GranuleSize_Args* args) {
+  PJRT_RETURN_IF_ERROR(CheckMatchingStructSizes(
+      "PJRT_CopyToDeviceStream_GranuleSize_Args",
+      PJRT_CopyToDeviceStream_GranuleSize_Args_STRUCT_SIZE, args->struct_size));
+
+  args->granule_size_in_bytes = args->stream->stream->granule_size_in_bytes();
+  return nullptr;
+}
+
+PJRT_Error* PJRT_CopyToDeviceStream_CurrentBytes(
+    PJRT_CopyToDeviceStream_CurrentBytes_Args* args) {
+  PJRT_RETURN_IF_ERROR(CheckMatchingStructSizes(
+      "PJRT_CopyToDeviceStream_CurrentBytes_Args",
+      PJRT_CopyToDeviceStream_CurrentBytes_Args_STRUCT_SIZE,
+      args->struct_size));
+
+  args->current_bytes = args->stream->stream->current_bytes();
   return nullptr;
 }
 
@@ -1274,16 +1327,16 @@ static void PopulatePjrtDeviceAttributes(PJRT_Device* c_device) {
     cur_attribute.name = name.c_str();
     cur_attribute.name_size = name.size();
     if (const std::string* string_val = std::get_if<std::string>(&value)) {
-      cur_attribute.type = PJRT_NamedValue::PJRT_NamedValue_kString;
+      cur_attribute.type = PJRT_NamedValue_Type::PJRT_NamedValue_kString;
       cur_attribute.string_value = string_val->c_str();
       cur_attribute.value_size = string_val->size();
     } else if (const std::vector<int64_t>* vector_val =
                    std::get_if<std::vector<int64_t>>(&value)) {
-      cur_attribute.type = PJRT_NamedValue::PJRT_NamedValue_kInt64List;
+      cur_attribute.type = PJRT_NamedValue_Type::PJRT_NamedValue_kInt64List;
       cur_attribute.int64_array_value = vector_val->data();
       cur_attribute.value_size = vector_val->size();
     } else if (const int64_t* int_value = std::get_if<int64_t>(&value)) {
-      cur_attribute.type = PJRT_NamedValue::PJRT_NamedValue_kInt64;
+      cur_attribute.type = PJRT_NamedValue_Type::PJRT_NamedValue_kInt64;
       cur_attribute.int64_value = *int_value;
       cur_attribute.value_size = 1;
     } else {

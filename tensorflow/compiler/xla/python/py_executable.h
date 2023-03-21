@@ -75,11 +75,10 @@ class PyExecuteResults {
                    std::vector<tsl::RCReference<ifrt::Array>> ifrt_arrays,
                    int num_computations, PyShardedToken token);
 
-  std::vector<std::vector<PyBuffer::object>>
-  DisassembleIntoSingleDeviceArrays();
+  std::vector<std::vector<PyArray>> DisassembleIntoSingleDeviceArrays();
 
-  std::vector<std::vector<PyBuffer::object>>
-  DisassemblePrefixIntoSingleDeviceArrays(size_t n);
+  std::vector<std::vector<PyArray>> DisassemblePrefixIntoSingleDeviceArrays(
+      size_t n);
 
   std::vector<pybind11::object> ConsumeWithHandlers(
       std::vector<std::variant<const PyArrayResultHandler*, pybind11::object>>
@@ -104,6 +103,9 @@ class PyExecuteResults {
   int num_computations_;
   PyShardedToken token_;
 };
+
+using ExecuteShardedArg =
+    std::variant<PyArray, std::vector<std::variant<PyBuffer::object, PyArray>>>;
 
 // Python wrapper around PjRtExecutable. We use a wrapper class:
 // a) to keep the PyClient alive via a std::shared_ptr<>
@@ -156,21 +158,15 @@ class PyLoadedExecutable
   // PjRtExecutable::Execute. The result is similarly transposed back into the
   // argid,deviceid format.
   // args is [num_args x num_devices].
-  StatusOr<std::vector<std::vector<PyBuffer::object>>>
-  ExecuteShardedOnLocalDevices(
-      absl::Span<const std::vector<std::variant<PyBuffer::object, PyArray>>>
-          args);
+  StatusOr<std::vector<std::vector<PyArray>>> ExecuteShardedOnLocalDevices(
+      absl::Span<const ExecuteShardedArg> args);
 
-  StatusOr<
-      std::pair<std::vector<std::vector<PyBuffer::object>>, PyShardedToken>>
+  StatusOr<std::pair<std::vector<std::vector<PyArray>>, PyShardedToken>>
   ExecuteShardedOnLocalDevicesWithTokens(
-      absl::Span<const std::vector<std::variant<PyBuffer::object, PyArray>>>
-          args);
+      absl::Span<const ExecuteShardedArg> args);
 
-  StatusOr<PyExecuteResults> ExecuteSharded(
-      absl::Span<const std::vector<std::variant<PyBuffer::object, PyArray>>>
-          args,
-      bool with_tokens);
+  StatusOr<PyExecuteResults> ExecuteSharded(std::vector<ExecuteShardedArg> args,
+                                            bool with_tokens);
 
   StatusOr<std::vector<std::shared_ptr<HloModule>>> HloModules() const;
 

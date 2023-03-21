@@ -29,22 +29,28 @@ include_directories(BEFORE
 add_mlir_library(GmlStPasses
   add_debug_info/add_debug_info.cc
   collapse_shape/collapse_shape.cc
+  collect_stats/collect_stats.cc
   compose_extract_insert_slice/compose_extract_insert_slice.cc
+  copy_removal/copy_removal.cc
   cpu_tiling/cpu_tiling_pipeline.cc
   cpu_tiling/fusion_outlining.cc
   cpu_tiling/fusion_planning_for_cpu.cc
+  cpu_tiling/pack_matmul.cc
+  cpu_tiling/transform_conv_for_cpu.cc
   cpu_tiling/transform_dot_for_cpu.cc
-  cpu_tiling/transform_generic_for_cpu.cc
   cpu_tiling/transform_map_for_cpu.cc
   cpu_tiling/transform_matmul_for_cpu.cc
+  cpu_tiling/transform_mmt4d_for_cpu.cc
+  cpu_tiling/transform_pack_for_cpu.cc
   cpu_tiling/transform_reduce_for_cpu.cc
   cpu_tiling/transform_reverse_for_cpu.cc
   cpu_tiling/transform_scatter_for_cpu.cc
-  cpu_tiling/transform_sort_for_cpu.cc
   cpu_tiling/transform_transpose_for_cpu.cc
   fusion/fusion.cc
-  gml_st_to_scf/gml_st_to_scf.cc
+  passes.cc
   peeling/peeling.cc
+  rewrite_from_elements_op/rewrite_from_elements_op.cc
+  rewrite_scf_forall/rewrite_scf_forall.cc
   scalarization/scalarization.cc
   tiling/tile_by_one.cc
   tiling/tiling.cc
@@ -103,7 +109,6 @@ add_mlir_library(GmlStTestPasses
   Core
 
   LINK_LIBS PUBLIC
-  GmlStBufferizableOpInterface
   GmlStDialect
   GmlStTransforms
   MLIRPass

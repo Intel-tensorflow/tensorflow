@@ -20,6 +20,7 @@ limitations under the License.
 #include "tensorflow/compiler/mlir/lite/stablehlo/serializer/flatbuffer_translator.h"
 
 #include <algorithm>
+#include <cassert>
 #include <cstdint>
 #include <iterator>
 #include <limits>
@@ -56,7 +57,6 @@ limitations under the License.
 #define kStablehloOptionalTensor (-1)
 
 using llvm::isa;
-using llvm::Optional;
 using llvm::StringRef;
 using llvm::Twine;
 using mlir::ElementsAttr;
@@ -123,6 +123,16 @@ CreateSubtractOperator(mlir::stablehlo::SubtractOp& hlo_op,
                                               outputs);
 }
 
+static flatbuffers::Offset<::stablehlo::flatbuf::Operator> CreateMulOperator(
+    mlir::stablehlo::MulOp hlo_op, flatbuffers::FlatBufferBuilder* fbb,
+    uint32_t opcode_index, const std::vector<int32_t>& operands,
+    const std::vector<int32_t>& results) {
+  auto inputs = fbb->CreateVector(operands);
+  auto outputs = fbb->CreateVector(results);
+
+  return ::stablehlo::flatbuf::CreateOperator(*fbb, opcode_index, inputs,
+                                              outputs);
+}
 static flatbuffers::Offset<::stablehlo::flatbuf::Operator> CreateMaxOperator(
     mlir::stablehlo::MaxOp& hlo_op, flatbuffers::FlatBufferBuilder* fbb,
     uint32_t opcode_index, const std::vector<int32_t>& operands,
@@ -134,8 +144,32 @@ static flatbuffers::Offset<::stablehlo::flatbuf::Operator> CreateMaxOperator(
                                               outputs);
 }
 
+static flatbuffers::Offset<::stablehlo::flatbuf::Operator>
+CreateConvertOperator(mlir::stablehlo::ConvertOp& hlo_op,
+                      flatbuffers::FlatBufferBuilder* fbb,
+                      uint32_t opcode_index,
+                      const std::vector<int32_t>& operands,
+                      const std::vector<int32_t>& results) {
+  auto inputs = fbb->CreateVector(operands);
+  auto outputs = fbb->CreateVector(results);
+
+  return ::stablehlo::flatbuf::CreateOperator(*fbb, opcode_index, inputs,
+                                              outputs);
+}
+
 static flatbuffers::Offset<::stablehlo::flatbuf::Operator> CreateDotOperator(
     mlir::stablehlo::DotOp& hlo_op, flatbuffers::FlatBufferBuilder* fbb,
+    uint32_t opcode_index, const std::vector<int32_t>& operands,
+    const std::vector<int32_t>& results) {
+  auto inputs = fbb->CreateVector(operands);
+  auto outputs = fbb->CreateVector(results);
+
+  return ::stablehlo::flatbuf::CreateOperator(*fbb, opcode_index, inputs,
+                                              outputs);
+}
+
+static flatbuffers::Offset<::stablehlo::flatbuf::Operator> CreateClampOperator(
+    mlir::stablehlo::ClampOp& hlo_op, flatbuffers::FlatBufferBuilder* fbb,
     uint32_t opcode_index, const std::vector<int32_t>& operands,
     const std::vector<int32_t>& results) {
   auto inputs = fbb->CreateVector(operands);
@@ -156,6 +190,24 @@ CreateLogisticOperator(mlir::stablehlo::LogisticOp& hlo_op,
 
   return ::stablehlo::flatbuf::CreateOperator(*fbb, opcode_index, inputs,
                                               outputs);
+}
+
+static flatbuffers::Offset<::stablehlo::flatbuf::Operator>
+CreateConcatenateOperator(mlir::stablehlo::ConcatenateOp& hlo_op,
+                          flatbuffers::FlatBufferBuilder* fbb,
+                          uint32_t opcode_index,
+                          const std::vector<int32_t>& operands,
+                          const std::vector<int32_t>& results) {
+  auto inputs = fbb->CreateVector(operands);
+  auto outputs = fbb->CreateVector(results);
+
+  auto options = ::stablehlo::flatbuf::CreateConcatenateOptions(
+      *fbb, hlo_op.getDimension());
+
+  return ::stablehlo::flatbuf::CreateOperator(
+      *fbb, opcode_index, inputs, outputs,
+      ::stablehlo::flatbuf::OperatorOptions_ConcatenateOptions,
+      options.Union());
 }
 
 static flatbuffers::Offset<::stablehlo::flatbuf::Operator>
@@ -277,11 +329,46 @@ CreateBroadcastInDimOperator(mlir::stablehlo::BroadcastInDimOp& hlo_op,
   auto inputs = fbb->CreateVector(operands);
   auto outputs = fbb->CreateVector(results);
 
-  return ::stablehlo::flatbuf::CreateOperator(*fbb, opcode_index, inputs,
-                                              outputs);
+  std::vector<int64_t> broadcast_dimension_vec =
+      GetOptionalVector<int64_t>(hlo_op.getBroadcastDimensions(), 0, 0);
+
+  auto broadcast_dimension = fbb->CreateVector(broadcast_dimension_vec);
+
+  auto options = ::stablehlo::flatbuf::CreateBroadcastInDimOptions(
+      *fbb, broadcast_dimension);
+
+  return ::stablehlo::flatbuf::CreateOperator(
+      *fbb, opcode_index, inputs, outputs,
+      ::stablehlo::flatbuf::OperatorOptions_BroadcastInDimOptions,
+      options.Union());
 }
 
-llvm::Optional<flatbuffers::Offset<::stablehlo::flatbuf::Operator>>
+static flatbuffers::Offset<::stablehlo::flatbuf::Operator>
+CreateResizeBilinearOperator(mlir::stablehlo::CustomCallOp& hlo_op,
+                             flatbuffers::FlatBufferBuilder* fbb,
+                             uint32_t opcode_index,
+                             const std::vector<int32_t>& operands,
+                             const std::vector<int32_t>& results) {
+  auto inputs = fbb->CreateVector(operands);
+  auto outputs = fbb->CreateVector(results);
+
+  auto align_corners =
+      hlo_op->getAttr("align_corners").dyn_cast<mlir::BoolAttr>();
+  assert(align_corners);
+  auto half_pixel_center =
+      hlo_op->getAttr("half_pixel_centers").dyn_cast<mlir::BoolAttr>();
+  assert(half_pixel_center);
+
+  auto options = ::stablehlo::flatbuf::CreateResizeBilinearOptions(
+      *fbb, align_corners.getValue(), half_pixel_center.getValue());
+
+  return ::stablehlo::flatbuf::CreateOperator(
+      *fbb, opcode_index, inputs, outputs,
+      ::stablehlo::flatbuf::OperatorOptions_ResizeBilinearOptions,
+      options.Union());
+}
+
+std::optional<flatbuffers::Offset<::stablehlo::flatbuf::Operator>>
 CreateFlatBufferOperator(mlir::Operation* op, uint32_t opcode_index,
                          const std::vector<int32_t>& operands,
                          const std::vector<int32_t>& results,
@@ -297,6 +384,8 @@ CreateFlatBufferOperator(mlir::Operation* op, uint32_t opcode_index,
     return CreateDivOperator(hlo_op, fbb, opcode_index, operands, results);
   if (auto hlo_op = llvm::dyn_cast<mlir::stablehlo::SubtractOp>(op))
     return CreateSubtractOperator(hlo_op, fbb, opcode_index, operands, results);
+  if (auto hlo_op = llvm::dyn_cast<mlir::stablehlo::MulOp>(op))
+    return CreateMulOperator(hlo_op, fbb, opcode_index, operands, results);
   if (auto hlo_op = llvm::dyn_cast<mlir::stablehlo::MaxOp>(op))
     return CreateMaxOperator(hlo_op, fbb, opcode_index, operands, results);
   if (auto hlo_op = llvm::dyn_cast<mlir::stablehlo::ReshapeOp>(op))
@@ -310,18 +399,40 @@ CreateFlatBufferOperator(mlir::Operation* op, uint32_t opcode_index,
   if (auto hlo_op = llvm::dyn_cast<mlir::stablehlo::BroadcastInDimOp>(op))
     return CreateBroadcastInDimOperator(hlo_op, fbb, opcode_index, operands,
                                         results);
+  if (auto hlo_op = llvm::dyn_cast<mlir::stablehlo::CustomCallOp>(op))
+    return CreateResizeBilinearOperator(hlo_op, fbb, opcode_index, operands,
+                                        results);
+  if (auto hlo_op = llvm::dyn_cast<mlir::stablehlo::ClampOp>(op))
+    return CreateClampOperator(hlo_op, fbb, opcode_index, operands, results);
+  if (auto hlo_op = llvm::dyn_cast<mlir::stablehlo::ConcatenateOp>(op))
+    return CreateConcatenateOperator(hlo_op, fbb, opcode_index, operands,
+                                     results);
+  if (auto hlo_op = llvm::dyn_cast<mlir::stablehlo::ConvertOp>(op))
+    return CreateConvertOperator(hlo_op, fbb, opcode_index, operands, results);
   return std::nullopt;
 }
 
-// Set `isSigned` to false if the `type` is an 8-bit unsigned integer type.
-// Since tflite doesn't support unsigned for other types, returns error if
-// `isSigned` is set to false for other types.
 static StatusOr<::stablehlo::flatbuf::DataType> GetDataType(
     Type type, bool is_signed = true) {
-  return ::stablehlo::flatbuf::DataType_FLOAT32;
+  if (type.isF16()) return ::stablehlo::flatbuf::DataType_FLOAT16;
+  if (type.isF32()) return ::stablehlo::flatbuf::DataType_FLOAT32;
+  if (type.isF64()) return ::stablehlo::flatbuf::DataType_FLOAT64;
+  if (type.isSignlessInteger(8)) return ::stablehlo::flatbuf::DataType_INT8;
+  if (type.isSignlessInteger(16)) return ::stablehlo::flatbuf::DataType_INT16;
+  if (type.isSignlessInteger(32)) return ::stablehlo::flatbuf::DataType_INT32;
+  if (type.isSignlessInteger(64)) return ::stablehlo::flatbuf::DataType_INT64;
+  if (type.isUnsignedInteger(8)) return ::stablehlo::flatbuf::DataType_UINT8;
+  if (type.isUnsignedInteger(16)) return ::stablehlo::flatbuf::DataType_UINT16;
+  if (type.isUnsignedInteger(32)) return ::stablehlo::flatbuf::DataType_UINT32;
+  if (type.isUnsignedInteger(64)) return ::stablehlo::flatbuf::DataType_UINT64;
+  std::string type_str;
+  llvm::raw_string_ostream str_stream(type_str);
+  str_stream << type;
+  LOG(ERROR) << "unsupported datatype" << type_str;
+  return tensorflow::errors::InvalidArgument("unsupported datatype" + type_str);
 }
 
-llvm::Optional<::stablehlo::flatbuf::OperatorCode> GetOpCode(
+std::optional<::stablehlo::flatbuf::OperatorCode> GetOpCode(
     mlir::Operation* op) {
   if (isa<mlir::stablehlo::AddOp>(op))
     return ::stablehlo::flatbuf::OperatorCode_ADD;
@@ -333,6 +444,8 @@ llvm::Optional<::stablehlo::flatbuf::OperatorCode> GetOpCode(
     return ::stablehlo::flatbuf::OperatorCode_DIVIDE;
   if (isa<mlir::stablehlo::LogisticOp>(op))
     return ::stablehlo::flatbuf::OperatorCode_LOGISTIC;
+  if (isa<mlir::stablehlo::MulOp>(op))
+    return ::stablehlo::flatbuf::OperatorCode_MULTIPLY;
   if (isa<mlir::stablehlo::MaxOp>(op))
     return ::stablehlo::flatbuf::OperatorCode_MAXIMUM;
   if (isa<mlir::stablehlo::ReshapeOp>(op))
@@ -343,6 +456,19 @@ llvm::Optional<::stablehlo::flatbuf::OperatorCode> GetOpCode(
     return ::stablehlo::flatbuf::OperatorCode_BROADCAST_IN_DIM;
   if (isa<mlir::stablehlo::ReduceWindowOp>(op))
     return ::stablehlo::flatbuf::OperatorCode_REDUCE_WINDOW;
+  if (isa<mlir::stablehlo::ClampOp>(op))
+    return ::stablehlo::flatbuf::OperatorCode_CLAMP;
+  if (isa<mlir::stablehlo::ConcatenateOp>(op))
+    return ::stablehlo::flatbuf::OperatorCode_CONCATENATE;
+  if (isa<mlir::stablehlo::ConvertOp>(op))
+    return ::stablehlo::flatbuf::OperatorCode_CONVERT;
+
+  // For now we assume the incoming custom op is a resize_bilinear, it is
+  // expected any other custom op will cause the program to error out
+  if (isa<mlir::stablehlo::CustomCallOp>(op))
+    return ::stablehlo::flatbuf::OperatorCode_RESIZE_BILINEAR;
+
+  op->emitError(Twine("unsupported op type " + op->getName().getStringRef()));
   return std::nullopt;
 }
 
@@ -351,7 +477,7 @@ static bool IsConst(Operation* op) {
              mlir::stablehlo::ConstantOp>(op);
 }
 
-Optional<std::string> Translator::Translate(
+std::optional<std::string> Translator::Translate(
     ModuleOp module, const toco::TocoFlags& toco_flags,
     const std::unordered_set<std::string>& tags,
     OpOrArgNameMapper* op_or_arg_name_mapper,
@@ -365,7 +491,7 @@ Optional<std::string> Translator::Translate(
   return translator.TranslateInternal();
 }
 
-Optional<std::string> Translator::TranslateInternal() {
+std::optional<std::string> Translator::TranslateInternal() {
   // A list of named regions in the module with main function being the first in
   // the list. The main function is required as the first subgraph in the model
   // is entry point for the model.
@@ -471,8 +597,9 @@ Optional<std::string> Translator::TranslateInternal() {
                      builder_.GetSize());
 }
 
-Optional<BufferOffset<::stablehlo::flatbuf::Tensor>> Translator::BuildTensor(
-    Value value, const std::string& name, unsigned buffer_idx) {
+std::optional<BufferOffset<::stablehlo::flatbuf::Tensor>>
+Translator::BuildTensor(Value value, const std::string& name,
+                        unsigned buffer_idx) {
   auto type = value.getType().cast<TensorType>();
 
   auto check_shape =
@@ -526,6 +653,8 @@ Optional<BufferOffset<::stablehlo::flatbuf::Tensor>> Translator::BuildTensor(
   }
 
   Type element_type = type.getElementType();
+  auto status = GetDataType(element_type);
+  if (!status.ok()) return std::nullopt;
   ::stablehlo::flatbuf::DataType data_type = GetDataType(element_type).value();
 
   return ::stablehlo::flatbuf::CreateTensor(
@@ -573,7 +702,7 @@ std::string Translator::UniqueName(mlir::Value val) {
   return std::string(name_mapper_.GetUniqueName(val));
 }
 
-Optional<BufferOffset<::stablehlo::flatbuf::SubGraph>>
+std::optional<BufferOffset<::stablehlo::flatbuf::SubGraph>>
 Translator::BuildSubGraph(const std::string& name, Region* region, int index) {
   bool has_input_attr = false;
   if (auto fn = dyn_cast<FuncOp>(region->getParentOp())) {
@@ -630,7 +759,7 @@ Translator::BuildSubGraph(const std::string& name, Region* region, int index) {
   }
 
   bool failed_once = false;
-  for (auto& item : llvm::enumerate(bb)) {
+  for (const auto& item : llvm::enumerate(bb)) {
     Operation& inst = item.value();
     const int operation_index = item.index();
     if (inst.hasTrait<mlir::OpTrait::IsTerminator>()) break;
@@ -693,8 +822,8 @@ Translator::BuildSubGraph(const std::string& name, Region* region, int index) {
       /*name=*/builder_.CreateString(name));
 }
 
-Optional<BufferOffset<::stablehlo::flatbuf::Buffer>> Translator::BuildBuffer(
-    mlir::Value value) {
+std::optional<BufferOffset<::stablehlo::flatbuf::Buffer>>
+Translator::BuildBuffer(mlir::Value value) {
   auto inst = value.getDefiningOp();
   ElementsAttr attr;
 
@@ -736,7 +865,7 @@ uint32_t Translator::GetOpcodeIndex(
   return it.first->second;
 }
 
-Optional<BufferOffset<::stablehlo::flatbuf::Operator>>
+std::optional<BufferOffset<::stablehlo::flatbuf::Operator>>
 Translator::BuildOperator(Operation* inst, std::vector<int32_t> operands,
                           const std::vector<int32_t>& results) {
   const auto* dialect = inst->getDialect();
@@ -753,7 +882,7 @@ Translator::BuildOperator(Operation* inst, std::vector<int32_t> operands,
 
     auto opcode_index =
         GetOpcodeIndex(inst->getName().getStringRef().str(), op_code.value());
-    llvm::Optional<flatbuffers::Offset<::stablehlo::flatbuf::Operator>> offset;
+    std::optional<flatbuffers::Offset<::stablehlo::flatbuf::Operator>> offset;
     if (op_code == ::stablehlo::flatbuf::OperatorCode_REDUCE_WINDOW) {
       offset = CreateFlatBufferOperator(
           inst, opcode_index, operands, results, &builder_,
