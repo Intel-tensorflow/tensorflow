@@ -2529,14 +2529,20 @@ class MklQuantizedConvOp
     // is qint32. Since oneDNN v3.0 does not support qint32 bias, we need to
     // dequantize to float.
     const float min_input =
-        context->input(min_input_idx_).template flat<float>()(0);
+        context->input(min_input_idx_).template scalar<float>()();
     const float max_input =
-        context->input(max_input_idx_).template flat<float>()(0);
+        context->input(max_input_idx_).template scalar<float>()();
     const Tensor& min_filter_vector = context->input(min_filter_idx_);
     const Tensor& max_filter_vector = context->input(max_filter_idx_);
+    if ((min_filter_vector.NumElements() == 0) ||
+        (max_filter_vector.NumElements() == 0) ||
+        (min_filter_vector.shape() != max_filter_vector.shape())) {
+      TF_CHECK_OK(Status(error::Code::FAILED_PRECONDITION,
+                         "`min_filter and max_filter` must have same"
+                         "shape and contain at least one element."));
+    }
     const float* min_filter = min_filter_vector.flat<float>().data();
     const float* max_filter = max_filter_vector.flat<float>().data();
-
     const float int_const_scale_limit =
         (std::is_same<Tinput, quint8>::value) ? 255.0 * 127.0 : 127.0 * 127.0;
     // Re-scale bias if either of following 2 conditions are met:
