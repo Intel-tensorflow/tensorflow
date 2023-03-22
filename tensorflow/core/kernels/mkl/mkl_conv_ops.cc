@@ -836,16 +836,11 @@ class MklConvOp : public OpKernel {
       // MKL-DNN allocates buffers in the following cases:
       //   1. Legacy CPU without AVX512/AVX2, or
       //   2. 1x1 convolution with strides != 1
-#ifndef ENABLE_ONEDNN_V3
-      // TODO(intel-tf): Enable this for oneDNN v3.x
       bool do_not_cache =
           MklPrimitiveFactory<Tinput>::IsPrimitiveMemOptEnabled() &&
           (src_dims[MklDnnDims::Dim_N] > kSmallBatchSize) &&
           (MklPrimitiveFactory<Tinput>::IsLegacyPlatform() ||
            IsConv1x1StrideNot1(filter_dims, strides));
-#else
-      bool do_not_cache = true;
-#endif  // ENABLE_ONEDNN_V3
 
       // Get a conv2d fwd from primitive pool
       MklConvFwdPrimitive<Tinput, Tfilter, Tbias, Ttemp_output>* conv_fwd =
