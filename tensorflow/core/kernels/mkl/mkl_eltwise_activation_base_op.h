@@ -311,5 +311,5 @@ class MklEltwiseFwdActivationOpBase : public OpKernel {
 
 }  // namespace tensorflow
 
-#endif  // INTEL_MKL
+#endif  // INTEL_MKL && !ENABLE_ONEDNN_V3
 #endif  // TENSORFLOW_CORE_KERNELS_MKL_MKL_ELTWISE_ACTIVATION_BASE_OP_H_

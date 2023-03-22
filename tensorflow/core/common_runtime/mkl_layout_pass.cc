@@ -408,11 +408,9 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
     rinfo_.push_back({csinfo_.batch_matmul,
                       mkl_op_registry::GetMklOpName(csinfo_.batch_matmul),
                       CopyAttrsAll, MatMulRewrite, kRewriteForOpNameChange});
-#ifndef ENABLE_ONEDNN_V3
     rinfo_.push_back({csinfo_.einsum,
                       mkl_op_registry::GetMklOpName(csinfo_.einsum),
                       CopyAttrsAll, MatMulRewrite, kRewriteForOpNameChange});
-#endif  // !ENABLE_ONEDNN_V3
     rinfo_.push_back({csinfo_.batch_matmul_v2,
                       mkl_op_registry::GetMklOpName(csinfo_.batch_matmul_v2),
                       CopyAttrsAll, MatMulRewrite, kRewriteForOpNameChange});
@@ -472,6 +470,7 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
     rinfo_.push_back(
         {csinfo_.dequantize, mkl_op_registry::GetMklOpName(csinfo_.dequantize),
          CopyAttrsAll, DequantizeRewrite, kRewriteForOpNameChange});
+#endif  // !ENABLE_ONEDNN_V3
     rinfo_.push_back({csinfo_.fused_batch_norm,
                       mkl_op_registry::GetMklOpName(csinfo_.fused_batch_norm),
                       CopyAttrsAll, AlwaysRewrite, GetRewriteCause()});
@@ -503,7 +502,6 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
                                  : csinfo_.mkl_fused_batch_norm_ex,
                       CopyAttrsAll, FusedBatchNormExRewrite,
                       GetRewriteCause()});
-#endif  // !ENABLE_ONEDNN_V3
     rinfo_.push_back({csinfo_.fused_conv2d,
                       native_fmt ? csinfo_.mkl_native_fused_conv2d
                                  : csinfo_.mkl_fused_conv2d,

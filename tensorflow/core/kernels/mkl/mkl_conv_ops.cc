@@ -175,8 +175,29 @@ class MklConvFwdPrimitive : public MklPrimitive {
     context_.filter_mem->set_data_handle(
         static_cast<void*>(const_cast<Tfilter*>(filter_data)), *fwd_stream);
     if (bias_data != nullptr) {
-      context_.bias_mem->set_data_handle(
-          static_cast<void*>(const_cast<Tbias*>(bias_data)), *fwd_stream);
+      context_.bias_mem->set_data_handle(const_cast<void*>(bias_data),
+                                         *fwd_stream);
+    }
+    auto const& post_op_params = convFwdDims.post_op_params;
+    if (!post_op_params.empty()) {
+      for (auto const& post_op_param : post_op_params) {
+        if (post_op_param.name == "src_scale") {
+          context_.src_scale_mem->set_data_handle(
+              static_cast<void*>(
+                  const_cast<float*>(post_op_param.param.data())),
+              *fwd_stream);
+        } else if (post_op_param.name == "wei_scale") {
+          context_.wei_scale_mem->set_data_handle(
+              static_cast<void*>(
+                  const_cast<float*>(post_op_param.param.data())),
+              *fwd_stream);
+        } else if (post_op_param.name == "dst_scale") {
+          context_.dst_scale_mem->set_data_handle(
+              static_cast<void*>(
+                  const_cast<float*>(post_op_param.param.data())),
+              *fwd_stream);
+        }
+      }
     }
     if (bn_scale_data != nullptr) {
       context_.bn_scale_mem->set_data_handle(
@@ -202,7 +223,6 @@ class MklConvFwdPrimitive : public MklPrimitive {
     if (bias_data != nullptr) {
       context_.bias_mem->set_data_handle(const_cast<void*>(bias_data));
     }
-
     auto const& post_op_params = convFwdDims.post_op_params;
     if (!post_op_params.empty()) {
       for (auto const& post_op_param : post_op_params) {
@@ -443,7 +463,7 @@ class MklConvFwdPrimitive : public MklPrimitive {
                                   MklDnnType<float>());
             } else {
               TF_CHECK_OK(Status(error::Code::FAILED_PRECONDITION,
-                                 "Summand data type is expcted to be float"));
+                                 "Summand data type is expected to be float"));
             }
           } else {
             post_ops.append_sum(op_scale);
@@ -967,16 +987,11 @@ class MklConvOp : public OpKernel {
       // MKL-DNN allocates buffers in the following cases:
       //   1. Legacy CPU without AVX512/AVX2, or
       //   2. 1x1 convolution with strides != 1
-#ifndef ENABLE_ONEDNN_V3
-      // TODO(intel-tf): Enable this for oneDNN v3.x
       bool do_not_cache =
           MklPrimitiveFactory<Tinput>::IsPrimitiveMemOptEnabled() &&
           (src_dims[MklDnnDims::Dim_N] > kSmallBatchSize) &&
           (MklPrimitiveFactory<Tinput>::IsLegacyPlatform() ||
            IsConv1x1StrideNot1(filter_dims, strides));
-#else
-      bool do_not_cache = true;
-#endif  // ENABLE_ONEDNN_V3
 
       // Get a conv2d fwd from primitive pool
       MklConvFwdPrimitive<Tinput, Tfilter, Tbias, Ttemp_output>* conv_fwd =
@@ -2057,11 +2072,10 @@ class MklQuantizedConvOp
               /*native_format*/ true>::Compute(context);
 
     // Compute additional outputs: min/max scalars.
-
     const float min_input =
-        context->input(min_input_idx_).template flat<float>()(0);
+        context->input(min_input_idx_).template scalar<float>()();
     const float max_input =
-        context->input(max_input_idx_).template flat<float>()(0);
+        context->input(max_input_idx_).template scalar<float>()();
 
     Tensor* output_min = nullptr;
     Tensor* output_max = nullptr;
@@ -2071,9 +2085,9 @@ class MklQuantizedConvOp
       OP_REQUIRES_OK(context, context->allocate_output(2, {}, &output_max));
       // This is the case the convolution and requantization are fused.
       output_min->flat<float>()(0) =
-          context->input(min_freezed_output_idx_).template flat<float>()(0);
+          context->input(min_freezed_output_idx_).template scalar<float>()();
       output_max->flat<float>()(0) =
-          context->input(max_freezed_output_idx_).template flat<float>()(0);
+          context->input(max_freezed_output_idx_).template scalar<float>()();
     } else {
       const Tensor& min_filter = context->input(min_filter_idx_);
       const Tensor& max_filter = context->input(max_filter_idx_);
@@ -2081,8 +2095,8 @@ class MklQuantizedConvOp
         float min_output_value;
         float max_output_value;
         MklQuantizationRangeForMultiplication<Tinput, qint8, qint32>(
-            min_input, max_input, min_filter.flat<float>()(0),
-            max_filter.flat<float>()(0), &min_output_value, &max_output_value);
+            min_input, max_input, min_filter.scalar<float>()(),
+            max_filter.scalar<float>()(), &min_output_value, &max_output_value);
         OP_REQUIRES_OK(context, context->allocate_output(1, {}, &output_min));
         OP_REQUIRES_OK(context, context->allocate_output(2, {}, &output_max));
         output_min->flat<float>()(0) = min_output_value;
@@ -2111,11 +2125,18 @@ class MklQuantizedConvOp
               /*native_format*/ true>::ExtendConvFwdParams(context, params);
     params.post_op_params.resize(post_op_to_idx_.size());
     const float min_input =
-        context->input(min_input_idx_).template flat<float>()(0);
+        context->input(min_input_idx_).template scalar<float>()();
     const float max_input =
-        context->input(max_input_idx_).template flat<float>()(0);
+        context->input(max_input_idx_).template scalar<float>()();
     const Tensor& min_filter_vector = context->input(min_filter_idx_);
     const Tensor& max_filter_vector = context->input(max_filter_idx_);
+    OP_REQUIRES(
+        context,
+        ((min_filter_vector.NumElements() > 0) &&
+         (max_filter_vector.NumElements() > 0) &&
+         (min_filter_vector.shape() == max_filter_vector.shape())),
+        errors::InvalidArgument("`min_ and max_filter` must have same"
+                                "shape and contain at least one element."));
     float int_input_limit =
         std::is_same<Tinput, quint8>::value ? 255.0f : 127.0f;
     size_t depth = min_filter_vector.NumElements();
@@ -2130,9 +2151,9 @@ class MklQuantizedConvOp
       // min_freezed_output and max_freezed_output are the actual range
       // for the output.
       const float min_freezed_output =
-          context->input(min_freezed_output_idx_).template flat<float>()(0);
+          context->input(min_freezed_output_idx_).template scalar<float>()();
       const float max_freezed_output =
-          context->input(max_freezed_output_idx_).template flat<float>()(0);
+          context->input(max_freezed_output_idx_).template scalar<float>()();
 
       float int_output_limit =
           std::is_same<Toutput, quint8>::value ? 255.0f : 127.0f;
@@ -2227,14 +2248,47 @@ class MklQuantizedConvOp
         bool summand_condition =
             (summand_dt == DT_QINT8) || (summand_dt == DT_QUINT8);
         DCHECK((summand_condition));
+
+        const Tensor& min_freezed_output_tensor =
+            context->input(min_freezed_output_idx_);
+        const Tensor& max_freezed_output_tensor =
+            context->input(max_freezed_output_idx_);
+        OP_REQUIRES(
+            context,
+            TensorShapeUtils::IsScalar(min_freezed_output_tensor.shape()),
+            errors::InvalidArgument(
+                "`min_freezed_output` must be rank 0 but is rank ",
+                min_freezed_output_tensor.dims()));
+        OP_REQUIRES(
+            context,
+            TensorShapeUtils::IsScalar(max_freezed_output_tensor.shape()),
+            errors::InvalidArgument(
+                "`max_freezed_output` must be rank 0 but is rank ",
+                max_freezed_output_tensor.dims()));
+        const Tensor& min_freezed_summand_tensor =
+            context->input(min_summand_idx_);
+        const Tensor& max_freezed_summand_tensor =
+            context->input(max_summand_idx_);
+        OP_REQUIRES(
+            context,
+            TensorShapeUtils::IsScalar(min_freezed_summand_tensor.shape()),
+            errors::InvalidArgument(
+                "`min_freezed_summand` must be rank 0 but is rank ",
+                min_freezed_summand_tensor.dims()));
+        OP_REQUIRES(
+            context,
+            TensorShapeUtils::IsScalar(max_freezed_summand_tensor.shape()),
+            errors::InvalidArgument(
+                "`max_freezed_summand` must be rank 0 but is rank ",
+                max_freezed_summand_tensor.dims()));
         const float min_freezed_output =
-            context->input(min_freezed_output_idx_).template flat<float>()(0);
+            min_freezed_output_tensor.template scalar<float>()();
         const float max_freezed_output =
-            context->input(max_freezed_output_idx_).template flat<float>()(0);
+            max_freezed_output_tensor.template scalar<float>()();
         const float min_freezed_summand =
-            context->input(min_summand_idx_).template flat<float>()(0);
+            min_freezed_summand_tensor.template scalar<float>()();
         const float max_freezed_summand =
-            context->input(max_summand_idx_).template flat<float>()(0);
+            max_freezed_summand_tensor.template scalar<float>()();
 
         float output_range = std::max(std::abs(min_freezed_output),
                                       std::abs(max_freezed_output));
@@ -2326,9 +2380,9 @@ class MklQuantizedConvOp
                            "Current fusion requires summand to be float"));
       // We need to compute scale for the summand
       const float min_input =
-          context->input(min_input_idx_).template flat<float>()(0);
+          context->input(min_input_idx_).template scalar<float>()();
       const float max_input =
-          context->input(max_input_idx_).template flat<float>()(0);
+          context->input(max_input_idx_).template scalar<float>()();
       const Tensor& min_filter_vector = context->input(min_filter_idx_);
       const Tensor& max_filter_vector = context->input(max_filter_idx_);
       const float* min_filter = min_filter_vector.flat<float>().data();
@@ -2365,7 +2419,7 @@ class MklQuantizedConvOp
       CreateAndExecuteReorder(reorder_desc, *summand_, *dst_, this->cpu_engine_,
                               context);
 #else
-      // In oneDNN v3.0 we don't need to scale summand.
+      // In oneDNN v3.0 summand does not need to be scaled.
       int summand_idx = this->get_input_add_idx();
       DataType summand_dt = this->input_type(summand_idx);
       if (summand_dt != DT_FLOAT)
@@ -2398,9 +2452,9 @@ class MklQuantizedConvOp
     }
 
     const float min_input =
-        context->input(min_input_idx_).template flat<float>()(0);
+        context->input(min_input_idx_).template scalar<float>()();
     const float max_input =
-        context->input(max_input_idx_).template flat<float>()(0);
+        context->input(max_input_idx_).template scalar<float>()();
     const Tensor& min_filter_vector = context->input(min_filter_idx_);
     const Tensor& max_filter_vector = context->input(max_filter_idx_);
     const float* min_filter = min_filter_vector.flat<float>().data();
@@ -2410,7 +2464,7 @@ class MklQuantizedConvOp
         (std::is_same<Tinput, quint8>::value) ? 255.0 * 127.0 : 127.0 * 127.0;
     // Re-scale bias if either of following 2 conditions are met:
     // 1. Bias is not const;
-    // 2. Bias is const, but bias cache is empty (first iteration).
+    // 2. Bias is const, bias has not been cached (first iteration).
 
     size_t depth = min_filter_vector.NumElements();
     bool scales_are_valid = (depth == scales_.size());
@@ -3153,6 +3207,10 @@ REGISTER_KERNEL_BUILDER(
 #undef GET_DATA_TYPE
 #undef SET_FUSE_ACTIVATION_FOR_RELU6
 #undef SET_MKL_LAYOUT
+#undef TSCALED_BIAS
+#undef SCALE
+#undef SUMMAND_SCALE_U8
+#undef SUMMAND_SCALE_S8
 
 }  // namespace tensorflow
 #endif  // INTEL_MKL

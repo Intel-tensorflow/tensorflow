@@ -128,8 +128,8 @@ class MklRequantizationRangePerChannelOp : public OpKernel {
     Tensor* output_max = nullptr;
     OP_REQUIRES_OK(ctx, ctx->allocate_output(kOutputMinIndex, {}, &output_min));
     OP_REQUIRES_OK(ctx, ctx->allocate_output(kOutputMaxIndex, {}, &output_max));
-    output_min->flat<float>()(0) = is_non_negative ? 0.0f : -out_min_max;
-    output_max->flat<float>()(0) = out_min_max;
+    output_min->scalar<float>()() = is_non_negative ? 0.0f : -out_min_max;
+    output_max->scalar<float>()() = out_min_max;
   }
 
  private:
@@ -146,4 +146,4 @@ REGISTER_KERNEL_BUILDER(Name("RequantizationRangePerChannel")
                             .TypeConstraint<qint32>("T"),
                         MklRequantizationRangePerChannelOp);
 }  // namespace tensorflow
-#endif  // INTEL_MKL
+#endif  // INTEL_MKL && !ENABLE_ONEDNN_V3

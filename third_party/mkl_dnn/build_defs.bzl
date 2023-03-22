@@ -17,9 +17,6 @@ def if_mkldnn_openmp(if_true, if_false = []):
 def if_onednn_v3(if_true, if_false = []):
     """Returns `if_true` if oneDNN v3.x is used.
 
-    Shorthand for select()'ing on whether we're building with
-    oneDNN v3.x open source library only, without depending on MKL binary form.
-
     Returns a select statement which evaluates to if_true if we're building
     with oneDNN v3.x open source library only. Otherwise, the select statement
     evaluates to if_false.
