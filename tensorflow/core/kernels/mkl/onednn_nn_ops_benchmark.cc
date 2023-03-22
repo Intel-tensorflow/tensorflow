@@ -112,4 +112,4 @@ BM_Softmax(bfloat16, 4, "bfloat16_ImageNet_batch_size_128", 2, 128, 1008);
 }  // namespace
 }  // namespace tensorflow
 
-#endif  // INTEL_MKL
+#endif  // INTEL_MKL && !ENABLE_ONEDNN_V3

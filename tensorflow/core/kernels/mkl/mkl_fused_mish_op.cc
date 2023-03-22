@@ -72,4 +72,4 @@ TF_CALL_bfloat16(REGISTER_MISH_MKL_SUPPORTED_KERNELS_TYPES);
 
 }  // namespace tensorflow
 
-#endif  // INTEL_MKL
+#endif  // INTEL_MKL && !ENABLE_ONEDNN_V3

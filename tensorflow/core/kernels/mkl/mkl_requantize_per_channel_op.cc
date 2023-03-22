@@ -192,4 +192,4 @@ REGISTER_KERNEL_BUILDER(Name("RequantizePerChannel")
                         MklRequantizePerChannelOp<CPUDevice, quint8>);
 
 }  // namespace tensorflow
-#endif  // INTEL_MKL
+#endif  // INTEL_MKL && !ENABLE_ONEDNN_V3

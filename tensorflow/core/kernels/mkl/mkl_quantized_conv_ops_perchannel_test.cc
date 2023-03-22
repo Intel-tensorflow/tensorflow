@@ -191,4 +191,4 @@ TEST_F(QuantizedConv2DPerChannelTest, SmallOldAPI) { TestSmall(true); }
 TEST_F(QuantizedConv2DPerChannelTest, SmallNewAPI) { TestSmall(false); }
 
 }  // namespace tensorflow
-#endif  // INTEL_MKL && ENABLE_MKL
+#endif  // INTEL_MKL && !ENABLE_ONEDNN_V3 && ENABLE_MKL

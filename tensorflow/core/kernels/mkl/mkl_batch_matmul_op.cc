@@ -328,14 +328,12 @@ class FusedBatchMatMulMkl
           .TypeConstraint<TYPE>("T"),         \
       FusedBatchMatMulMkl<CPUDevice, TYPE, TYPE, TYPE, true>)
 
-#ifdef INTEL_MKL
 TF_CALL_float(REGISTER_BATCH_MATMUL_MKL);
 TF_CALL_float(REGISTER_BATCH_MATMUL_MKL_V2);
 TF_CALL_float(REGISTER_FUSED_BATCH_MATMUL_MKL);
 TF_CALL_bfloat16(REGISTER_BATCH_MATMUL_MKL);
 TF_CALL_bfloat16(REGISTER_BATCH_MATMUL_MKL_V2);
 TF_CALL_bfloat16(REGISTER_FUSED_BATCH_MATMUL_MKL);
-#endif  // INTEL_MKL
 
 }  // end namespace tensorflow
 #endif

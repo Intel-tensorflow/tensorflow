@@ -148,4 +148,4 @@ TEST_F(QuantizedPoolingTest, SmallMaxPooling) {
 
 }  // namespace tensorflow
 
-#endif  // defined(INTEL_MKL) && defined(ENABLE_MKL)
+#endif  // INTEL_MKL && !ENABLE_ONEDNN_V3 && ENABLE_MKL

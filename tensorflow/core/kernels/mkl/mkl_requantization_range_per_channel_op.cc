@@ -146,4 +146,4 @@ REGISTER_KERNEL_BUILDER(Name("RequantizationRangePerChannel")
                             .TypeConstraint<qint32>("T"),
                         MklRequantizationRangePerChannelOp);
 }  // namespace tensorflow
-#endif  // INTEL_MKL
+#endif  // INTEL_MKL && !ENABLE_ONEDNN_V3

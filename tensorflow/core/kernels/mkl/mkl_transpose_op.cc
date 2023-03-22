@@ -175,4 +175,4 @@ TF_CALL_ALL_TYPES(REGISTER)
 
 }  // namespace tensorflow
 
-#endif  // INTEL_MKL
+#endif  // INTEL_MKL && !ENABLE_ONEDNN_V3

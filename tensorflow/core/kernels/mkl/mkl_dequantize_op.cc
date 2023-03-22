@@ -188,4 +188,4 @@ REGISTER_KERNEL_BUILDER(Name("_MklDequantize")
 
 }  // namespace tensorflow
 
-#endif  // INTEL_MKL
+#endif  // INTEL_MKL && !ENABLE_ONEDNN_V3
