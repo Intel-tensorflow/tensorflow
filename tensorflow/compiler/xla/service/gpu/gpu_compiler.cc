@@ -137,6 +137,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/service/hlo_dce.h"
 #include "tensorflow/compiler/xla/service/hlo_pass_fix.h"
 #include "tensorflow/compiler/xla/service/hlo_pass_pipeline.h"
+#include "tensorflow/compiler/xla/service/hlo_rematerialization.h"
 #include "tensorflow/compiler/xla/service/hlo_verifier.h"
 #include "tensorflow/compiler/xla/service/layout_normalization.h"
 #include "tensorflow/compiler/xla/service/llvm_ir/llvm_util.h"
@@ -912,32 +913,25 @@ Status GpuCompiler::OptimizeHloPostLayoutAssignment(
     pipeline.AddPass<SimplifyFPConversions>();
   }
 
-  // Linearize collective schedule under SPMD partitioning.
-  const bool enable_collecive_schedule_linearizer_for_spmd = [&]() {
-    if (!hlo_module->config().use_spmd_partitioning()) {
-      return false;
-    }
-    if (stream_exec == nullptr) {
-      // not doing online autotuning.
-      return false;
-    }
-    if (!GpuConvAlgorithmPicker::IsEnabled(hlo_module)) {
-      // conv auto-tuning is disabled.
-      return false;
-    }
-    return true;
-  }();
+  AutotuningConfig autotune_config =
+      stream_exec
+          ? AutotuningConfig{DeviceConfig{stream_exec, device_allocator}}
+          : AutotuningConfig{
+                DevicelessConfig{gpu_target_config.device_description_str}};
+
+  // Linearize collective schedule under SPMD partitioning if online autotuning
+  // of convolutions is enabled.
+  const bool enable_collecive_schedule_linearizer_for_spmd =
+      hlo_module->config().use_spmd_partitioning() &&
+      autotune_config.is_online() &&
+      GpuConvAlgorithmPicker::IsEnabled(hlo_module);
 
   if (enable_collecive_schedule_linearizer_for_spmd) {
     pipeline.AddPass<CollectivesScheduleLinearizer>(
         RequiresCollectiveScheduleLinearizer);
   }
 
-  AutotuningConfig config =
-      stream_exec
-          ? AutotuningConfig{DeviceConfig{stream_exec, device_allocator}}
-          : DevicelessConfig{gpu_target_config.device_description_str};
-  if (!stream_exec) {
+  if (autotune_config.is_offline()) {
     GpuConvAlgorithmPicker::ClearAutotuneResults();
     TF_RETURN_IF_ERROR(
         GpuConvAlgorithmPicker::LoadAutotuneResults(*autotune_results));
@@ -950,14 +944,15 @@ Status GpuCompiler::OptimizeHloPostLayoutAssignment(
 #endif  // GOOGLE_CUDA
   }
   if (GpuConvAlgorithmPicker::IsEnabled(hlo_module)) {
-    pipeline.AddPass<GpuConvAlgorithmPicker>(config);
+    pipeline.AddPass<GpuConvAlgorithmPicker>(autotune_config);
   }
 #if GOOGLE_CUDA
-  pipeline.AddPass<GemmAlgorithmPicker>(config);
+  pipeline.AddPass<GemmAlgorithmPicker>(autotune_config);
   pipeline.AddPass<TritonAutotuner>(
-      config, debug_options.xla_gpu_force_compilation_parallelism()
-                  ? debug_options.xla_gpu_force_compilation_parallelism()
-                  : tsl::port::MaxParallelism());
+      autotune_config,
+      debug_options.xla_gpu_force_compilation_parallelism()
+          ? debug_options.xla_gpu_force_compilation_parallelism()
+          : tsl::port::MaxParallelism());
 #endif  // GOOGLE_CUDA
 
   // Clean up new_tuple described above.
@@ -1238,6 +1233,24 @@ static Status CompileModuleToLlvmIrImpl(
       [pointer_size](const BufferValue& buffer_value) -> int64_t {
     return GetSizeOfShape(buffer_value.shape(), pointer_size);
   };
+
+  HloRematerialization::RematerializationSizes sizes;
+  HloRematerialization remat(
+      [pointer_size](const Shape& shape) {
+        return GetSizeOfShape(shape, pointer_size);
+      },
+      // Assume 75% of the total device memory is available for XLA.
+      /*memory_limit_bytes=*/gpu_device_info.device_memory_size * 0.75,
+      /*sizes=*/&sizes,
+      HloRematerialization::RematerializationPass::kPostFusion,
+      /*block_size_limit=*/1, /*block_rematerialization_factor=*/1,
+      /*compact_shape_function=*/nullptr,
+      HloRematerialization::RematerializationMode::kRecomputeAndCompress);
+  TF_ASSIGN_OR_RETURN(bool changed, remat.Run(hlo_module));
+  if (changed) {
+    VLOG(1) << "HloRematerialization saved "
+            << sizes.before_bytes - sizes.after_bytes << " bytes";
+  }
 
   TF_ASSIGN_OR_RETURN(
       results->buffer_assignment,
