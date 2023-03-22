@@ -25,6 +25,7 @@ limitations under the License.
 #include "dnnl.hpp"
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/op_kernel.h"
+#include "tensorflow/core/framework/tensor_util.h"
 #include "tensorflow/core/util/mkl_util.h"
 #include "tensorflow/core/util/onednn_env_vars.h"
 #ifdef DNNL_AARCH64_USE_ACL
@@ -44,11 +45,13 @@ namespace tensorflow {
 #define APPEND_ELTWISE_RELU6(scale, alpha, beta) \
   append_eltwise(scale, dnnl::algorithm::eltwise_bounded_relu, alpha, beta)
 #define SET_MKL_LAYOUT(md) SetMklLayout(&md)
+#define TSCALED_BIAS Tbias
 #else
 #define APPEND_ELTWISE(scale, alg, alpha, beta) append_eltwise(alg, alpha, beta)
 #define APPEND_ELTWISE_RELU6(scale, alpha, beta) \
   append_eltwise(dnnl::algorithm::eltwise_clip, 0.0, alpha)
 #define SET_MKL_LAYOUT(md) SetMklLayout(md)
+#define TSCALED_BIAS float
 #endif  // !ENABLE_ONEDNN_V3
 
 static Eigen::internal::CacheSizes cache_sizes = Eigen::internal::CacheSizes();
@@ -134,7 +137,8 @@ class MklDnnMatMulFwdPrimitive : public MklPrimitive {
   //  - dst_data: output data buffer of dst
   //  - sp_data: scratchpad data
   void Execute(const Tinput* src_data, const Tweight* weight_data,
-               const Tbias* bias_data, Toutput* dst_data, void* sp_data,
+               const void* bias_data, Toutput* dst_data,
+               const MklDnnMatMulFwdParams& matmul_fwd_params, void* sp_data,
                std::shared_ptr<stream> fwd_stream) {
 #ifdef DNNL_AARCH64_USE_ACL
     mutex_lock lock(primitive_execution_mu_);
@@ -144,20 +148,54 @@ class MklDnnMatMulFwdPrimitive : public MklPrimitive {
         static_cast<void*>(const_cast<Tinput*>(src_data)), *fwd_stream);
     context_.weight_mem->set_data_handle(
         static_cast<void*>(const_cast<Tweight*>(weight_data)), *fwd_stream);
-    context_.bias_mem->set_data_handle(
-        static_cast<void*>(const_cast<Tbias*>(bias_data)));
+    context_.bias_mem->set_data_handle(const_cast<void*>(bias_data));
     context_.dst_mem->set_data_handle(static_cast<void*>(dst_data),
                                       *fwd_stream);
     context_.sp_mem->set_data_handle(sp_data, *fwd_stream);
+    auto const& post_op_params = matmul_fwd_params.post_op_params;
+    if (!post_op_params.empty()) {
+      for (auto const& post_op_param : post_op_params) {
+        if (post_op_param.name == "src_scale") {
+          context_.src_scale_mem->set_data_handle(
+              static_cast<void*>(
+                  const_cast<float*>(post_op_param.param.data())),
+              *fwd_stream);
+        } else if (post_op_param.name == "wei_scale") {
+          context_.wei_scale_mem->set_data_handle(
+              static_cast<void*>(
+                  const_cast<float*>(post_op_param.param.data())),
+              *fwd_stream);
+        } else if (post_op_param.name == "dst_scale") {
+          context_.dst_scale_mem->set_data_handle(
+              static_cast<void*>(
+                  const_cast<float*>(post_op_param.param.data())),
+              *fwd_stream);
+        }
+      }
+    }
 #else
     context_.src_mem->set_data_handle(
         static_cast<void*>(const_cast<Tinput*>(src_data)));
     context_.weight_mem->set_data_handle(
         static_cast<void*>(const_cast<Tweight*>(weight_data)));
-    context_.bias_mem->set_data_handle(
-        static_cast<void*>(const_cast<Tbias*>(bias_data)));
+    context_.bias_mem->set_data_handle(const_cast<void*>(bias_data));
     context_.dst_mem->set_data_handle(static_cast<void*>(dst_data));
     context_.sp_mem->set_data_handle(sp_data);
+    auto const& post_op_params = matmul_fwd_params.post_op_params;
+    if (!post_op_params.empty()) {
+      for (auto const& post_op_param : post_op_params) {
+        if (post_op_param.name == "src_scale") {
+          context_.src_scale_mem->set_data_handle(static_cast<void*>(
+              const_cast<float*>(post_op_param.param.data())));
+        } else if (post_op_param.name == "wei_scale") {
+          context_.wei_scale_mem->set_data_handle(static_cast<void*>(
+              const_cast<float*>(post_op_param.param.data())));
+        } else if (post_op_param.name == "dst_scale") {
+          context_.dst_scale_mem->set_data_handle(static_cast<void*>(
+              const_cast<float*>(post_op_param.param.data())));
+        }
+      }
+    }
 #endif  // !ENABLE_ONEDNN_OPENMP
 
     execute_primitives(context_.fwd_primitives, fwd_stream, context_.net_args);
@@ -183,6 +221,10 @@ class MklDnnMatMulFwdPrimitive : public MklPrimitive {
     std::shared_ptr<dnnl::memory> bias_mem;
     std::shared_ptr<dnnl::memory> dst_mem;
     std::shared_ptr<dnnl::memory> sp_mem;
+    // Quantization scale related memory
+    std::shared_ptr<dnnl::memory> src_scale_mem;
+    std::shared_ptr<dnnl::memory> wei_scale_mem;
+    std::shared_ptr<dnnl::memory> dst_scale_mem;
 
     // Descriptor and primitive-descriptor for forward inner-product.
 #ifndef ENABLE_ONEDNN_V3
@@ -195,6 +237,10 @@ class MklDnnMatMulFwdPrimitive : public MklPrimitive {
     std::shared_ptr<dnnl::memory::desc> weight_md;
     std::shared_ptr<dnnl::memory::desc> bias_md;
     std::shared_ptr<dnnl::memory::desc> dst_md;
+    // Quantization scale related memory descriptors
+    std::shared_ptr<dnnl::memory::desc> src_scale_md;
+    std::shared_ptr<dnnl::memory::desc> wei_scale_md;
+    std::shared_ptr<dnnl::memory::desc> dst_scale_md;
 
     // Inner-product primitive.
     std::shared_ptr<dnnl::primitive> matmul_fwd;
@@ -208,6 +254,9 @@ class MklDnnMatMulFwdPrimitive : public MklPrimitive {
           bias_mem(nullptr),
           dst_mem(nullptr),
           sp_mem(nullptr),
+          src_scale_mem(nullptr),
+          wei_scale_mem(nullptr),
+          dst_scale_mem(nullptr),
 #ifndef ENABLE_ONEDNN_V3
           fwd_desc(nullptr),
 #endif  // !ENABLE_ONEDNN_V3
@@ -216,7 +265,11 @@ class MklDnnMatMulFwdPrimitive : public MklPrimitive {
           weight_md(nullptr),
           bias_md(nullptr),
           dst_md(nullptr),
-          matmul_fwd(nullptr) {}
+          src_scale_md(nullptr),
+          wei_scale_md(nullptr),
+          dst_scale_md(nullptr),
+          matmul_fwd(nullptr) {
+    }
   };
 
   void Setup(const MklDnnMatMulFwdParams& matmul_fwd_params) {
@@ -234,9 +287,15 @@ class MklDnnMatMulFwdPrimitive : public MklPrimitive {
                                            MklDnnType<Toutput>(),
                                            matmul_fwd_params.dst_format));
 
-    context_.bias_md.reset(new memory::desc({matmul_fwd_params.bias_dims},
-                                            MklDnnType<Tbias>(),
-                                            memory::format_tag::any));
+    if (std::is_same<Tbias, qint32>::value) {
+      context_.bias_md.reset(new memory::desc({matmul_fwd_params.bias_dims},
+                                              MklDnnType<TSCALED_BIAS>(),
+                                              memory::format_tag::any));
+    } else {
+      context_.bias_md.reset(new memory::desc({matmul_fwd_params.bias_dims},
+                                              MklDnnType<Tbias>(),
+                                              memory::format_tag::any));
+    }
     // Create an inner-product.
 #ifndef ENABLE_ONEDNN_V3
     context_.fwd_desc.reset(new inner_product_forward::desc(
@@ -253,6 +312,7 @@ class MklDnnMatMulFwdPrimitive : public MklPrimitive {
     dnnl::primitive_attr post_ops_attr;
     post_ops_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
     dnnl::post_ops post_ops;
+    std::unordered_map<string, bool> is_scale_set;
     if (!post_op_params.empty()) {
       for (auto const& post_op_param : post_op_params) {
         if (post_op_param.name == "relu" || post_op_param.name == "leakyrelu") {
@@ -303,13 +363,34 @@ class MklDnnMatMulFwdPrimitive : public MklPrimitive {
           float op_beta = post_op_param.param[2];
           post_ops.APPEND_ELTWISE(op_scale, dnnl::algorithm::eltwise_logistic,
                                   op_alpha, op_beta);
-        } else if (post_op_param.name == "output_scale") {
 #ifndef ENABLE_ONEDNN_V3
-          // TODO(intel-tf): Enable this for int8 when using oneDNN v3.x
+        } else if (post_op_param.name == "output_scale") {
           DCHECK_EQ(post_op_param.param.size(), 1);
           std::vector<float> scales;
           scales.push_back(post_op_param.param[0]);
           post_ops_attr.set_output_scales(0, scales);
+#else
+        } else if (post_op_param.name == "src_scale") {
+          is_scale_set.insert({"src", true});
+          post_ops_attr.set_scales_mask(DNNL_ARG_SRC, 0);
+          context_.src_scale_md.reset(new memory::desc({1}, MklDnnType<float>(),
+                                                       memory::format_tag::x));
+          context_.src_scale_mem.reset(
+              new memory(*context_.src_scale_md, cpu_engine_, DummyData));
+        } else if (post_op_param.name == "wei_scale") {
+          is_scale_set.insert({"wei", true});
+          post_ops_attr.set_scales_mask(DNNL_ARG_WEIGHTS, 0);
+          context_.wei_scale_md.reset(new memory::desc({1}, MklDnnType<float>(),
+                                                       memory::format_tag::x));
+          context_.wei_scale_mem.reset(
+              new memory(*context_.wei_scale_md, cpu_engine_, DummyData));
+        } else if (post_op_param.name == "dst_scale") {
+          is_scale_set.insert({"dst", true});
+          post_ops_attr.set_scales_mask(DNNL_ARG_DST, 0);
+          context_.dst_scale_md.reset(new memory::desc({1}, MklDnnType<float>(),
+                                                       memory::format_tag::x));
+          context_.dst_scale_mem.reset(
+              new memory(*context_.dst_scale_md, cpu_engine_, DummyData));
 #endif  // !ENABLE_ONEDNN_V3
         } else if (post_op_param.name == "sum") {
           DCHECK_EQ(post_op_param.param.size(), 1);
@@ -324,7 +405,14 @@ class MklDnnMatMulFwdPrimitive : public MklPrimitive {
                  (post_op_param.name == "logistic") ||
                  (post_op_param.name == "sum") ||
                  (post_op_param.name == "leakyrelu") ||
-                 (post_op_param.name == "output_scale"));
+#ifndef ENABLE_ONEDNN_V3
+                 (post_op_param.name == "output_scale")
+#else
+                 (post_op_param.name == "src_scale") ||
+                 (post_op_param.name == "wei_scale") ||
+                 (post_op_param.name == "dst_scale")
+#endif  // !ENABLE_ONEDNN_V3
+          );
         }
       }
       post_ops_attr.set_post_ops(post_ops);
@@ -349,21 +437,38 @@ class MklDnnMatMulFwdPrimitive : public MklPrimitive {
                                          cpu_engine_, DummyData));
     context_.dst_mem.reset(
         new memory(context_.fwd_pd.get()->dst_desc(), cpu_engine_, DummyData));
-    context_.bias_mem.reset(new memory({{matmul_fwd_params.bias_dims},
-                                        MklDnnType<Tbias>(),
-                                        memory::format_tag::x},
-                                       cpu_engine_, DummyData));
+    context_.bias_mem.reset(
+        new memory(context_.fwd_pd.get()->bias_desc(), cpu_engine_, DummyData));
     auto scratchpad_md = context_.fwd_pd->scratchpad_desc();
     context_.sp_mem.reset(
         new dnnl::memory(scratchpad_md, cpu_engine_, DummyData));
 
     // Create inner-product primitive.
     context_.matmul_fwd.reset(new inner_product_forward(*context_.fwd_pd));
-    context_.net_args.push_back({{DNNL_ARG_SRC, *context_.src_mem},
-                                 {DNNL_ARG_WEIGHTS, *context_.weight_mem},
-                                 {DNNL_ARG_BIAS, *context_.bias_mem},
-                                 {DNNL_ARG_SCRATCHPAD, *context_.sp_mem},
-                                 {DNNL_ARG_DST, *context_.dst_mem}});
+    if (is_scale_set["src"] && is_scale_set["wei"] && is_scale_set["dst"]) {
+      context_.net_args.push_back({{DNNL_ARG_SRC, *context_.src_mem},
+                                   {DNNL_ARG_WEIGHTS, *context_.weight_mem},
+                                   {DNNL_ARG_BIAS, *context_.bias_mem},
+                                   {DNNL_ARG_SCRATCHPAD, *context_.sp_mem},
+                                   {DNNL_ARG_DST, *context_.dst_mem}
+#ifndef ENABLE_ONEDNN_V3
+      });
+#else
+                                   ,
+                                   {DNNL_ARG_ATTR_SCALES | DNNL_ARG_SRC,
+                                    *context_.src_scale_mem},
+                                   {DNNL_ARG_ATTR_SCALES | DNNL_ARG_WEIGHTS,
+                                    *context_.wei_scale_mem},
+                                   {DNNL_ARG_ATTR_SCALES | DNNL_ARG_DST,
+                                    *context_.dst_scale_mem}});
+#endif  // !ENABLE_ONEDNN_V3
+    } else {
+      context_.net_args.push_back({{DNNL_ARG_SRC, *context_.src_mem},
+                                   {DNNL_ARG_WEIGHTS, *context_.weight_mem},
+                                   {DNNL_ARG_BIAS, *context_.bias_mem},
+                                   {DNNL_ARG_SCRATCHPAD, *context_.sp_mem},
+                                   {DNNL_ARG_DST, *context_.dst_mem}});
+    }
 
     context_.fwd_primitives.push_back(*context_.matmul_fwd);
     return;
@@ -447,10 +552,25 @@ class MklDnnMatMulFwdPrimitiveFactory : public MklPrimitiveFactory<T> {
         DCHECK_EQ(post_op_param.param.size(), 1);
         key_creator.AddAsKey(post_op_param.name);
         key_creator.AddAsKey(post_op_param.param[0]);
+#ifndef ENABLE_ONEDNN_V3
       } else if (post_op_param.name == "output_scale") {
         DCHECK_EQ(post_op_param.param.size(), 1);
         key_creator.AddAsKey(post_op_param.name);
         key_creator.AddAsKey(post_op_param.param[0]);
+#else
+      } else if (post_op_param.name == "src_scale") {
+        DCHECK_EQ(post_op_param.param.size(), 1);
+        key_creator.AddAsKey(post_op_param.name);
+        key_creator.AddAsKey(post_op_param.param[0]);
+      } else if (post_op_param.name == "wei_scale") {
+        DCHECK_EQ(post_op_param.param.size(), 1);
+        key_creator.AddAsKey(post_op_param.name);
+        key_creator.AddAsKey(post_op_param.param[0]);
+      } else if (post_op_param.name == "dst_scale") {
+        DCHECK_EQ(post_op_param.param.size(), 1);
+        key_creator.AddAsKey(post_op_param.name);
+        key_creator.AddAsKey(post_op_param.param[0]);
+#endif  // !ENABLE_ONEDNN_V3
       } else {
         return string("not_a_key");
       }
@@ -471,7 +591,7 @@ class MklDnnMatMulFwdPrimitiveFactory : public MklPrimitiveFactory<T> {
   }
 };
 
-template <class Tweight, class Toutput>
+template <class Tweight, class Tbias, class Toutput>
 class MklDnnMatMulOpBase : public OpKernel {
  public:
   explicit MklDnnMatMulOpBase(OpKernelConstruction* context)
@@ -583,6 +703,35 @@ class MklDnnMatMulOpBase : public OpKernel {
 
   engine cpu_engine_ = engine(engine::kind::cpu, 0);
 
+  bool IsBiasCacheEmpty() TF_LOCKS_EXCLUDED(bias_cache_mutex_) {
+    tf_shared_lock lock(bias_cache_mutex_);
+    return (cached_bias_data_pt_.NumElements() == 0);
+  }
+
+  virtual bool IsCachedBiasValid(float, float)
+      TF_LOCKS_EXCLUDED(bias_cache_mutex_) {
+    tf_shared_lock lock(bias_cache_mutex_);
+    return false;
+  }
+
+  void CacheBias(OpKernelContext* ctx, const Tensor& temp_scaled_bias_tensor) {
+    mutex_lock lock(bias_cache_mutex_);
+    if (cached_bias_data_pt_.NumElements() > 0) {
+      return;
+    }
+    OP_REQUIRES_OK(ctx, ctx->allocate_temp(temp_scaled_bias_tensor.dtype(),
+                                           temp_scaled_bias_tensor.shape(),
+                                           &cached_bias_data_pt_));
+    tensor::DeepCopy(temp_scaled_bias_tensor, &cached_bias_data_pt_);
+  }
+
+  void GetCachedBias(void** bias_data) TF_LOCKS_EXCLUDED(bias_cache_mutex_) {
+    tf_shared_lock lock(bias_cache_mutex_);
+    const Tensor& cached_bias_data = cached_bias_data_pt_;
+    *bias_data = static_cast<void*>(const_cast<TSCALED_BIAS*>(
+        cached_bias_data.flat<TSCALED_BIAS>().data()));
+  }
+
  protected:
   // Tensor to save reordered weight
   mutex mu_;
@@ -590,6 +739,11 @@ class MklDnnMatMulOpBase : public OpKernel {
   Tensor weight_oi_md_ TF_GUARDED_BY(mu_);
 
   bool is_weight_const_;
+
+  bool is_bias_const_;
+  mutex bias_cache_mutex_;
+  // Persistent tensor for cached bias.
+  Tensor cached_bias_data_pt_ TF_GUARDED_BY(bias_cache_mutex_);
 
   const int kInputIndexSrc = 0;
   const int kInputIndexWeight = 1;
@@ -732,7 +886,8 @@ class MklMatMulPrimitive : public MklPrimitive {
           b_md(nullptr),
           c_md(nullptr),
           mul_md(nullptr),
-          add_md(nullptr) {}
+          add_md(nullptr) {
+    }
   };
 
   void Setup(const MklMatMulParams& params) {
@@ -957,6 +1112,7 @@ void dnnl_gemm(char transa, char transb, int64_t m, int64_t n, int64_t k,
 #undef APPEND_ELTWISE
 #undef APPEND_ELTWISE_RELU6
 #undef SET_MKL_LAYOUT
+#undef TSCALED_BIAS
 
 }  // namespace tensorflow
 
