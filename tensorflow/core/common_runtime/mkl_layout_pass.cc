@@ -1092,8 +1092,13 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
     DataType T_m;
     TF_CHECK_OK(GetNodeAttr(m->def(), "T", &T_m));
 
+#ifdef ENABLE_ONEDNN_V3
     // Don't try to merge if datatype is not DT_FLOAT or DT_BFLOAT16 or DT_HALF
     if (T_m != DT_FLOAT && T_m != DT_BFLOAT16 && T_m != DT_HALF) return n;
+#else
+    // Don't try to merge if datatype is not DT_FLOAT or DT_BFLOAT16
+    if (T_m != DT_FLOAT && T_m != DT_BFLOAT16) return n;
+#endif  // ENABLE_ONEDNN_V3
 
     if (m->type_string() == csinfo_.bias_add) {
       // If a is BiasAdd, then Conv2D is 0th input of BiasAdd.
@@ -1132,8 +1137,13 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
     DataType T_m;
     TF_CHECK_OK(GetNodeAttr(m->def(), "T", &T_m));
 
+#ifdef ENABLE_ONEDNN_V3
     // Don't try to merge if datatype is not DT_FLOAT or DT_BFLOAT16 or DT_HALF
     if (T_m != DT_FLOAT && T_m != DT_BFLOAT16 && T_m != DT_HALF) return n;
+#else
+    // Don't try to merge if datatype is not DT_FLOAT or DT_BFLOAT16
+    if (T_m != DT_FLOAT && T_m != DT_BFLOAT16) return n;
+#endif  // ENABLE_ONEDNN_V3
 
     const Node* conv_node;
     if (m->type_string() == csinfo_.pad) {
@@ -1486,7 +1496,11 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
   static bool MatMulRewrite(const Node* n) {
     DataType T;
     TF_CHECK_OK(GetNodeAttr(n->def(), "T", &T));
+#ifdef ENABLE_ONEDNN_V3
     if ((T == DT_FLOAT) || (T == DT_BFLOAT16) || (T == DT_HALF)) {
+#else
+    if ((T == DT_FLOAT) || (T == DT_BFLOAT16)) {
+#endif  // ENABLE_ONEDNN_V3
       VLOG(2) << "Rewriting MatMul to _MklMatMul";
       return true;
     }

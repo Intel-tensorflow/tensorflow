@@ -134,7 +134,6 @@ class AutoMixedPrecisionListsCuda : public AutoMixedPrecisionLists {
         "BlockLSTMV2",
         "BlockLSTMGrad",
         "BlockLSTMGradV2",
-        "Conv2D",
         "Conv2DBackpropFilter",
         "Conv2DBackpropInput",
         "CudnnRNN",
@@ -167,6 +166,17 @@ class AutoMixedPrecisionListsCuda : public AutoMixedPrecisionLists {
 #endif
       list.insert("BatchMatMul");
       list.insert("BatchMatMulV2");
+    }
+    if (IsMKLEnabled() && HasCpuFP16Support()) {
+    // TODO(bhavanis): We are disabling Conv2D since both oneDNN v2.7 and
+    // Eigen fused-conv2d does not support float16. Eigen's contraction
+    // output kernels (defined in conv_ops_fused_impl.h) are enabled only
+    // for float and double types.
+#ifdef ENABLE_ONEDNN_V3
+      list.insert("Conv2D");
+#endif  // ENABLE_ONEDNN_V3
+    } else {
+      list.insert("Conv2D");
     }
     if (cudnn_version_ >= 7602 || (IsMKLEnabled() && HasCpuFP16Support())) {
       // Fp16 3D conv is slow before CUDNN 7.6.2.
@@ -229,7 +239,6 @@ class AutoMixedPrecisionListsCuda : public AutoMixedPrecisionLists {
         "SeluGrad",
         "Sigmoid",
         "SigmoidGrad",
-        "Softmax",
         "Softplus",
         "SoftplusGrad",
         "Softsign",
@@ -239,6 +248,9 @@ class AutoMixedPrecisionListsCuda : public AutoMixedPrecisionLists {
         "Tanh",
         "TanhGrad",
     };
+    if (!IsMKLEnabled()) {
+      list.insert("Softmax");
+    }
     UpdateList("INFERLIST", &list);
     // For backwards compatibility, keeping the original env variable here.
     // TODO(reedwm): This should be removed if we don't have active users.

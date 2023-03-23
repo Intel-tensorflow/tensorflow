@@ -216,9 +216,11 @@ REGISTER_KERNEL_BUILDER(
     Name("_MklLayerNorm").Device(DEVICE_CPU).TypeConstraint<bfloat16>("T"),
     MklLayerNormOp<CPUDevice, bfloat16>);
 
+#ifdef ENABLE_ONEDNN_V3
 REGISTER_KERNEL_BUILDER(
     Name("_MklLayerNorm").Device(DEVICE_CPU).TypeConstraint<Eigen::half>("T"),
     MklLayerNormOp<CPUDevice, Eigen::half>);
+#endif  // ENABLE_ONEDNN_V3
 
 }  // namespace tensorflow
 

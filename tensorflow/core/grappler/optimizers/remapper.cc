@@ -331,10 +331,20 @@ bool IsCpuCompatibleDataType(const NodeDef* contraction,
                                       !contraction->attr().at("transpose_a").b()
                                 : true;
     }
-    return (IsConv2D(*contraction) || IsDepthwiseConv2dNative(*contraction) ||
-            IsMatMul(*contraction) || IsConv3D(*contraction) ||
-            IsAnyBatchMatMul(*contraction) || is_supported_matmul) &&
-           (dtype == DT_FLOAT || dtype == DT_BFLOAT16 || dtype == DT_HALF);
+    // Convolution supports float32, bfloat16 and float16 types for both
+    // oneDNN v2.x and v3.x.
+    // Matmul supports only float32 and bfloat16 for oneDNN v2.x and float32,
+    // bfloat16 and float16 types for oneDNN v3.x
+    return ((IsConv2D(*contraction) || IsDepthwiseConv2dNative(*contraction) ||
+             IsConv3D(*contraction)) &&
+            (dtype == DT_FLOAT || dtype == DT_BFLOAT16 || dtype == DT_HALF)) ||
+           ((IsMatMul(*contraction) || IsAnyBatchMatMul(*contraction) ||
+             is_supported_matmul)
+#ifdef ENABLE_ONEDNN_V3
+            && (dtype == DT_FLOAT || dtype == DT_BFLOAT16 || dtype == DT_HALF));
+#else
+            && (dtype == DT_FLOAT || dtype == DT_BFLOAT16));
+#endif  // ENABLE_ONEDNN_V3
   }
   if (IsConv2D(*contraction)) {
     return dtype == DT_FLOAT || dtype == DT_DOUBLE;
@@ -1965,6 +1975,11 @@ bool FindMklLayerNorm(RemapperContext* ctx, int node_index,
       return false;
 
     if (!NodeIsOnCpu(fused_batch_norm_node)) return false;
+
+#ifndef ENABLE_ONEDNN_V3
+    if (GetDataTypeFromAttr(*fused_batch_norm_node, "T") == DT_HALF)
+      return false;
+#endif  // ENABLE_ONEDNN_V3
 
     // FusedBatchNorm node should have mean/variance as empty constant
     NodeDef* empty_const_node =

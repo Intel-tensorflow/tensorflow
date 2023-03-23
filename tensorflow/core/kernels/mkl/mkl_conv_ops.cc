@@ -3146,22 +3146,24 @@ TF_CALL_bfloat16(REGISTER_NO_OP_CPU_2D_DEPTHWISE);
 TF_CALL_float(REGISTER_MKL_CPU_2D);
 TF_CALL_bfloat16(REGISTER_MKL_CPU_2D);
 
-#define REGISTER_MKL_CPU_2D_half(T)                                            \
-  REGISTER_KERNEL_BUILDER(                                                     \
-      Name("_MklNativeConv2D")                                                 \
-          .Device(DEVICE_CPU)                                                  \
-          .TypeConstraint<T>("T")                                              \
-          .Label(mkl_op_registry::kMklNameChangeOpLabel),                      \
-      MklConvOp<CPUDevice, T, T, T, T, T, int32, false, false, false, true>);  \
-  REGISTER_KERNEL_BUILDER(                                                     \
-      Name("_MklNativePadWithConv2D")                                          \
-          .Device(DEVICE_CPU)                                                  \
-          .TypeConstraint<T>("T")                                              \
-          .TypeConstraint<int32>("Tpaddings")                                  \
-          .Label(mkl_op_registry::kMklNameChangeOpLabel),                      \
+#define REGISTER_MKL_CPU_2D_half(T)                                           \
+  REGISTER_KERNEL_BUILDER(                                                    \
+      Name("_MklNativeConv2D")                                                \
+          .Device(DEVICE_CPU)                                                 \
+          .TypeConstraint<T>("T")                                             \
+          .Label(mkl_op_registry::kMklNameChangeOpLabel),                     \
+      MklConvOp<CPUDevice, T, T, T, T, T, int32, false, false, false, true>); \
+  REGISTER_KERNEL_BUILDER(                                                    \
+      Name("_MklNativePadWithConv2D")                                         \
+          .Device(DEVICE_CPU)                                                 \
+          .TypeConstraint<T>("T")                                             \
+          .TypeConstraint<int32>("Tpaddings")                                 \
+          .Label(mkl_op_registry::kMklNameChangeOpLabel),                     \
       MklConvOp<CPUDevice, T, T, T, T, T, int32, false, true, false, true>);
 
+#ifdef ENABLE_ONEDNN_V3
 TF_CALL_half(REGISTER_MKL_CPU_2D_half)
+#endif  // ENABLE_ONEDNN_V3
 
 #define REGISTER_MKL_CPU_2D_DEPTHWISE(T)                                      \
   REGISTER_KERNEL_BUILDER(                                                    \
@@ -3228,7 +3230,6 @@ TF_CALL_bfloat16(REGISTER_MKL_CPU_2D_DEPTHWISE);
       Name("_MklNativeFusedConv2D")                                   \
           .Device(DEVICE_CPU)                                         \
           .TypeConstraint<T>("T")                                     \
-          .TypeConstraint("U", {DT_FLOAT, DT_BFLOAT16, DT_HALF})      \
           .Label(mkl_op_registry::kMklNameChangeOpLabel),             \
       MklFusedConvOp<CPUDevice, T, T, T, T, T, int32, false, true>);  \
   REGISTER_KERNEL_BUILDER(                                            \
@@ -3236,7 +3237,6 @@ TF_CALL_bfloat16(REGISTER_MKL_CPU_2D_DEPTHWISE);
           .Device(DEVICE_CPU)                                         \
           .TypeConstraint<int32>("Tpaddings")                         \
           .TypeConstraint<T>("T")                                     \
-          .TypeConstraint("U", {DT_FLOAT, DT_BFLOAT16, DT_HALF})      \
           .Label(mkl_op_registry::kMklNameChangeOpLabel),             \
       MklFusedConvOp<CPUDevice, T, T, T, T, T, int32, true, true>);   \
   REGISTER_KERNEL_BUILDER(                                            \
@@ -3244,13 +3244,14 @@ TF_CALL_bfloat16(REGISTER_MKL_CPU_2D_DEPTHWISE);
           .Device(DEVICE_CPU)                                         \
           .TypeConstraint<T>("T")                                     \
           .TypeConstraint<int64_t>("Tpaddings")                       \
-          .TypeConstraint("U", {DT_FLOAT, DT_BFLOAT16, DT_HALF})      \
           .Label(mkl_op_registry::kMklNameChangeOpLabel),             \
       MklFusedConvOp<CPUDevice, T, T, T, T, T, int64, true, true>);
 
 TF_CALL_float(REGISTER_MKL_CPU_2D_FUSED);
 TF_CALL_bfloat16(REGISTER_MKL_CPU_2D_FUSED);
+#ifdef ENABLE_ONEDNN_V3
 TF_CALL_half(REGISTER_MKL_CPU_2D_FUSED);
+#endif  // ENABLE_ONEDNN_V3
 
 // Register 3D operations
 #define REGISTER_MKL_CPU_3D(T)                                                 \

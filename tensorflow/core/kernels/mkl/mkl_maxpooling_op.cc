@@ -448,9 +448,11 @@ TF_CALL_bfloat16(REGISTER_MKL_MAXPOOL_KERNELS);
                               .Device(DEVICE_CPU)                             \
                               .TypeConstraint<T>("T")                         \
                               .Label(mkl_op_registry::kMklNameChangeOpLabel), \
-                          MklMaxPoolingOp<CPUDevice, T, true>);               \
+                          MklMaxPoolingOp<CPUDevice, T, true>);
 
+#ifdef ENABLE_ONEDNN_V3
 TF_CALL_half(REGISTER_MKL_MAXPOOL_KERNELS_half);
+#endif  // ENABLE_ONEDNN_V3
 
 #define REGISTER_MKL_MAXPOOL_GRAD_KERNELS(T)                                  \
   REGISTER_KERNEL_BUILDER(                                                    \

@@ -1865,7 +1865,11 @@ REGISTER_OP("_MklNativeConv2D")
     .Input("input: T")
     .Input("filter: T")
     .Output("output: T")
+#ifdef ENABLE_ONEDNN_V3
     .Attr("T: {bfloat16, float, half}")
+#else
+    .Attr("T: {bfloat16, float}")
+#endif  // ENABLE_ONEDNN_V3
     .Attr("strides: list(int)")
     .Attr("use_cudnn_on_gpu: bool = true")
     .Attr("is_filter_const: bool = false")
@@ -1937,7 +1941,11 @@ REGISTER_OP("__MklDummyPadWithConv2D")
     .Input("filter: T")
     .Input("paddings: Tpaddings")
     .Output("output: T")
+#ifdef ENABLE_ONEDNN_V3
     .Attr("T: {bfloat16, float, half}")
+#else
+    .Attr("T: {bfloat16, float}")
+#endif  // ENABLE_ONEDNN_V3
     .Attr("strides: list(int)")
     .Attr("use_cudnn_on_gpu: bool = true")
     .Attr(GetPaddingAttrString())
@@ -2753,7 +2761,11 @@ REGISTER_OP("_MklFusedBatchNormV2")
     .Output("mkl_batch_variance: uint8")
     .Output("mkl_reserve_space_1: uint8")
     .Output("mkl_reserve_space_2: uint8")
+#ifdef ENABLE_ONEDNN_V3
     .Attr("T: {bfloat16, float, half}")
+#else
+    .Attr("T: {bfloat16, float}")
+#endif  // ENABLE_ONEDNN_V3
     .Attr("U: {float}")
     .Attr("epsilon: float = 0.0001")
     .Attr(GetConvnetDataFormatAttrString())

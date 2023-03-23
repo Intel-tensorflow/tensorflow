@@ -161,7 +161,11 @@ REGISTER_OP("_MklBatchMatMul")
     .Input("x: T")
     .Input("y: T")
     .Output("output: T")
+#ifdef ENABLE_ONEDNN_V3
     .Attr("T: {bfloat16, float, half}")
+#else
+    .Attr("T: {bfloat16, float}")
+#endif  // ENABLE_ONEDNN_V3
     .Attr("adj_x: bool = false")
     .Attr("adj_y: bool = false")
     .SetShapeFn(shape_inference::BatchMatMulShape);
@@ -170,7 +174,11 @@ REGISTER_OP("_MklBatchMatMulV2")
     .Input("x: T")
     .Input("y: T")
     .Output("output: T")
+#ifdef ENABLE_ONEDNN_V3
     .Attr("T: {bfloat16, float, half}")
+#else
+    .Attr("T: {bfloat16, float}")
+#endif  // ENABLE_ONEDNN_V3
     .Attr("adj_x: bool = false")
     .Attr("adj_y: bool = false")
     .SetShapeFn(shape_inference::BatchMatMulV2Shape);
@@ -962,7 +970,11 @@ REGISTER_OP("_MklMatMul")
     .Output("product: T")
     .Attr("transpose_a: bool = false")
     .Attr("transpose_b: bool = false")
+#ifdef ENABLE_ONEDNN_V3
     .Attr("T: {bfloat16, float, half}")
+#else
+    .Attr("T: {bfloat16, float}")
+#endif  // ENABLE_ONEDNN_V3
     .SetShapeFn(shape_inference::MatMulShape);
 #endif  // INTEL_MKL
 
