@@ -765,7 +765,8 @@ bool FindContractionWithBias(const RemapperContext& ctx, int node_index,
   // Conv2D/3D, MatMul or DepthwiseConv2D
   bool is_contraction = IsConv2D(*contraction_node_def) ||
                         (IsConv3D(*contraction_node_def) && IsMKLEnabled()) ||
-                        IsMatMul(*contraction_node_def) ||
+                        (IsMatMul(*contraction_node_def) && (!IsMKLEnabled() || 
+                        !HasDataType(node_def, DT_HALF, "T"))) ||
                         IsDepthwiseConv2dNative(*contraction_node_def);
 
   if (!is_contraction || !HaveSameDataType(node_def, contraction_node_def) ||
