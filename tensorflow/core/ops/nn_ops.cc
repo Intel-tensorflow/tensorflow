@@ -1999,7 +1999,11 @@ REGISTER_OP("_MklConv2DBackpropFilter")
     .Input("mkl_out_backprop: uint8")
     .Output("output: T")
     .Output("mkl_output: uint8")
+#ifdef ENABLE_ONEDNN_V3
+    .Attr("T: {bfloat16, float, half}")
+#else
     .Attr("T: {bfloat16, float}")
+#endif  // ENABLE_ONEDNN_V3
     .Attr("strides: list(int)")
     .Attr("use_cudnn_on_gpu: bool = true")
     .Attr(GetPaddingAttrString())
@@ -2026,7 +2030,11 @@ REGISTER_OP("_MklNativeConv2DBackpropFilter")
     .Input("filter_sizes: int32")
     .Input("out_backprop: T")
     .Output("output: T")
+#ifdef ENABLE_ONEDNN_V3
+    .Attr("T: {bfloat16, float, half}")
+#else
     .Attr("T: {bfloat16, float}")
+#endif  // ENABLE_ONEDNN_V3
     .Attr("strides: list(int)")
     .Attr("use_cudnn_on_gpu: bool = true")
     .Attr(GetPaddingAttrStringWithExplicit())
@@ -2054,7 +2062,11 @@ REGISTER_OP("__MklDummyConv2DBackpropFilterWithBias")
     .Input("out_backprop: T")
     .Output("output: T")
     .Output("bias_grad: T")
+#ifdef ENABLE_ONEDNN_V3
+    .Attr("T: {bfloat16, float, half}")
+#else
     .Attr("T: {bfloat16, float}")
+#endif  // ENABLE_ONEDNN_V3
     .Attr("strides: list(int)")
     .Attr("use_cudnn_on_gpu: bool = true")
     .Attr(GetPaddingAttrString())
@@ -2099,7 +2111,11 @@ REGISTER_OP("_MklConv2DBackpropFilterWithBias")
     .Output("bias_grad: T")
     .Output("mkl_output: uint8")
     .Output("mkl_bias_grad: uint8")
+#ifdef ENABLE_ONEDNN_V3
+    .Attr("T: {bfloat16, float, half}")
+#else
     .Attr("T: {bfloat16, float}")
+#endif  // ENABLE_ONEDNN_V3
     .Attr("strides: list(int)")
     .Attr("use_cudnn_on_gpu: bool = true")
     .Attr(GetPaddingAttrString())
@@ -2142,7 +2158,11 @@ REGISTER_OP("_MklConv2DBackpropInput")
     .Input("mkl_out_backprop: uint8")
     .Output("output: T")
     .Output("mkl_output: uint8")
+#ifdef ENABLE_ONEDNN_V3
+    .Attr("T: {bfloat16, float, half}")
+#else
     .Attr("T: {bfloat16, float}")
+#endif  // ENABLE_ONEDNN_V3
     .Attr("strides: list(int)")
     .Attr("use_cudnn_on_gpu: bool = true")
     .Attr(GetPaddingAttrString())
@@ -2169,7 +2189,11 @@ REGISTER_OP("_MklNativeConv2DBackpropInput")
     .Input("filter: T")
     .Input("out_backprop: T")
     .Output("output: T")
+#ifdef ENABLE_ONEDNN_V3
+    .Attr("T: {bfloat16, float, half}")
+#else
     .Attr("T: {bfloat16, float}")
+#endif  // ENABLE_ONEDNN_V3
     .Attr("strides: list(int)")
     .Attr("use_cudnn_on_gpu: bool = true")
     .Attr(GetPaddingAttrStringWithExplicit())

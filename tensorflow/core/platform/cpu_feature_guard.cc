@@ -114,6 +114,9 @@ class CPUFeatureGuard {
 #ifdef __AMXBF16__
     CheckFeatureOrDie(CPUFeature::AMX_BF16, "AMX_BF16");
 #endif  // __AMXBF16__
+#ifdef __AMXFP16__
+    CheckFeatureOrDie(CPUFeature::AMX_FP16, "AMX_FP16");
+#endif  // __AMXFP16__
 #ifdef __FMA__
     CheckFeatureOrDie(CPUFeature::FMA, "FMA");
 #endif  // __FMA__
@@ -182,6 +185,10 @@ void InfoAboutUnusedCPUFeatures() {
     CheckIfFeatureUnused(CPUFeature::AMX_BF16, "AMX_BF16",
                          missing_instructions);
 #endif  // __AMXBF16__
+#ifndef __AMXFP16__
+    CheckIfFeatureUnused(CPUFeature::AMX_FP16, "AMX_FP16",
+                         missing_instructions);
+#endif  // __AMXFP16__
 #ifndef __FMA__
     CheckIfFeatureUnused(CPUFeature::FMA, "FMA", missing_instructions);
 #endif  // __FMA__

@@ -75,6 +75,7 @@ class CPUIDInfo {
       : have_adx_(0),
         have_aes_(0),
         have_amx_bf16_(0),
+        have_amx_fp16_(0),
         have_amx_int8_(0),
         have_amx_tile_(0),
         have_avx_(0),
@@ -230,6 +231,7 @@ class CPUIDInfo {
       GETCPUID(eax, ebx, ecx, edx, 7, 1);
       cpuid->have_avx_vnni_ = (eax >> 4) & 0x1;
       cpuid->have_avx512_bf16_ = have_avx512 && ((eax >> 5) & 0x1);
+      cpuid->have_amx_fp16_ = (eax >> 21) & 0x1;
     }
   }
 
@@ -240,6 +242,7 @@ class CPUIDInfo {
       case ADX:           return cpuid->have_adx_;
       case AES:           return cpuid->have_aes_;
       case AMX_BF16:      return cpuid->have_amx_bf16_;
+      case AMX_FP16:      return cpuid->have_amx_fp16_;
       case AMX_INT8:      return cpuid->have_amx_int8_;
       case AMX_TILE:      return cpuid->have_amx_tile_;
       case AVX2:          return cpuid->have_avx2_;
@@ -296,6 +299,7 @@ class CPUIDInfo {
   int have_adx_ : 1;
   int have_aes_ : 1;
   int have_amx_bf16_ : 1;
+  int have_amx_fp16_ : 1;
   int have_amx_int8_ : 1;
   int have_amx_tile_ : 1;
   int have_avx_ : 1;

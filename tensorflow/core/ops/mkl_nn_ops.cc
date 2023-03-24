@@ -294,7 +294,11 @@ REGISTER_OP("_MklNativeConv2DBackpropFilterWithBias")
     .Input("out_backprop: T")
     .Output("output: T")
     .Output("bias_grad: T")
+#ifdef ENABLE_ONEDNN_V3
+    .Attr("T: {bfloat16, float, half}")
+#else
     .Attr("T: {bfloat16, float}")
+#endif  // ENABLE_ONEDNN_V3
     .Attr("strides: list(int)")
     .Attr("use_cudnn_on_gpu: bool = true")
     .Attr(GetPaddingAttrString())

@@ -28,6 +28,7 @@ namespace port {
 using tsl::port::ADX;
 using tsl::port::AES;
 using tsl::port::AMX_BF16;
+using tsl::port::AMX_FP16;
 using tsl::port::AMX_INT8;
 using tsl::port::AMX_TILE;
 using tsl::port::AVX;

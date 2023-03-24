@@ -134,6 +134,7 @@ enum CPUFeature {
   AMX_BF16 = 43,  // Bfloat16 tile matrix multiplication
 
   AVX512_FP16 = 44,  //Float16 neural network
+  AMX_FP16 = 45,  //Float16 tile matrix multiplication
 
 };
 

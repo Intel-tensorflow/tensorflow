@@ -134,8 +134,10 @@ class AutoMixedPrecisionListsCuda : public AutoMixedPrecisionLists {
         "BlockLSTMV2",
         "BlockLSTMGrad",
         "BlockLSTMGradV2",
+#ifndef INTEL_MKL
         "Conv2DBackpropFilter",
         "Conv2DBackpropInput",
+#endif
         "CudnnRNN",
         "CudnnRNNBackprop",
         "CudnnRNNBackpropV2",
@@ -158,6 +160,10 @@ class AutoMixedPrecisionListsCuda : public AutoMixedPrecisionLists {
         "Pmlp",
         "FastUnsortedSegmentMax",
     };
+    if (IsMKLEnabled() && HasCpuFP16AMXSupport()) {
+      list.insert("Conv2DBackpropFilter");
+      list.insert("Conv2DBackpropInput");
+    }
 #if TENSORFLOW_USE_ROCM
     if (true) {
 #else
