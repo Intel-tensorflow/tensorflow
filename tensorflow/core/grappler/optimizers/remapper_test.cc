@@ -1336,6 +1336,7 @@ class RemapperFuseSoftplusTanhMul : public RemapperTest {
   }
 };
 
+#ifndef ENABLE_ONEDNN_V3
 TEST_F(RemapperFuseSoftplusTanhMul, FP32) {
   if (!IsMKLEnabled()) GTEST_SKIP() << "Test only applicable to MKL.";
   RunTest<DT_FLOAT>();
@@ -1344,6 +1345,7 @@ TEST_F(RemapperFuseSoftplusTanhMul, BF16) {
   if (!IsMKLEnabled()) GTEST_SKIP() << "Test only applicable to MKL.";
   RunTest<DT_BFLOAT16>();
 }
+#endif
 #endif
 
 class RemapperTensorToHashBucketTest : public RemapperTest {

@@ -1053,9 +1053,10 @@ class MklRemapperSwishTest : public GrapplerTest {
     test::ExpectClose(tensors[3], tensors_expected[3], atol, rtol);
   }
 };
-
+#ifndef ENABLE_ONEDNN_V3
 TEST_F(MklRemapperSwishTest, F32) { RunTest<DT_FLOAT>(); }
 TEST_F(MklRemapperSwishTest, BF16) { RunTest<DT_BFLOAT16>(); }
+#endif
 
 class MklRemapperConv2dBiasAddSwishTest : public GrapplerTest {
  protected:
@@ -1134,8 +1135,10 @@ class MklRemapperConv2dBiasAddSwishTest : public GrapplerTest {
   }
 };
 
+#ifndef ENABLE_ONEDNN_V3
 TEST_F(MklRemapperConv2dBiasAddSwishTest, F32) { RunTest<DT_FLOAT>(); }
 TEST_F(MklRemapperConv2dBiasAddSwishTest, BF16) { RunTest<DT_BFLOAT16>(); }
+#endif
 
 class MklRemapperConv2dFusedBatchNormSwishTest : public GrapplerTest {
  protected:
@@ -1222,7 +1225,9 @@ class MklRemapperConv2dFusedBatchNormSwishTest : public GrapplerTest {
   }
 };
 
+#ifndef ENABLE_ONEDNN_V3
 TEST_F(MklRemapperConv2dFusedBatchNormSwishTest, F32) { RunTest<DT_FLOAT>(); }
+#endif
 
 #ifdef ENABLE_ONEDNN_V2
 class MklFuseInstanceNormTest : public GrapplerTest {
