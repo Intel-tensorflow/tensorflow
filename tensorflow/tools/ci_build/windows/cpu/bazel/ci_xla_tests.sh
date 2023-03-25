@@ -170,13 +170,8 @@ set +e   # Unset so script continues even if commands fail, this is needed to co
 N_JOBS="${NUMBER_OF_PROCESSORS}"
 
 # --config=release_cpu_windows 
-bazel --windows_enable_symlinks test \
-  --action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XTF_ARGS} \
-  --experimental_cc_shared_library --enable_runfiles --nodistinct_host_configuration \
-  --dynamic_mode=off --config=xla --config=short_logs --announce_rc \
-  --config=opt \
-	--define=with_xla_support=true \
-  -k \
+bazel --action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XTF_ARGS} \
+test --config=dbg \ 
   ${POSITIONAL_ARGS[@]} \
   -- ${TEST_TARGET} \
   > run.log 2>&1
