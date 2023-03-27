@@ -170,9 +170,7 @@ set +e   # Unset so script continues even if commands fail, this is needed to co
 N_JOBS="${NUMBER_OF_PROCESSORS}"
 
 # --config=release_cpu_windows 
-bazel --windows_enable_symlinks test \
-  --action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XTF_ARGS} \
-  ${POSITIONAL_ARGS[@]} \
+bazel >bazel --output_user_root=$MYTFWS test --config=dbg \
   -- ${TEST_TARGET} \
   > run.log 2>&1
 
