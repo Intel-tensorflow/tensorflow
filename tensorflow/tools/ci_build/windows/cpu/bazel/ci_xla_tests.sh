@@ -170,7 +170,7 @@ set +e   # Unset so script continues even if commands fail, this is needed to co
 N_JOBS="${NUMBER_OF_PROCESSORS}"
 
 # --config=release_cpu_windows 
-bazel >bazel --output_user_root=$MYTFWS test --config=dbg \
+bazel >bazel --output_user_root=$MYTFWS test --config=dbg --config=opt -k \
   -- ${TEST_TARGET} \
   > run.log 2>&1
 
