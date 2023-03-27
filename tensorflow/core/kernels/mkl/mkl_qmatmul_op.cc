@@ -52,6 +52,7 @@ limitations under the License.
 //
 // Bf32 is the original fp32 1D bias tensor matching the innermost dim of
 // Wf32.
+// For oneDNN < v3.0:
 // With SCALE quantization of activation, the scaled bias, Bs32, is calculated
 // as below:
 //      Bs32 = Qa * Qw * Bf32.
@@ -60,6 +61,12 @@ limitations under the License.
 //      B's32 = Q'a * Qw * Bf32 + Q'a * Qw * Min(Af32) * 1 * Wf32
 //            = Q'a * Qw * Bf32 + Q'a * Min(Af32) * 1 * Ws8.
 // where, 1 denotes a row vector matching the outermost dim of Wf32.
+// For oneDNN >= v3.0:
+// Bias needs to be passed as f32.
+// With SCALE quantization of activation, just pass Bf32.
+// With MIN_FIRST quantization of activation, bias needs to be compensated
+// as below:
+//      B'f32 = Bf32 + Q'a * Min(Af32) * 1 * Ws8.
 //
 // The QuantizedMatMulWithBias op calculates 32bit integer output as below:
 //  - with SCALE activation quantization:
@@ -472,7 +479,7 @@ class MklDnnQuantizedMatMulOp
     }
 #else
       if (std::is_same<Toutput, quint8>::value) {
-        // Existing unit tests expects dst_scale to be computed using 256.0
+        // Existing unit tests expect dst_scale to be computed using 256.0
         // value as opposed to 255.0. This has no impact on model level
         // accuracy.
         dst_scale = scale_eightbit / 256.0;
@@ -572,8 +579,7 @@ class MklDnnQuantizedMatMulOp
               comp_bias[j] = static_cast<float>(bias_buf[j]) / out_scale;
             } else {
               // Bias is float32 but still needs to be compensated.
-              comp_bias[j] = static_cast<float>(bias_buf[j]) +
-                             static_cast<float>(x * qa_amin);
+              comp_bias[j] = static_cast<float>(bias_buf[j]) + (x * qa_amin);
             }
 #endif  // !ENABLE_ONEDNN_V3
           }
@@ -582,24 +588,21 @@ class MklDnnQuantizedMatMulOp
           // mode is SCALED, bias has to be compensated with Bs32 = Qa * Qw *
           // Bf32. For oneDNN >= v3.0, if bias is qint32 and input quantization
           // mode is SCALED, bias needs to be dequantized to float32.
-          out_scale = 255.0 * 127.0 / max_input *
-                      std::max(std::abs(max_weight), std::abs(min_weight));
+          out_scale = 255.0 * 127.0 /
+                      (max_input *
+                       std::max(std::abs(max_weight), std::abs(min_weight)));
 
           std::vector<float> scales;
           scales.push_back(out_scale);
           dnnl::primitive_attr bias_attr;
-#ifndef ENABLE_ONEDNN_V3
-          bias_attr.set_output_scales(0, scales);
-#else
-          bias_attr.set_scales_mask(DNNL_ARG_DST, 0);
-#endif  // !ENABLE_ONEDNN_V3
-
           void* bias_buf = static_cast<void*>(
               const_cast<Tbias*>(bias_tensor.flat<Tbias>().data()));
 #ifndef ENABLE_ONEDNN_V3
+          bias_attr.set_output_scales(0, scales);
           auto input_bias_mem = memory(mkldnn_matmul_fwd_pd->bias_desc(),
                                        this->cpu_engine_, bias_buf);
 #else
+          bias_attr.set_scales_mask(DNNL_ARG_DST, 0);
           auto input_bias_mem =
               memory({{static_cast<int>(bias_tensor.NumElements())},
                       MklDnnType<Tbias>(),
