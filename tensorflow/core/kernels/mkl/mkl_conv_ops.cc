@@ -1165,7 +1165,7 @@ class MklConvOp : public OpKernel {
 #else
       // TODO(intel-tf): Enable for oneDNN v3.x
       TF_CHECK_OK(Status(
-          error::Code::FAILED_PRECONDITION,
+          absl::StatusCode::kFailedPrecondition,
           "oneDNN v3.x: Expected same data type for Ttemp_output and Toutput"));
 #endif  // !ENABLE_ONEDNN_V3
     }
