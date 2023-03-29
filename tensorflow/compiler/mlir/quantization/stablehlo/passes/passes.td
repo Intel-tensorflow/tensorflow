@@ -1,4 +1,4 @@
-/* Copyright 2017 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2023 The StableHLO Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -13,24 +13,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include "tensorflow/python/lib/core/safe_ptr.h"
+include "mlir/Pass/PassBase.td"
 
-namespace tensorflow {
-
-Safe_TF_TensorPtr make_safe(TF_Tensor* tensor) {
-  return Safe_TF_TensorPtr(tensor);
+def QuantizeWeightPass : Pass<"stablehlo-quantize-weight", "mlir::func::FuncOp"> {
+  let summary = "Quantizes the weight component of StableHLO graph.";
+  let constructor = "CreateQuantizeWeightPass()";
+  let dependentDialects = ["stablehlo::StablehloDialect"];
 }
-
-Safe_TFE_TensorHandlePtr make_safe(TFE_TensorHandle* handle) {
-  return Safe_TFE_TensorHandlePtr(handle);
-}
-
-Safe_TF_StatusPtr make_safe(TF_Status* status) {
-  return Safe_TF_StatusPtr(status);
-}
-
-Safe_TF_BufferPtr make_safe(TF_Buffer* buffer) {
-  return Safe_TF_BufferPtr(buffer);
-}
-
-}  // namespace tensorflow
