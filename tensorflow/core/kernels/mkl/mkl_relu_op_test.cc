@@ -136,4 +136,4 @@ TEST_ALL_SIZES(LeakyReluGrad)
 
 }  // namespace tensorflow
 
-#endif  // INTEL_MKL && ENABLE_MKL
+#endif  // INTEL_MKL && !ENABLE_ONEDNN_V3 && ENABLE_MKL

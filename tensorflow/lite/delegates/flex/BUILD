@@ -80,6 +80,7 @@ tf_cc_test(
     name = "buffer_map_test",
     size = "small",
     srcs = ["buffer_map_test.cc"],
+    tags = ["no_oss"],  # TODO(b/275077206): Enable when fixed.
     deps = [
         ":buffer_map",
         ":buffer_map_util",
@@ -227,7 +228,7 @@ cc_library(
         "//tensorflow/core:portable_tensorflow_lib_lite",
     ]) + if_not_mobile([
         "//tensorflow/core/common_runtime/eager:context",
-        "//tensorflow/core/common_runtime/eager:core",
+        "//tensorflow/core/common_runtime/eager:core_no_xla",
         "//tensorflow/core:core_cpu",
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",

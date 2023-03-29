@@ -50,6 +50,7 @@ from tensorflow.python.ops import gen_state_ops
 from tensorflow.python.ops import handle_data_util
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import state_ops
+from tensorflow.python.ops import variable_scope
 from tensorflow.python.ops import variables
 # go/tf-wildcard-import
 # pylint: disable=wildcard-import
@@ -103,7 +104,7 @@ def _set_handle_shapes_and_types(tensor, handle_data, graph_mode):
       [d.size for d in s.dim]  # pylint: disable=g-complex-comprehension
       if not s.unknown_rank else None for s in shapes
   ]
-  with tensor._op._graph._c_graph.get() as c_graph:  # pylint: disable=protected-access
+  with tensor._op.graph._c_graph.get() as c_graph:  # pylint: disable=protected-access
     pywrap_tf_session.TF_GraphSetOutputHandleShapesAndTypes_wrapper(
         c_graph,
         tensor._as_tf_output(),  # pylint: disable=protected-access
@@ -2442,53 +2443,8 @@ def _GatherGrad(op, grad):
   return (indexed_slices.IndexedSlices(values, indices, params_shape), None)
 
 
-def _to_proto_fn(v, export_scope=None):
-  """Converts Variable and ResourceVariable to VariableDef for collections."""
-  return v.to_proto(export_scope=export_scope)
-
-
-def _from_proto_fn(v, import_scope=None):
-  """Creates Variable or ResourceVariable from VariableDef as needed."""
-  if v.is_resource:
-    return ResourceVariable.from_proto(v, import_scope=import_scope)
-  return variables.Variable.from_proto(v, import_scope=import_scope)
-
-
-ops.register_proto_function(
-    ops.GraphKeys.GLOBAL_VARIABLES,
-    proto_type=variable_pb2.VariableDef,
-    to_proto=_to_proto_fn,
-    from_proto=_from_proto_fn)
-ops.register_proto_function(
-    ops.GraphKeys.TRAINABLE_VARIABLES,
-    proto_type=variable_pb2.VariableDef,
-    to_proto=_to_proto_fn,
-    from_proto=_from_proto_fn)
-ops.register_proto_function(
-    ops.GraphKeys.MOVING_AVERAGE_VARIABLES,
-    proto_type=variable_pb2.VariableDef,
-    to_proto=_to_proto_fn,
-    from_proto=_from_proto_fn)
-ops.register_proto_function(
-    ops.GraphKeys.LOCAL_VARIABLES,
-    proto_type=variable_pb2.VariableDef,
-    to_proto=_to_proto_fn,
-    from_proto=_from_proto_fn)
-ops.register_proto_function(
-    ops.GraphKeys.MODEL_VARIABLES,
-    proto_type=variable_pb2.VariableDef,
-    to_proto=_to_proto_fn,
-    from_proto=_from_proto_fn)
-ops.register_proto_function(
-    ops.GraphKeys.GLOBAL_STEP,
-    proto_type=variable_pb2.VariableDef,
-    to_proto=_to_proto_fn,
-    from_proto=_from_proto_fn)
-ops.register_proto_function(
-    ops.GraphKeys.METRIC_VARIABLES,
-    proto_type=variable_pb2.VariableDef,
-    to_proto=_to_proto_fn,
-    from_proto=_from_proto_fn)
+_to_proto_fn = variable_scope._to_proto_fn  # pylint: disable=protected-access
+_from_proto_fn = variable_scope._from_proto_fn  # pylint: disable=protected-access
 
 
 @tf_export("__internal__.ops.is_resource_variable", v1=[])

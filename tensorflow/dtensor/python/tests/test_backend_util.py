@@ -19,6 +19,8 @@ import multiprocessing
 import os
 
 from tensorflow.dtensor.python import accelerator_util
+from tensorflow.dtensor.python import config
+from tensorflow.dtensor.python import layout as layout_lib
 from tensorflow.dtensor.python.tests.test_backend_name import DTENSOR_TEST_UTIL_BACKEND
 from tensorflow.python.platform import test as tf_test
 
@@ -37,14 +39,26 @@ class DTensorTestBackendConfigurator:
       accelerator_util.shutdown_accelerator_system()
 
 
+def config_test_mesh(mesh: layout_lib.Mesh):
+  """No Op.
+
+  Args:
+    mesh: The DTensor mesh.
+  """
+  if config.backend_is_pw():
+    del mesh
+
+
 def slice_host_devices_for_multiworker(num_clients, client_id, ports):
   """Configure the current process to only use a slice of devices."""
   if num_clients == 0:
     # All GPUs are visible to the client.
     del os.environ['CUDA_VISIBLE_DEVICES']
+    del os.environ['HIP_VISIBLE_DEVICES']
   else:
     # Make the client_id-th GPU visible to the client.
     os.environ['CUDA_VISIBLE_DEVICES'] = f'{client_id}'
+    os.environ['HIP_VISIBLE_DEVICES'] = f'{client_id}'
     # Make the client_id-th (4x) TPU cores visible to the client.
     os.environ['CLOUD_TPU_TASK_ID'] = f'{client_id}'
     if 'tpu' in DTENSOR_TEST_UTIL_BACKEND.value:

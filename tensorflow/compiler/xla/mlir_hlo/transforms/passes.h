@@ -50,9 +50,6 @@ using BufferizePatternsCallback = std::function<void(
 #define GEN_PASS_DECL_TILELOOPSPASS
 #include "transforms/passes.h.inc"
 
-/// Creates a pass that reuses buffers which are already allocated.
-std::unique_ptr<OperationPass<func::FuncOp>> createBufferReusePass();
-
 /// Creates a pass that merges smaller buffer into bigger buffer to optimize
 /// memory consumption.
 std::unique_ptr<OperationPass<func::FuncOp>> createBufferPackingPass(
@@ -64,10 +61,6 @@ std::unique_ptr<OperationPass<func::FuncOp>> createTestUserangePass();
 /// Creates a pass that prints the analysis results of ShapeComponentsAnalysis.
 std::unique_ptr<OperationPass<func::FuncOp>>
 createTestShapeComponentAnalysisPass();
-
-/// Creates a pass that removes redundant operations that implement a
-/// CopyOpInterface.
-std::unique_ptr<OperationPass<func::FuncOp>> createCopyRemovalPass();
 
 /// Creates a pass that computes the allocated memory.
 std::unique_ptr<OperationPass<func::FuncOp>> createMemoryCountPass();
@@ -104,6 +97,12 @@ std::unique_ptr<OperationPass<func::FuncOp>> createTileLoopsPass(
 // Detensorizes loop-carried variables and block arguments of scf.while, scf.for
 // and scf.if.
 std::unique_ptr<OperationPass<func::FuncOp>> createDetensorizeScfOpsPass();
+
+/// Registers the test pass for erasing transform dialect ops.
+void registerTestHloTransformDialectEraseSchedulePass();
+
+/// Registers the test pass for applying transform dialect ops.
+void registerTestHloTransformDialectInterpreterPass();
 
 namespace hlo {
 std::unique_ptr<OperationPass<ModuleOp>> createOneShotBufferizePass();

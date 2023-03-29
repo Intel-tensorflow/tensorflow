@@ -25,54 +25,6 @@ bzl_library(
     visibility = ["//tensorflow/lite:__subpackages__"],
 )
 
-cc_library(
-    name = "headers",
-    hdrs = [
-        "interpreter.h",
-    ],
-    compatible_with = get_compatible_with_portable(),
-    visibility = [
-        "//tensorflow/lite:__subpackages__",
-    ],
-    deps = [
-        ":subgraph",
-        "//tensorflow/lite:allocation",
-        "//tensorflow/lite:external_cpu_backend_context",
-        "//tensorflow/lite:interpreter_options_header",
-        "//tensorflow/lite:signature_runner",
-        "//tensorflow/lite:stderr_reporter",
-        "//tensorflow/lite:string",
-        "//tensorflow/lite:type_to_tflitetype",
-        "//tensorflow/lite/core/api",
-        "//tensorflow/lite/core/api:error_reporter",
-        "//tensorflow/lite/core/async:async_signature_runner",
-        "//tensorflow/lite/core/c:common",
-        "//tensorflow/lite/experimental/remat:metadata_util",
-        "//tensorflow/lite/experimental/resource",
-        "//tensorflow/lite/internal:signature_def",
-        "//tensorflow/lite/profiling:root_profiler",
-        "//tensorflow/lite/profiling/telemetry/c:telemetry_setting_internal",
-    ],
-)
-
-# This target is only for use by the 'tflite_custom_c_library' build macro
-# and should not be used anywhere other than in the implementation of that build macro.
-# 'tflite_custom_c_library' requires target to be public, that's why we duplicated :headers target
-# to be used only by 'tflite_custom_c_library'.
-# Making :headers public could cause some problems because it is widely used inside the TF Lite
-# code base, that might lead others outside the TF Lite code base to copy that dependency and use
-# it and subsequently depend on it, which would be bad. Using a separate :private_headers target
-# ensures that the only use of the unwantedly-"public" target is inside the
-# 'tflite_custom_c_library' itself, where it is less likely to get copied into third party code.
-alias(
-    name = "private_headers",
-    actual = ":headers",
-    tags = ["avoid_dep"],
-    visibility = [
-        "//visibility:public",
-    ],
-)
-
 # The public target for the C++ API excluding experimental APIs.
 # TODO(ahentz): investigate dependency on gemm_support requiring usage of tf_copts.
 cc_library(
@@ -133,6 +85,7 @@ cc_library(
 alias(
     name = "framework",
     actual = "framework_experimental",
+    compatible_with = get_compatible_with_portable(),
     visibility = ["//visibility:public"],
 )
 
@@ -385,11 +338,11 @@ cc_test(
     ],
     deps = [
         ":framework",
+        "//tensorflow/core/platform:resource_loader",
         "//tensorflow/lite:framework",
         "//tensorflow/lite:interpreter_test_util",
         "//tensorflow/lite:string",
         "//tensorflow/lite:string_util",
-        "//tensorflow/lite/c:common",
         "//tensorflow/lite/core/api",
         "//tensorflow/lite/core/api:verifier",
         "//tensorflow/lite/core/c:common",
@@ -469,12 +422,12 @@ cc_library(
         "//tensorflow/lite:memory_planner",
         "//tensorflow/lite:minimal_logging",
         "//tensorflow/lite:util",
-        "//tensorflow/lite/core/c:c_api_types",
-        "//tensorflow/lite/core/c:common",
         "//tensorflow/lite/c:common_internal",
         "//tensorflow/lite/core/api",
-        "//tensorflow/lite/experimental/resource",
+        "//tensorflow/lite/core/c:c_api_types",
+        "//tensorflow/lite/core/c:common",
         "//tensorflow/lite/experimental/remat:metadata_util",
+        "//tensorflow/lite/experimental/resource",
         "//tensorflow/lite/profiling:root_profiler",
         "//tensorflow/lite/profiling/telemetry",
         "//tensorflow/lite/schema:schema_fbs",
@@ -502,7 +455,7 @@ cc_test(
         "subgraph_test.cc",
     ],
     deps = [
-        ":headers",
+        ":framework_stable",
         "//tensorflow/lite:framework",
         "//tensorflow/lite/kernels:builtin_ops",
         "//tensorflow/lite/testing:util",

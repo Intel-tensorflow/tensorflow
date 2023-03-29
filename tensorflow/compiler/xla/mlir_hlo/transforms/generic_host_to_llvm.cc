@@ -21,6 +21,7 @@ limitations under the License.
 #include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
 #include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
+#include "mlir/Conversion/LinalgToLLVM/LinalgToLLVM.h"
 #include "mlir/Conversion/MathToLLVM/MathToLLVM.h"
 #include "mlir/Conversion/MathToLibm/MathToLibm.h"
 #include "mlir/Conversion/MemRefToLLVM/MemRefToLLVM.h"
@@ -31,9 +32,11 @@ limitations under the License.
 #include "mlir/Dialect/Complex/IR/Complex.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "mlir/Dialect/LLVMIR/LLVMTypes.h"
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/MemRef/Transforms/Passes.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/Pass/PassManager.h"
 #include "transforms/passes.h"
 
 namespace mlir {
@@ -67,16 +70,14 @@ class GenericHostToLLVMPass
     memref::populateExpandStridedMetadataPatterns(patterns);
     arith::populateArithToLLVMConversionPatterns(typeConverter, patterns);
     populateFinalizeMemRefToLLVMConversionPatterns(typeConverter, patterns);
-    populateMathToLLVMConversionPatterns(typeConverter, patterns);
+    populateMathToLLVMConversionPatterns(typeConverter, patterns, false);
     populateFuncToLLVMConversionPatterns(typeConverter, patterns);
     cf::populateControlFlowToLLVMConversionPatterns(typeConverter, patterns);
     populateSCFToControlFlowConversionPatterns(patterns);
     populateComplexToLLVMConversionPatterns(typeConverter, patterns);
     populateVectorToLLVMConversionPatterns(typeConverter, patterns);
-    // MathToLibm patterns are a last resort, so they have a 0 benefit (except
-    // for log1p, which has accuracy issues near 0 if implemented naively).
-    populateMathToLibmConversionPatterns(patterns, 0,
-                                         /*log1pBenefit=*/{2});
+    populateLinalgToLLVMConversionPatterns(typeConverter, patterns);
+    populateMathToLibmConversionPatterns(patterns);
 
     //  Set target.
     ConversionTarget target(*ctx);

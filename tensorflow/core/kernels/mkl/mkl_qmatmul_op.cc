@@ -751,4 +751,4 @@ REGISTER_MKL_KERNEL_ALL_BIAS_TYPES("_MklQuantizedMatMulWithBiasAndDequantize",
 
 }  // namespace tensorflow
 
-#endif  // INTEL_MKL
+#endif  // INTEL_MKL && !ENABLE_ONEDNN_V3

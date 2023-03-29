@@ -15,6 +15,18 @@ limitations under the License.
 
 include "mlir/Pass/PassBase.td"
 
+def SplitAllocTensorsPass :
+    Pass<"hlo-split-alloc-tensors", "mlir::func::FuncOp"> {
+  let summary = "Split bufferization.alloc_tensor ops.";
+  let description = [{
+    `bufferization.alloc_tensor` ops that are reused for non-conflicting ops
+    prevent buffer reuse. This pass replaces each use of an alloc tensor with a
+    fresh alloc.
+  }];
+  let constructor = "::mlir::deallocation::createSplitAllocTensorsPass()";
+  let dependentDialects = ["::mlir::bufferization::BufferizationDialect"];
+}
+
 def DeallocatePass : Pass<"hlo-deallocate", "mlir::func::FuncOp"> {
   let summary = "Deallocate buffers by inserting `deallocation.retain` ops.";
   let description = [{
@@ -24,6 +36,23 @@ def DeallocatePass : Pass<"hlo-deallocate", "mlir::func::FuncOp"> {
   }];
   let constructor = "::mlir::deallocation::createDeallocatePass()";
   let dependentDialects = ["::mlir::deallocation::DeallocationDialect"];
+}
+
+def XlaBufferArgRewritePass :
+    Pass<"hlo-xla-buffer-arg-rewrite", "mlir::func::FuncOp"> {
+  let summary = "Rewrites XLA framework buffer arguments with alias information";
+  let description = [{
+    In the presence of variables, some results of the main function will alias
+    other parameters. This pass rewrites the main function to annotate results
+    for which this isn't the case with the `deallocation.restrict` attribute,
+    indicating that they do not alias with any other buffer and allowing the
+    buffer-reuse pass to optimize them.
+
+    The pass uses attributes present in XLA programs
+    (`xla_framework.input_mapping`, `xla_framework.result_mapping` and
+    `xla_framework.result_inner_mapping`, specifically).
+  }];
+  let constructor = "::mlir::deallocation::createXlaBufferArgRewritePass()";
 }
 
 def BufferReusePass : Pass<"hlo-buffer-reuse", "mlir::func::FuncOp"> {
@@ -45,4 +74,22 @@ def BufferReusePass : Pass<"hlo-buffer-reuse", "mlir::func::FuncOp"> {
   }];
   let constructor = "::mlir::deallocation::createBufferReusePass()";
   let dependentDialects = ["::mlir::memref::MemRefDialect"];
+}
+
+def ConvertDeallocationOpsToLLVMPass
+    : Pass<"hlo-convert-deallocation-ops-to-llvm", "mlir::func::FuncOp"> {
+  let summary = "Convert `deallocation` ops to LLVM";
+  let constructor = "::mlir::deallocation::createConvertDeallocationOpsToLLVM()";
+  let dependentDialects = ["mlir::LLVM::LLVMDialect"];
+}
+
+def DeallocationToScfPass : Pass<"hlo-deallocation-to-scf",
+                                 "mlir::func::FuncOp"> {
+  let summary = "Lowers retain to scf.";
+  let constructor = "::mlir::deallocation::createDeallocationToScfPass()";
+  let dependentDialects = [
+    "::mlir::arith::ArithDialect",
+    "::mlir::scf::SCFDialect",
+    "::mlir::memref::MemRefDialect",
+  ];
 }

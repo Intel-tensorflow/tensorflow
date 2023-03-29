@@ -148,8 +148,7 @@ cc_library(
         "//tensorflow/lite:type_to_tflitetype",
         "//tensorflow/lite:util",
         "//tensorflow/lite:version",
-        "//tensorflow/lite/core:framework",
-        "//tensorflow/lite/core:headers",
+        "//tensorflow/lite/core:framework_experimental",
         "//tensorflow/lite/core/api",
         "//tensorflow/lite/core/api:verifier",
         "//tensorflow/lite/core/c:common",
@@ -528,6 +527,7 @@ cc_library(
     name = "builtin_ops_list",
     textual_hdrs = ["builtin_ops_list.inc"],
     visibility = ["//tensorflow/lite:__subpackages__"],
+    deps = ["//tensorflow/lite/kernels:builtin_ops_list"],
 )
 
 exports_files(
