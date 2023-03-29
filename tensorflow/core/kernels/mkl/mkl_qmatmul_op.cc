@@ -491,7 +491,7 @@ class MklDnnQuantizedMatMulOp
       }
     } else {
       if (!std::is_same<Toutput, qint32>::value)
-        TF_CHECK_OK(Status(error::Code::FAILED_PRECONDITION,
+        TF_CHECK_OK(Status(absl::StatusCode::kFailedPrecondition,
                            "Output datatype is expected to be qint32."));
       dst_scale = src_scale * wei_scale;
     }
