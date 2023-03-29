@@ -456,7 +456,6 @@ TF_CALL_bfloat16(REGISTER_MKL_MAXPOOL_KERNELS);
 TF_CALL_float(REGISTER_MKL_MAXPOOL_GRAD_KERNELS);
 TF_CALL_bfloat16(REGISTER_MKL_MAXPOOL_GRAD_KERNELS);
 
-#ifndef ENABLE_ONEDNN_V3
 REGISTER_KERNEL_BUILDER(Name("_MklQuantizedMaxPool")
                             .Device(DEVICE_CPU)
                             .TypeConstraint<quint8>("T")
@@ -468,7 +467,6 @@ REGISTER_KERNEL_BUILDER(Name("_MklQuantizedMaxPool")
                             .TypeConstraint<qint8>("T")
                             .Label(mkl_op_registry::kMklQuantizedOpLabel),
                         MklMaxPoolingOp<CPUDevice, qint8, true>);
-#endif  // !ENABLE_ONEDNN_V3
 }  // namespace tensorflow
 
 #endif  // INTEL_MKL
