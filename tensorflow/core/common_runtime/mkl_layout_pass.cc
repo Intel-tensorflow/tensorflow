@@ -578,6 +578,7 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
     rinfo_.push_back({csinfo_.quantized_concatv2,
                       mkl_op_registry::GetMklOpName(csinfo_.quantized_concatv2),
                       CopyAttrsAll, ConcatV2Rewrite, kRewriteForOpNameChange});
+#endif  // !ENABLE_ONEDNN_V3
     rinfo_.push_back({csinfo_.quantized_conv2d,
                       mkl_op_registry::GetMklOpName(csinfo_.quantized_conv2d),
                       CopyAttrsQuantizedConv2D, AlwaysRewrite,
@@ -619,9 +620,6 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
          mkl_op_registry::GetMklOpName(
              csinfo_.quantized_conv2d_with_bias_and_relu_and_requantize),
          CopyAttrsQuantizedConv2D, AlwaysRewrite, kRewriteForOpNameChange});
-    rinfo_.push_back({csinfo_.quantized_max_pool,
-                      mkl_op_registry::GetMklOpName(csinfo_.quantized_max_pool),
-                      CopyAttrsAll, AlwaysRewrite, kRewriteForOpNameChange});
     rinfo_.push_back({csinfo_.quantized_conv2d_with_bias_sum_and_relu,
                       mkl_op_registry::GetMklOpName(
                           csinfo_.quantized_conv2d_with_bias_sum_and_relu),
@@ -637,6 +635,10 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
          mkl_op_registry::GetMklOpName(
              csinfo_.quant_conv2d_with_bias_signed_sum_and_relu_and_requantize),
          CopyAttrsQuantizedConv2D, AlwaysRewrite, kRewriteForOpNameChange});
+#ifndef ENABLE_ONEDNN_V3
+    rinfo_.push_back({csinfo_.quantized_max_pool,
+                      mkl_op_registry::GetMklOpName(csinfo_.quantized_max_pool),
+                      CopyAttrsAll, AlwaysRewrite, kRewriteForOpNameChange});
     rinfo_.push_back(
         {csinfo_.quantized_matmul_with_bias,
          mkl_op_registry::GetMklOpName(csinfo_.quantized_matmul_with_bias),
@@ -663,6 +665,7 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
                           csinfo_.quantized_matmul_with_bias_and_dequantize),
                       CopyAttrsQuantizedMatMulWithBiasAndDequantize,
                       AlwaysRewrite, kRewriteForOpNameChange});
+#endif  // !ENABLE_ONEDNN_V3
     rinfo_.push_back(
         {csinfo_.quantized_depthwise_conv2d,
          mkl_op_registry::GetMklOpName(csinfo_.quantized_depthwise_conv2d),
@@ -683,7 +686,6 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
              csinfo_
                  .quantized_depthwise_conv2d_with_bias_and_relu_and_requantize),
          CopyAttrsQuantizedConv2D, AlwaysRewrite, kRewriteForOpNameChange});
-#endif  // !ENABLE_ONEDNN_V3
     rinfo_.push_back({csinfo_.quantize_v2,
                       mkl_op_registry::GetMklOpName(csinfo_.quantize_v2),
                       CopyAttrsAll, QuantizeOpRewrite,
