@@ -13,15 +13,22 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include "tools/mlir_interpreter/framework/registration.h"
+#include "gml_st/utils/tensor_utils.h"
 
-namespace mlir {
-namespace interpreter {
-namespace {
+namespace mlir::gml_st {
 
-REGISTER_MLIR_INTERPRETER_OP("xla_cpu.memref_element_cast",
-                             "builtin.unrealized_conversion_cast");
+// Returns ids of size-1 dims that were expanded or collapsed by
+// tensor.expand_shape/tensor.collapse_shape.
+SmallVector<int64_t> getPreservedDimensions(
+    ArrayRef<int64_t> shape,
+    ArrayRef<ReassociationIndices> reassociationIndices) {
+  SmallVector<int64_t> result;
+  for (ReassociationIndicesRef indices : reassociationIndices) {
+    const auto* findIt =
+        llvm::find_if(indices, [&](int64_t idx) { return shape[idx] != 1; });
+    result.push_back(findIt == indices.end() ? 0 : *findIt);
+  }
+  return result;
+}
 
-}  // namespace
-}  // namespace interpreter
-}  // namespace mlir
+}  // namespace mlir::gml_st

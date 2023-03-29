@@ -169,6 +169,7 @@ cc_test(
         ":c_api_experimental",
         ":c_api_types",
         ":common",
+        "//tensorflow/core/platform:resource_loader",
         "//tensorflow/lite/c:c_api_internal",
         "//tensorflow/lite/delegates:delegate_test_util",
         "//tensorflow/lite/schema:schema_fbs",
@@ -192,6 +193,7 @@ cc_test(
         ":c_api_types",
         ":c_api_without_op_resolver_without_alwayslink",
         ":common",
+        "//tensorflow/core/platform:resource_loader",
         "//tensorflow/lite/c:c_api_internal",
         "//tensorflow/lite/c:selectively_built_c_api_test_lib",
         "//tensorflow/lite/delegates:delegate_test_util",
@@ -326,7 +328,6 @@ tflite_cc_library_with_c_headers_test(
         "c_api_experimental.h",
         "c_api_opaque.h",
     ],
-    aspect_hints = ["//tools/build_defs/swift:auto_module"],
     copts = tflite_copts(),
     tags = ["allow_undefined_symbols"],  # For tflite::CreateOpResolver().
     deps = [
@@ -356,7 +357,6 @@ tflite_cc_library_with_c_headers_test(
         "c_api_experimental.h",
         "c_api_opaque.h",
     ],
-    aspect_hints = ["//tools/build_defs/swift:auto_module"],
     copts = tflite_copts(),
     tags = ["allow_undefined_symbols"],  # For tflite::CreateOpResolver().
     deps = [

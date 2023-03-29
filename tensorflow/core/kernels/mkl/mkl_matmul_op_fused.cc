@@ -28,10 +28,10 @@ namespace tensorflow {
 
 // Fuse Operation
 template <typename Device, typename T, bool native_format = false>
-class MklFusedMatMulOp : public MklDnnMatMulOpBase<T, T> {
+class MklFusedMatMulOp : public MklDnnMatMulOpBase<T, void, T> {
  public:
   explicit MklFusedMatMulOp(OpKernelConstruction* ctx)
-      : MklDnnMatMulOpBase<T, T>(ctx) {
+      : MklDnnMatMulOpBase<T, void, T>(ctx) {
     OP_REQUIRES_OK(ctx, ctx->GetAttr("fused_ops", &fused_ops_));
     OP_REQUIRES_OK(ctx, ctx->GetAttr("transpose_a", &transpose_a_));
     OP_REQUIRES_OK(ctx, ctx->GetAttr("transpose_b", &transpose_b_));
@@ -267,7 +267,7 @@ class MklFusedMatMulOp : public MklDnnMatMulOpBase<T, T> {
 
       // Execute fused matmul op.
       matmul_prim->Execute(src_data, weight_data, bias_data, dst_data,
-                           scratch_pad.Get(), cpu_stream);
+                           matmul_params, scratch_pad.Get(), cpu_stream);
     } catch (dnnl::error& e) {
       string error_msg = "Status: " + std::to_string(e.status) +
                          ", message: " + string(e.message) + ", in file " +
