@@ -165,7 +165,7 @@ bazel build \
   keras/tools/pip_package:build_pip_package || exit $?
 
 cd ${MYTFWS}
-mkdir -p ${PY_TEST_DIR}
+mkdir -p "${MYTFWS}/PY_TEST_DIR"
 
 ./bazel-bin/keras/tools/pip_package/build_pip_package "$PWD/${PY_TEST_DIR}" 
 
