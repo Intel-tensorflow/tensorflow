@@ -164,7 +164,8 @@ N_JOBS="${NUMBER_OF_PROCESSORS}"
 bazel build \
   keras/tools/pip_package:build_pip_package || exit $?
 
-mkdir "${PY_TEST_DIR}"
+cd ${MYTFWS}
+mkdir -p ${PY_TEST_DIR}
 
 ./bazel-bin/keras/tools/pip_package/build_pip_package "$PWD/${PY_TEST_DIR}" 
 
