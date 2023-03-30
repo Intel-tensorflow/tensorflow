@@ -168,7 +168,7 @@ bazel build //keras/tools/pip_package:build_pip_package > run.log 2>&1 || exit $
 
 create_python_test_dir "${PY_TEST_DIR}"
 
-./bazel-bin/tensorflow/tools/pip_package/build_pip_package "$PWD/${PY_TEST_DIR}" ${EXTRA_PIP_FLAGS}
+./bazel-bin/keras/tools/pip_package/build_pip_package "$PWD/${PY_TEST_DIR}" 
 
 build_ret_val=$?   # Store the ret value
 
