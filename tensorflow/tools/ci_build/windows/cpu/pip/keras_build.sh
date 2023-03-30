@@ -111,7 +111,7 @@ python --version
 
 # Install pip modules as per specs in tensorflow/tools/ci_build/release/requirements_common.txt
 python -m pip install -r $MYTFWS/requirements.txt
-python -m pip install -r tensorflow 
+pip install -r tensorflow 
 
 # set up other Variables required by bazel.
 export PYTHON_BIN_PATH="${PYTHON_DIRECTORY}"/Scripts/python.exe
@@ -163,8 +163,8 @@ set +e   # Unset so script continues even if commands fail, this is needed to co
 # NUMBER_OF_PROCESSORS is predefined on Windows
 N_JOBS="${NUMBER_OF_PROCESSORS}"
 
-
-bazel build //keras/tools/pip_package:build_pip_package > run.log 2>&1 || exit $?
+bazel build \
+  keras/tools/pip_package:build_pip_package || exit $?
 
 create_python_test_dir "${PY_TEST_DIR}"
 
