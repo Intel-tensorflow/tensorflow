@@ -167,7 +167,7 @@ bazel build \
 cd ${MYTFWS}
 mkdir -p "${MYTFWS}/PY_TEST_DIR"
 
-./bazel-bin/keras/tools/pip_package/build_pip_package "$PWD/${PY_TEST_DIR}" 
+./bazel-bin/keras/tools/pip_package/build_pip_package ""${MYTFWS}/PY_TEST_DIR"" 
 
 build_ret_val=$?   # Store the ret value
 
