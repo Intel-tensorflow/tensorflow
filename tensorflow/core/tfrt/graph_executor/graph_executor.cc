@@ -26,6 +26,7 @@ limitations under the License.
 #include <vector>
 
 #include "learning/brain/experimental/tfrt/mlrt/application/tensorflow/attribute/attribute.h"
+#include "learning/brain/experimental/tfrt/mlrt/application/tensorflow/compiler/transforms/assign_op_key.h"
 #include "learning/brain/experimental/tfrt/mlrt/application/tensorflow/compiler/transforms/fuse_await_pass.h"
 #include "learning/brain/experimental/tfrt/mlrt/application/tensorflow/compiler/transforms/parallelization.h"
 #include "learning/brain/experimental/tfrt/mlrt/application/tensorflow/compiler/transforms/tf_to_mlrt.h"
@@ -507,6 +508,11 @@ tensorflow::Status GraphExecutor::Run(
   // Conduct cost analysis for the first request on this `loaded_client_graph`.
   std::unique_ptr<CostRecorder> cost_recorder;
   if (options_.enable_online_cost_analysis) {
+    // TODO(juanlishen, chky): Support online cost analysis in MLRT.
+    if (loaded_executable) {
+      return errors::InvalidArgument(
+          "Online cost analysis is not supported in MLRT yet.");
+    }
     cost_recorder = loaded_client_graph.MaybeCreateCostRecorder();
   }
 
@@ -678,6 +684,7 @@ StatusOr<mlrt::bc::Buffer> CompileMlirModuleToByteCode(
         // TODO(chky): Refactor this function to compiler directory.
         mlir::StatusScopedDiagnosticHandler diag_handler(module.getContext());
 
+        pm.addPass(mlrt_compiler::CreateAssignOpKeyPass());
         pm.addPass(
             mlrt_compiler::CreateTfToMlrtPreParallelizationConversionPass(
                 options));

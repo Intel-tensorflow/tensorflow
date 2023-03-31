@@ -32,7 +32,8 @@ GmlStCPUTilingOptions getDefaultCPUPipelineOptions(StringRef cpuName,
   opts.reduction1DTileSize = 32;
   opts.reduction2DTileSizes = {4, 4};
   opts.matmulTileSizes = {};
-  opts.vectorizationSizeThreshold = 128;
+  // TODO(vuson): Re-enable or remove this:
+  opts.vectorizationSizeThreshold = 0;
   opts.vectorizationTiledSizeThreshold = 1024;
   opts.lowerToMmt4d = false;
   opts.enableFusionClusters = false;
@@ -71,7 +72,7 @@ void addCPUTilingPipeline(OpPassManager& pm,
       options.vectorSize, options.reduction1DTileSize,
       options.reduction2DTileSizes));
   pm.addNestedPass<FuncOp>(
-      createTransformDotForCpuPass(options.matmulTileSizes));
+      createTransformDotForCpuPass(options.matmulTileSizes, options.cpuName));
   // Upstream generalization of tensor.pack/unpack (i.e. tensor.pack/unpack ->
   // tensor.pad + linalg.transpose + tensor.insert_slice) does not transfer
   // transformed labels from tensor.pack/unpack to linalg.transpose and thus
