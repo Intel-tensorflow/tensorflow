@@ -280,19 +280,12 @@ class MklQuantizeV2Op : public OpKernel {
   explicit MklQuantizeV2Op(OpKernelConstruction* ctx) : OpKernel(ctx) {
     string mode_string;
     OP_REQUIRES_OK(ctx, ctx->GetAttr("mode", &mode_string));
-#ifndef ENABLE_ONEDNN_V3
     OP_REQUIRES(ctx,
                 (mode_string == "MIN_COMBINED" || mode_string == "MIN_FIRST" ||
                  mode_string == "SCALED"),
                 errors::InvalidArgument("Mode string must be 'MIN_COMBINED',"
                                         " 'MIN_FIRST', or 'SCALED', is '" +
                                         mode_string + "'"));
-#else
-    // TODO(intel-tf): Support other modes for v3.x
-    OP_REQUIRES(ctx, mode_string == "SCALED",
-                errors::InvalidArgument(
-                    "Currently oneDNN v3.x only supports SCALED mode"));
-#endif  // ENABLE_ONEDNN_V3
     if (mode_string == "MIN_COMBINED") {
       mode_ = QUANTIZE_MODE_MIN_COMBINED;
     } else if (mode_string == "MIN_FIRST") {
