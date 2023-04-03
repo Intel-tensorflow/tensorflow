@@ -288,8 +288,8 @@ class MklSoftmaxOp : public OpKernel {
   }
 };
 
-/* Register oneDNN kernels for supported operations and supported types:
- * right now it is Softmax for fp32 and bf16 */
+// Register oneDNN kernels for supported operations and supported types:
+// right now it is Softmax for fp32 and bf16
 #define REGISTER_SOFTMAX_MKL_SUPPORTED_KERNELS_TYPES(type)                    \
   REGISTER_KERNEL_BUILDER(Name("_MklSoftmax")                                 \
                               .Device(DEVICE_CPU)                             \
