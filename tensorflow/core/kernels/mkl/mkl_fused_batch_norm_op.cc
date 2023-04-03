@@ -78,7 +78,6 @@ struct MklBatchNormFwdParams {
   FusedBNActivationMode activation_mode;
   memory::desc src_md;
 #ifdef ENABLE_ONEDNN_V3
-  // TODO(bhavanis): is this needed here?
   memory::desc dst_md;
 #endif  // ENABLE_ONEDNN_V3
 
