@@ -356,9 +356,7 @@ void MklPoolParameters::Init(OpKernelContext* context,
     depth_stride = GetTensorDim(stride, data_format, 'C');
 
 #ifdef ENABLE_ONEDNN_V3
-    // TODO(intel-tf): we are setting dilations to 0 to mimic the behavior of
-    // oneDNN v2.x integration code. We can extend this in the future to support
-    // dilations != 0
+    // TODO(intel-tf): TensorFlow's 3D-pooling API does not support dilations
     planes_dilation = 0;
     row_dilation = 0;
     col_dilation = 0;
