@@ -108,10 +108,9 @@ class MklLayerNormOp : public OpKernel {
       OP_REQUIRES_OK(ctx, ctx->allocate_temp(DataTypeToEnum<float>::v(),
                                              {scale_shift_tensor_shape},
                                              &scale_buf_tensor));
-      void* scale_buf =
+      void* scale_buf_dst =
           static_cast<void*>(scale_buf_tensor.flat<float>().data());
-      auto scale_mem = memory(scale_shift_md, cpu_engine, scale_buf);
-      void* scale_buf_dst = scale_buf;
+      auto scale_mem = memory(scale_shift_md, cpu_engine, scale_buf_dst);
 
       Tensor shift_buf_tensor;
       OP_REQUIRES_OK(ctx, ctx->allocate_temp(DataTypeToEnum<float>::v(),
