@@ -3366,7 +3366,7 @@ def tf_enable_mlir_bridge():
         "//conditions:default": [],
     })
 
-def tfcompile_target_cpu():
+def tfcompile_target_cpu(name = ""):
     return ""
 
 def tfcompile_dfsan_enabled():

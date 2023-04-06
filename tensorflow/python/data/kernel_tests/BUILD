@@ -141,6 +141,7 @@ py_library(
         "//tensorflow/python:variables",
         "//tensorflow/python/checkpoint",
         "//tensorflow/python/checkpoint:checkpoint_management",
+        "//tensorflow/python/checkpoint:checkpoint_options",
         "//tensorflow/python/data/experimental/ops:iterator_ops",
         "//tensorflow/python/data/ops:dataset_ops",
         "//tensorflow/python/data/ops:options",
@@ -197,9 +198,6 @@ tf_py_test(
     name = "counter_test",
     size = "small",
     srcs = ["counter_test.py"],
-    tags = [
-        "nomac",  # TODO(b/276269493)
-    ],
     deps = [
         ":checkpoint_test_base",
         ":test_base",
@@ -904,9 +902,6 @@ tf_py_test(
     size = "medium",
     srcs = ["repeat_test.py"],
     shard_count = 2,
-    tags = [
-        "nomac",  # TODO(b/276269493)
-    ],
     deps = [
         ":checkpoint_test_base",
         ":test_base",
@@ -924,9 +919,6 @@ tf_py_test(
     size = "medium",
     srcs = ["sample_from_datasets_test.py"],
     shard_count = 24,
-    tags = [
-        "nomac",  # TODO(b/276269493)
-    ],
     deps = [
         "//tensorflow/python:client_testlib",
         "//tensorflow/python:errors",

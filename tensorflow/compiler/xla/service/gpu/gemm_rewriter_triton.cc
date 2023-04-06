@@ -16,6 +16,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/service/gpu/gemm_rewriter_triton.h"
 
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <stack>
 #include <string>
@@ -24,11 +25,17 @@ limitations under the License.
 #include "absl/algorithm/container.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
+#include "absl/strings/str_cat.h"
+#include "absl/strings/string_view.h"
+#include "absl/types/span.h"
+#include "tensorflow/compiler/xla/hlo/ir/dfs_hlo_visitor_with_default.h"
 #include "tensorflow/compiler/xla/hlo/ir/hlo_casting_utils.h"
 #include "tensorflow/compiler/xla/hlo/ir/hlo_computation.h"
 #include "tensorflow/compiler/xla/hlo/ir/hlo_instruction.h"
 #include "tensorflow/compiler/xla/hlo/ir/hlo_instructions.h"
 #include "tensorflow/compiler/xla/hlo/ir/hlo_opcode.h"
+#include "tensorflow/compiler/xla/layout.h"
+#include "tensorflow/compiler/xla/literal_util.h"
 #include "tensorflow/compiler/xla/service/gpu/ir_emission_utils.h"
 #include "tensorflow/compiler/xla/service/gpu/matmul_utils.h"
 #include "tensorflow/compiler/xla/service/hlo_creation_utils.h"
@@ -40,6 +47,7 @@ limitations under the License.
 #include "tensorflow/tsl/platform/errors.h"
 #include "tensorflow/tsl/platform/status.h"
 #include "tensorflow/tsl/platform/statusor.h"
+#include "tensorflow/tsl/protobuf/autotuning.pb.h"
 
 namespace xla {
 namespace gpu {
@@ -213,82 +221,82 @@ DimensionOrder DimensionOrder::FromDotOperand(const HloInstruction& dot,
 Status DimensionOrder::HandleBitcast(const HloInstruction* hlo) {
   const Shape& operand_shape = hlo->operand(0)->shape();
   DimOrderVector operand_dim_order;
-  operand_dim_order.reserve(operand_shape.rank());
-  // Subdimension index tracking dimension splits.
-  int subdim_index = 0;
+  operand_dim_order.reserve(dim_order_.size());
+  // Size of not yet assigned part of current operand dimension.
+  int64_t operand_remaining_size = 1;
   // Iterate in parallel over output dimension order and operand dimensions
   // in minor_to_major order. Find groups of dimensions of equal size
   // and project the output dimension order onto the operand.
   auto operand_dim_iter = operand_shape.layout().minor_to_major().cbegin();
   for (auto out_dim = dim_order_.cbegin(); out_dim != dim_order_.cend();
        ++out_dim) {
-    int64_t out_dim_size = out_dim->size;
-    if (operand_dim_iter == operand_shape.layout().minor_to_major().cend()) {
-      // Out of dimensions of the operand -> output should only have
-      // degenerate dimensions from here.
-      if (out_dim_size == 1) {
-        continue;
+    if (operand_remaining_size >= out_dim->size) {
+      if (operand_remaining_size % out_dim->size) {
+        return Unimplemented("Unsupported bitcast: %s", hlo->ToString());
       }
-      // Otherwise this is an arbitrary transformation like
-      // [2, 3] -> [3, 2] which is not supported yet
-      return Unimplemented("general bitcast");
-    }
-    int64_t operand_dim_size = operand_shape.dimensions(*operand_dim_iter);
-    VLOG(9) << out_dim->target_dim_number << "\t" << *operand_dim_iter;
-    VLOG(9) << out_dim_size << "\t" << operand_dim_size;
-    subdim_index = 0;
-    if (out_dim_size == operand_dim_size) {
-      // 1:1 matching dimensions.
+      // Output dimension fragment completely fits into the operand one:
+      // just copy it as is.
       operand_dim_order.push_back(*out_dim);
-    } else if (out_dim_size < operand_dim_size) {
-      // Multiple output dimensions <- one operand dimension:
-      //  just keep their order.
-      do {
-        operand_dim_order.push_back(*out_dim);
-        ++out_dim;
-        if (out_dim == dim_order_.cend()) {
-          return Unimplemented("general bitcast");
-        }
-        out_dim_size *= out_dim->size;
-      } while (out_dim_size != operand_dim_size);
-      operand_dim_order.push_back(*out_dim);
+      // Update the size of the remaining part of the operand that is
+      // carried over to next output dimensions.
+      operand_remaining_size /= out_dim->size;
     } else {
-      // One output dimension <- multiple operand dimensions:
-      //  create new sub-dimensions.
-      do {
-        if (out_dim->subdim_number != 0) {
-          return Unimplemented("split of subdimension");
+      // Output is larger than input. Assign further operand dimensions.
+      // Size of the not yet assigned part of the output dimension.
+      int64_t out_remaining_size = out_dim->size;
+      // Subdimension index tracking dimension splits.
+      int subdim_index = out_dim->subdim_number;
+      if (operand_remaining_size > 1) {
+        // If there is a remaining fragment of a previous operand dimension
+        // assign it first.
+        if (out_remaining_size % operand_remaining_size) {
+          return Unimplemented("Unsupported bitcast: %s", hlo->ToString());
         }
         operand_dim_order.push_back(
-            {out_dim->target_dim_number, subdim_index,
-             operand_shape.dimensions(*operand_dim_iter)});
+            {out_dim->target_dim_number, subdim_index, operand_remaining_size});
         ++subdim_index;
-        ++operand_dim_iter;
-        if (operand_dim_iter ==
-            operand_shape.layout().minor_to_major().cend()) {
-          return Unimplemented("general bitcast");
+        // Update the size of the fragment remaining to assign.
+        out_remaining_size /= operand_remaining_size;
+        operand_remaining_size = 1;
+      }
+      while (out_remaining_size > 1) {
+        // Assign operand dimensions until the output remainder is covered.
+        int64_t operand_dim_size = operand_shape.dimensions(*operand_dim_iter);
+        int64_t new_fragment_size = operand_dim_size;
+        if (operand_dim_size > out_remaining_size) {
+          // If adding the next operand dimension exceeds output fragment size
+          // assign the remainder of the output and carry over the remainder
+          // of the operand.
+          if (operand_dim_size % out_remaining_size) {
+            return Unimplemented("Unsupported bitcast: %s", hlo->ToString());
+          }
+          operand_remaining_size = operand_dim_size / out_remaining_size;
+          new_fragment_size = out_remaining_size;
         }
-        operand_dim_size *= operand_shape.dimensions(*operand_dim_iter);
-      } while (out_dim_size != operand_dim_size);
-      operand_dim_order.push_back(
-          {out_dim->target_dim_number, subdim_index,
-           operand_shape.dimensions(*operand_dim_iter)});
+        operand_dim_order.push_back(
+            {out_dim->target_dim_number, subdim_index, new_fragment_size});
+        out_remaining_size /= new_fragment_size;
+        ++operand_dim_iter;
+        ++subdim_index;
+      }
     }
-    ++operand_dim_iter;
   }
+  CHECK_EQ(operand_remaining_size, 1);
+
   // Handle remaining major dimensions of the operand. Call all degenerate
   // ones subdimensions of the most-major non-degenerate one. Otherwise
   // give up.
+  int subdim_index = operand_dim_order.back().subdim_number + 1;
   while (operand_dim_iter != operand_shape.layout().minor_to_major().cend()) {
-    ++subdim_index;
     if (operand_shape.dimensions(*operand_dim_iter) != 1) {
-      return Unimplemented("general bitcast");
+      return Unimplemented("Unsupported bitcast: %s", hlo->ToString());
     }
     operand_dim_order.push_back(
-        {dim_order_[hlo->shape().rank() - 1].target_dim_number, subdim_index,
-         1});
+        {operand_dim_order.back().target_dim_number, subdim_index, 1});
+    ++subdim_index;
     ++operand_dim_iter;
   }
+
   dim_order_ = operand_dim_order;
   return OkStatus();
 }
@@ -532,13 +540,28 @@ StatusOr<HloInstruction*> MakeSplitKOperand(
   Shape new_shape(shape.element_type(), {}, {}, {});
 
   // TODO(b/274775195): implement split-K with padding.
-  if (shape.dimensions(contracting_dim_idx) % tiling.split_k()) {
-    return Unimplemented("K dimension requires padding for split-K.");
+  if (tiling.split_k() > shape.dimensions(contracting_dim_idx)) {
+    return Cancelled("Too small total contracting dimension size.");
   }
-
+  const DotFusionAnalysis analysis(&dot);
+  int64_t size_to_split = tiling.split_k();
+  auto fragment = analysis.IterSpec(operand_number, contracting_dim_idx)[0]
+                      .subfragments.crbegin();
+  while (size_to_split > *fragment) {
+    if (size_to_split % *fragment) {
+      return Cancelled("Contracting dimension is too fragmented.");
+    }
+    size_to_split /= *fragment;
+    ++fragment;
+  }
+  if (*fragment % size_to_split) {
+    return Cancelled("Contracting dimension is too fragmented.");
+  }
   if (tiling.split_k() >
-      ceil(1.0 * shape.dimensions(contracting_dim_idx) / tiling.block_k())) {
-    return Cancelled("Too small contracting dimension.");
+      ceil(1.0 *
+           analysis.IterSpec(operand_number, contracting_dim_idx)[0].count /
+           tiling.block_k())) {
+    return Cancelled("Too small divisible part of the contracting dimension.");
   }
 
   for (int i = 0; i < shape.rank(); ++i) {
@@ -686,13 +709,14 @@ DotFusionAnalysis::DotFusionAnalysis(const HloInstruction* root,
         if (iter_spec.empty()) {
           // Previous parts of this dimension were degenerate -
           // so create the dimension here.
-          iter_spec.push_back({accumulated_stride, dim.size});
+          iter_spec.push_back({accumulated_stride, dim.size, {dim.size}});
         } else {
           // Contiguous dimension, split only logically. Merge it back.
           iter_spec.back().count *= dim.size;
+          iter_spec.back().subfragments.push_back(dim.size);
         }
       } else {
-        iter_spec.push_back({accumulated_stride, dim.size});
+        iter_spec.push_back({accumulated_stride, dim.size, {dim.size}});
       }
 
       accumulated_stride *= dim.size;

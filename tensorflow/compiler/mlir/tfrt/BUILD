@@ -574,6 +574,7 @@ cc_library(
     srcs = ["analysis/cost_analysis.cc"],
     hdrs = ["analysis/cost_analysis.h"],
     deps = [
+        ":constants",
         "//tensorflow/compiler/mlir/tensorflow",
         "//tensorflow/core/platform:status",
         "//tensorflow/core/tfrt/fallback:cost_recorder",
@@ -774,11 +775,11 @@ tf_cc_binary(
     ],
     visibility = [":friends"],
     deps = [
-        "@llvm-project//mlir:TranslateLib",
         "//tensorflow/compiler/mlir/tensorflow",
         "//tensorflow/compiler/mlir/tfrt:tf_jitrt_registration",
         "//tensorflow/compiler/mlir/tfrt:tfrt_fallback_registration",
         "//tensorflow/compiler/mlir/tfrt/ir:tfrt_fallback_opdefs",
+        "@llvm-project//mlir:TranslateLib",
         "@tf_runtime//:init_tfrt_dialects",
         "@tf_runtime//:mlirtobef_translate",
     ] + if_google(
@@ -881,4 +882,9 @@ cc_library(
         "@llvm-project//mlir:Pass",
         "@llvm-project//mlir:TransformUtils",
     ],
+)
+
+cc_library(
+    name = "constants",
+    hdrs = ["constants.h"],
 )

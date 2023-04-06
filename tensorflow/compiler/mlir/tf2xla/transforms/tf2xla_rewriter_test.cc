@@ -15,6 +15,7 @@ limitations under the License.
 #include "tensorflow/compiler/mlir/tf2xla/transforms/tf2xla_rewriter.h"
 
 #include <memory>
+#include <string>
 #include <utility>
 
 #include <gmock/gmock.h>
@@ -23,17 +24,22 @@ limitations under the License.
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/raw_ostream.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"  // from @llvm-project
 #include "mlir/IR/Builders.h"  // from @llvm-project
 #include "mlir/IR/Operation.h"  // from @llvm-project
+#include "mlir/IR/OwningOpRef.h"  // from @llvm-project
 #include "mlir/IR/PatternMatch.h"  // from @llvm-project
 #include "mlir/Support/LogicalResult.h"  // from @llvm-project
 #include "mlir/Transforms/DialectConversion.h"  // from @llvm-project
+#include "tensorflow/compiler/mlir/tensorflow/ir/tf_dialect.h"
 #include "tensorflow/compiler/mlir/tensorflow/ir/tf_ops.h"
 #include "tensorflow/compiler/mlir/tf2xla/transforms/test_utils.h"
 #include "tensorflow/compiler/tf2xla/xla_op_registry.h"
 #include "tensorflow/compiler/xla/client/xla_builder.h"
 #include "tensorflow/compiler/xla/client/xla_computation.h"
 #include "tensorflow/compiler/xla/mlir_hlo/mhlo/IR/hlo_ops.h"
+#include "tensorflow/compiler/xla/shape_util.h"
+#include "tensorflow/compiler/xla/xla_data.pb.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/tsl/lib/core/status_test_util.h"
 #include "tensorflow/tsl/platform/errors.h"
@@ -50,6 +56,8 @@ using ::mlir::Operation;
 using ::mlir::func::FuncOp;
 using ::tsl::Status;
 using ::tsl::StatusOr;
+using xla::ReplicaGroup;
+using ::xla::ShapeUtil;
 using ::xla::XlaBuilder;
 using ::xla::XlaComputation;
 
@@ -62,7 +70,7 @@ module attributes {tf.versions = {bad_consumers = [], min_consumer = 0 : i32, pr
 })";
 
 XlaComputation GetTestXlaComputation() {
-  XlaBuilder xla_builder("test_builder");
+  XlaBuilder xla_builder("test");
   xla::Add(xla::ConstantR0<float>(&xla_builder, 1.0),
            xla::ConstantR0<float>(&xla_builder, 2.0));
 
@@ -116,24 +124,24 @@ class Tf2XlaRewriterTest : public ::testing::Test {
  public:
   void SetUp() override {
     tensorflow::XlaOpRegistry::RegisterCompilationKernels();
-
-    StatusOr<OwningOpRef<ModuleOp>> module =
-        test::GetMlirModuleFromString(kMlirModuleStr, &context_);
-    ASSERT_TRUE(module.ok());
-
-    module_ = std::move(module.value());
-    context_.loadAllAvailableDialects();
   }
 
-  Status LegalizeOp(bool use_tf2xla_hlo_importer) {
+  Status CreateMlirModule(std::string module_string = kMlirModuleStr) {
+    TF_ASSIGN_OR_RETURN(
+        module_, test::GetMlirModuleFromString(module_string, &context_));
+
+    context_.loadAllAvailableDialects();
+    return tsl::OkStatus();
+  }
+
+  Status LegalizeSingleOp(bool use_tf2xla_hlo_importer, Operation& op) {
     SourceMgrDiagnosticHandler sourceMgrHandler(source_manager_, &context_);
 
-    Operation& first_op = GetFirstOpFromMain();
-    OpBuilder op_builder(&first_op);
+    OpBuilder op_builder(&op);
     EmptyPatternRewriter pattern_rewriter(op_builder);
 
     LogicalResult result = Tf2XlaRewriter::RewriteOp(
-        &first_op, pattern_rewriter,
+        &op, pattern_rewriter,
         /*device_type=*/"XLA_CPU_JIT",
         /*is_module_pass=*/false, use_tf2xla_hlo_importer);
     if (!result.succeeded()) {
@@ -143,11 +151,24 @@ class Tf2XlaRewriterTest : public ::testing::Test {
     return tsl::OkStatus();
   }
 
-  mlir::Operation& GetFirstOpFromMain() {
-    mlir::func::FuncOp main_func =
-        module_->lookupSymbol<mlir::func::FuncOp>("main");
+  Status LegalizeModuleWithSingleOp(
+      bool use_tf2xla_hlo_importer,
+      std::string module_string = kMlirModuleStr) {
+    TF_EXPECT_OK(CreateMlirModule(module_string));
+
+    Operation& first_op = GetFirstOpFromMain();
+    return LegalizeSingleOp(use_tf2xla_hlo_importer, first_op);
+  }
+
+  mlir::func::FuncOp GetMainFunc() {
+    func::FuncOp main_func = module_->lookupSymbol<mlir::func::FuncOp>("main");
     EXPECT_TRUE(main_func);
 
+    return main_func;
+  }
+
+  mlir::Operation& GetFirstOpFromMain() {
+    mlir::func::FuncOp main_func = GetMainFunc();
     return main_func.getBody().front().front();
   }
 
@@ -177,69 +198,166 @@ class Tf2XlaRewriterTest : public ::testing::Test {
 };
 
 TEST_F(Tf2XlaRewriterTest, LegalizesOp) {
-  TF_EXPECT_OK(LegalizeOp(/*use_tf2xla_hlo_importer=*/false));
+  TF_EXPECT_OK(LegalizeModuleWithSingleOp(/*use_tf2xla_hlo_importer=*/false));
 }
 
 TEST_F(Tf2XlaRewriterTest, LegalizesOpWithTf2xlaHloImporter) {
-  TF_EXPECT_OK(LegalizeOp(/*use_tf2xla_hlo_importer=*/true));
+  TF_EXPECT_OK(LegalizeModuleWithSingleOp(/*use_tf2xla_hlo_importer=*/true));
 }
 
 TEST_F(Tf2XlaRewriterTest, CreatesModuleFromXla) {
+  TF_ASSERT_OK(CreateMlirModule());
+
   XlaComputation computation = GetTestXlaComputation();
 
-  StatusOr<mlir::OwningOpRef<ModuleOp>> generated_module =
-      GetModuleFromXlaComputation(computation);
+  TF_ASSERT_OK_AND_ASSIGN(OwningOpRef<ModuleOp> generated_module,
+                          GetModuleFromXlaComputation(computation));
 
-  EXPECT_TRUE(generated_module.ok());
-  EXPECT_TRUE(generated_module.value()->lookupSymbol("main"));
-}
-
-TEST_F(Tf2XlaRewriterTest, ImportsXlaModule) {
-  XlaComputation computation = GetTestXlaComputation();
-
-  StatusOr<FuncOp> generated_function =
-      ImportXlaComputationIntoModule(computation);
-
-  TF_EXPECT_OK(generated_function.status());
-
-  ModuleOp parent_module = GetFirstOpFromMain().getParentOfType<ModuleOp>();
-
-  FuncOp expected_generated_function =
-      parent_module.lookupSymbol<mlir::func::FuncOp>(
-          "translated_tf2xla_kernel_tf.Unpack_0");
-
-  EXPECT_TRUE(expected_generated_function);
-  EXPECT_EQ(generated_function.value(), expected_generated_function);
+  EXPECT_TRUE(generated_module->lookupSymbol(computation.name()));
 }
 
 TEST_F(Tf2XlaRewriterTest, ReturnsMultipleValues) {
-  TF_EXPECT_OK(LegalizeOp(/*use_tf2xla_hlo_importer=*/true));
-
-  ModuleOp parent_module = GetFirstOpFromMain().getParentOfType<ModuleOp>();
+  TF_EXPECT_OK(LegalizeModuleWithSingleOp(/*use_tf2xla_hlo_importer=*/true));
 
   FuncOp expected_generated_function =
-      parent_module.lookupSymbol<mlir::func::FuncOp>(
-          "translated_tf2xla_kernel_tf.Unpack_0");
+      module_->lookupSymbol<mlir::func::FuncOp>(
+          "tf2xla_rewriter.tf.Unpack.9.0");
 
   EXPECT_TRUE(expected_generated_function);
   EXPECT_EQ(expected_generated_function.getNumResults(),
             GetFirstOpFromMain().getNumResults());
 }
 
-TEST_F(Tf2XlaRewriterTest, ErasesTupleOpFromMultipleReturnValues) {
-  TF_EXPECT_OK(LegalizeOp(/*use_tf2xla_hlo_importer=*/true));
+TEST_F(Tf2XlaRewriterTest, ImportsSingleComputation) {
+  XlaBuilder builder("test_builder");
+  XlaComputation to_apply;
+  {
+    auto sub_builder = builder.CreateSubBuilder("add");
+    auto arg0 = Parameter(sub_builder.get(), 0,
+                          ShapeUtil::MakeScalarShape(xla::F32), "x");
+    auto arg1 = Parameter(sub_builder.get(), 1,
+                          ShapeUtil::MakeScalarShape(xla::F32), "y");
+    Add(arg0, arg1);
+    TF_ASSERT_OK_AND_ASSIGN(to_apply, sub_builder->Build());
+  }
+  auto x = Parameter(&builder, 0, ShapeUtil::MakeShape(xla::F32, {4, 16}), "x");
+  ReplicaGroup group;
+  group.add_replica_ids(0);
+  group.add_replica_ids(1);
+  ReduceScatter(x, to_apply, /*scatter_dimension=*/1, /*shard_count=*/2,
+                /*replica_groups=*/{group});
 
-  ModuleOp parent_module = GetFirstOpFromMain().getParentOfType<ModuleOp>();
+  TF_ASSERT_OK_AND_ASSIGN(XlaComputation computation, builder.Build());
+  EXPECT_EQ(computation.proto().computations_size(), 2);
+
+  TF_ASSERT_OK(CreateMlirModule());
+  TF_ASSERT_OK_AND_ASSIGN(OwningOpRef<ModuleOp> generated_module,
+                          GetModuleFromXlaComputation(computation));
+
+  int num_func_ops = 0;
+  generated_module->walk(
+      [&num_func_ops](func::FuncOp func_op) { num_func_ops++; });
+
+  EXPECT_EQ(num_func_ops, 1);
+}
+
+TEST_F(Tf2XlaRewriterTest, InsertsConstantParameters) {
+  static constexpr char kModuleWithConstParam[] = R"(
+  module attributes {tf.versions = {bad_consumers = [], min_consumer = 0 : i32, producer = 1442 : i32}} {
+    func.func @main(%arg0: tensor<2xf32>) -> tensor<2xf32> {
+      %0 = "tf.Const"() {value = dense<1.42> : tensor<2xf32>} : () -> tensor<2xf32>
+      %1 = "tf.Atan2"(%arg0, %0) : (tensor<2xf32>, tensor<2xf32>) -> tensor<2xf32>
+      func.return %0 : tensor<2xf32>
+    }
+  })";
+
+  TF_ASSERT_OK(CreateMlirModule(kModuleWithConstParam));
+  func::FuncOp main_func = GetMainFunc();
+
+  // NOTE: Extra wonkiness here. LLVM returns an iterator and hold references to
+  // the op here. However, we're testing a rewriter and replace the original op
+  // with a call op. The original op that we have a reference to via the getOps
+  // is a use after free. To get around that, we clone the op, lose the ref to
+  // it and convert the cloned op instead. For purposes of just this test,
+  // it's fine, but this is bad.
+  int atan_op_count = 0;
+  for (auto atan_op : main_func.getOps<TF::Atan2Op>()) {
+    atan_op_count++;
+    mlir::Operation* cloned_op = atan_op->clone();
+
+    OpBuilder builder(atan_op);
+    builder.insert(cloned_op);
+
+    TF_ASSERT_OK(
+        LegalizeSingleOp(/*use_tf2xla_hlo_importer=*/true, *cloned_op));
+  }
+
+  EXPECT_EQ(atan_op_count, 1);
 
   FuncOp expected_generated_function =
-      parent_module.lookupSymbol<mlir::func::FuncOp>(
-          "translated_tf2xla_kernel_tf.Unpack_0");
+      module_->lookupSymbol<mlir::func::FuncOp>("tf2xla_rewriter.tf.Atan2.9.0");
+
+  EXPECT_TRUE(expected_generated_function);
+  EXPECT_EQ(expected_generated_function.getNumArguments(), 2);
+
+  EXPECT_TRUE(expected_generated_function.getArgument(1).getUses().empty());
+  EXPECT_FALSE(expected_generated_function.getArgument(0).getUses().empty());
+
+  mhlo::ConstantOp const_op = llvm::dyn_cast<mhlo::ConstantOp>(
+      expected_generated_function.getBody().front().front());
+  EXPECT_TRUE(const_op);
+  EXPECT_EQ(const_op.getValue().getSplatValue<float>(), 1.42f);
+}
+
+TEST_F(Tf2XlaRewriterTest, ImportsPrivateFunctions) {
+  XlaBuilder builder("test_builder");
+  XlaComputation to_apply;
+  {
+    auto sub_builder = builder.CreateSubBuilder("add");
+    auto arg0 = Parameter(sub_builder.get(), 0,
+                          ShapeUtil::MakeScalarShape(xla::F32), "x");
+    auto arg1 = Parameter(sub_builder.get(), 1,
+                          ShapeUtil::MakeScalarShape(xla::F32), "y");
+    Add(arg0, arg1);
+    TF_ASSERT_OK_AND_ASSIGN(to_apply, sub_builder->Build());
+  }
+  auto a = Parameter(&builder, 0, ShapeUtil::MakeScalarShape(xla::F32), "a");
+  auto b = Parameter(&builder, 1, ShapeUtil::MakeScalarShape(xla::F32), "b");
+  xla::Call(&builder, to_apply, {a, b});
+  TF_ASSERT_OK_AND_ASSIGN(XlaComputation computation, builder.Build());
+  EXPECT_EQ(computation.proto().computations_size(), 2);
+
+  TF_ASSERT_OK(CreateMlirModule());
+  TF_ASSERT_OK_AND_ASSIGN(FuncOp generated_function,
+                          ImportXlaComputationIntoModule(computation));
+
+  EXPECT_TRUE(generated_function);
+
+  int num_func_ops = 0;
+  bool has_private_function = false;
+  module_->walk([&num_func_ops, &has_private_function](func::FuncOp func_op) {
+    num_func_ops++;
+    has_private_function &= func_op.isPrivate();
+  });
+
+  EXPECT_EQ(num_func_ops, 3);
+  EXPECT_FALSE(has_private_function);
+}
+
+TEST_F(Tf2XlaRewriterTest, ErasesTupleOpFromMultipleReturnValues) {
+  TF_EXPECT_OK(LegalizeModuleWithSingleOp(/*use_tf2xla_hlo_importer=*/true));
+
+  FuncOp expected_generated_function =
+      module_->lookupSymbol<mlir::func::FuncOp>(
+          "tf2xla_rewriter.tf.Unpack.9.0");
   ASSERT_TRUE(expected_generated_function);
 
   EXPECT_TRUE(expected_generated_function.getOps<mhlo::TupleOp>().empty());
 }
 
 TEST_F(Tf2XlaRewriterTest, FailsUnpackingModuleWithoutTuple) {
+  TF_ASSERT_OK(CreateMlirModule());
+
   FuncOp funcOp = GetFirstOpFromMain().getParentOfType<FuncOp>();
   ASSERT_TRUE(funcOp);
 

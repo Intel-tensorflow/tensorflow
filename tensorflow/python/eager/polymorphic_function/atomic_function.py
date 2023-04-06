@@ -18,9 +18,12 @@ import dataclasses
 from typing import Any
 
 from tensorflow.python.client import pywrap_tf_session
+from tensorflow.python.eager import cancellation
 from tensorflow.python.eager import context
 from tensorflow.python.eager import execute
 from tensorflow.python.eager import tape
+from tensorflow.python.eager.polymorphic_function import attributes as attributes_lib
+from tensorflow.python.framework import auto_control_deps_utils as acd
 from tensorflow.python.framework import error_interpolation
 from tensorflow.python.framework import errors
 from tensorflow.python.framework import ops
@@ -60,6 +63,23 @@ class _InterpolateFunctionError(object):
     return False
 
 
+def _set_read_only_resource_inputs_attr(op, func_graph):
+  """Sets the list of resource inputs which are read-only.
+
+  This is used by AutomaticControlDependencies.
+
+  Args:
+    op: PartitionedCall Operation.
+    func_graph: FuncGraph.
+  """
+  read_only_indices = acd.get_read_only_resource_input_indices_graph(func_graph)
+  ops.set_int_list_attr(op, acd.READ_ONLY_RESOURCE_INPUTS_ATTR,
+                        read_only_indices)
+
+# TODO(b/232961485): Remove after quarantined `add_function_callback` removed.
+function_callbacks = set()
+
+
 # TODO(fmuham): Lower to FunctionRecord or remove otherwise.
 @dataclasses.dataclass(frozen=True)
 class GraphArtifacts:
@@ -86,21 +106,23 @@ class AtomicFunction:
 
   Lowest level abstraction in the Python tf.function implementation.
   """
+  __slots__ = [
+      "_name",
+      "_bound_context",
+      "_graph_artifacts",
+      "_cached_definition",
+  ]
 
   def __init__(self, name, bound_context, graph_artifacts):
     self._name = compat.as_bytes(name)
     self._bound_context = bound_context
     self._graph_artifacts = graph_artifacts
+    self._cached_definition = None
 
     if self.name not in RUNTIME_FUNCTION_REFS:
       RUNTIME_FUNCTION_REFS[self.name] = 1
     else:
       RUNTIME_FUNCTION_REFS[self.name] += 1
-
-    # TODO(fmuham): Lower to C++ or remove otherwise.
-    self.grad_func_name = None
-    self.python_grad_func = None
-    self._grad_func = None
 
   @property
   def _c_func(self):
@@ -125,26 +147,23 @@ class AtomicFunction:
   @property
   def cached_definition(self):
     """Cached FunctionDef (not guaranteed to be fresh)."""
-    try:
-      return self._cached_definition
-    except AttributeError:
+    if self._cached_definition is None:
       self._cached_definition = self.definition
+
     return self._cached_definition
 
   @property
   def name(self):
     return self._name
 
-  def call(self, args, cancellation_manager=None):
+  def __call__(self, *args):
     """Calls this function with `args` as inputs.
 
     `ConcreteFunction` execution respects device annotations only if the
     function won't be compiled with xla.
 
     Args:
-      args: a list of arguments to supply this function with.
-      cancellation_manager: a `CancellationManager` object that can be used to
-        cancel function execution.
+      *args: arguments to call this function with.
 
     Returns:
       The outputs of the function call.
@@ -172,11 +191,11 @@ class AtomicFunction:
     attrs = ("executor_type", executor_type, "config_proto", config)
     if executing_eagerly:
       with _InterpolateFunctionError(self):
-        if cancellation_manager is None:
+        if cancellation.context() is None:
           outputs = execute.execute(
               str(self.cached_definition.signature.name),
               num_outputs=self._graph_artifacts.num_outputs,
-              inputs=args,
+              inputs=list(args),
               attrs=attrs,
               ctx=self._bound_context,
           )
@@ -184,17 +203,14 @@ class AtomicFunction:
           outputs = execute.execute_with_cancellation(
               str(self.cached_definition.signature.name),
               num_outputs=self._graph_artifacts.num_outputs,
-              inputs=args,
+              inputs=list(args),
               attrs=attrs,
               ctx=self._bound_context,
-              cancellation_manager=cancellation_manager,
+              cancellation_manager=cancellation.context(),
           )
       # Replace empty list with None
       outputs = outputs or None
     else:
-      # TODO(akshayka): Either remove this if the FunctionLibraryRuntime
-      # creates `PartitionedCallOp` kernels by default, or remove the previous
-      # branch if a TPU kernel is registered for `PartitionedCall`.
       with _InterpolateFunctionError(self):
         with ops.control_dependencies(self._graph_artifacts.control_captures):
           # The caller must use record_operation to record this operation in the
@@ -203,14 +219,28 @@ class AtomicFunction:
           # registered for PartitionedCall, so recording this operation confuses
           # forwardprop code (GradientTape manages to ignore it).
           with tape.stop_recording():
-            outputs = functional_ops.partitioned_call(
-                args=args,
-                f=self,
+            graph = ops.get_default_graph()
+            graph._add_function_recursive(self)  # pylint: disable=protected-access
+
+            op = functional_ops.partitioned_call_op(
+                name=self.name,
+                args=list(args),
+                is_stateful=len(self.stateful_ops) > 0,  # pylint: disable=g-explicit-length-test
                 tout=self._graph_artifacts.output_types,
-                executing_eagerly=executing_eagerly,
                 config=config,
                 executor_type=executor_type,
+                xla_compile_attr=self.cached_definition.attr.get(
+                    attributes_lib.XLA_COMPILE, None
+                ),
             )
+            _set_read_only_resource_inputs_attr(op, self.graph)
+            if hasattr(self.graph, "collective_manager_ids_used"):
+              ops.set_int_list_attr(
+                  op,
+                  acd.COLLECTIVE_MANAGER_IDS,
+                  self.graph.collective_manager_ids_used,
+              )
+            outputs = op.outputs if op.outputs else op
 
     for i, func_graph_output in enumerate(
         self._graph_artifacts.func_graph_outputs

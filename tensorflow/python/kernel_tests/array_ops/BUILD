@@ -30,6 +30,7 @@ cuda_py_test(
         "//tensorflow/python:math_ops",
         "//tensorflow/python:state_ops",
         "//tensorflow/python:test_ops",
+        "//tensorflow/python:variable_v1",
         "//tensorflow/python:variables",
         "//tensorflow/python/eager:context",
         "//tensorflow/python/eager:def_function",
@@ -286,8 +287,6 @@ cuda_py_test(
     srcs = ["gather_op_test.py"],
     shard_count = 3,
     deps = [
-        "@absl_py//absl/testing:parameterized",
-        "//third_party/py/numpy",
         "//tensorflow/python:array_ops",
         "//tensorflow/python:client_testlib",
         "//tensorflow/python:framework_for_generated_wrappers",
@@ -296,6 +295,8 @@ cuda_py_test(
         "//tensorflow/python:ref_variable",
         "//tensorflow/python/eager:def_function",
         "//tensorflow/python/framework:tensor_spec",
+        "//third_party/py/numpy",
+        "@absl_py//absl/testing:parameterized",
     ] + tf_additional_xla_deps_py(),
 )
 
@@ -522,6 +523,7 @@ cuda_py_test(
         "//tensorflow/python:math_ops",
         "//tensorflow/python:resource_variable_ops",
         "//tensorflow/python:state_ops",
+        "//tensorflow/python:variable_v1",
         "//tensorflow/python:variables",
         "//third_party/py/numpy",
     ],

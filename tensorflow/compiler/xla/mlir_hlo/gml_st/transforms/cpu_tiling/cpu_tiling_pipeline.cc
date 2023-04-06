@@ -29,8 +29,11 @@ GmlStCPUTilingOptions getDefaultCPUPipelineOptions(StringRef cpuName,
                                                    int64_t statsDetailLevel) {
   GmlStCPUTilingOptions opts;
   opts.vectorSize = 8;
-  opts.reduction1DTileSize = 32;
-  opts.reduction2DTileSizes = {4, 4};
+  opts.reductionEnableHeuristic = false;
+  opts.reduction1DSplitRatio = 8;
+  opts.reduction1DTileSize = 8;
+  opts.reduction2DParallelDimTileSize = 4;
+  opts.reduction2DReductionDimTileSize = 4;
   opts.matmulTileSizes = {};
   // TODO(vuson): Re-enable or remove this:
   opts.vectorizationSizeThreshold = 0;
@@ -64,13 +67,22 @@ void addCPUTilingPipeline(OpPassManager& pm,
     pm.addPass(createCSEPass());
   }
 
+  pm.addNestedPass<FuncOp>(createRewriteDotAsReducePass());
   if (options.lowerToMmt4d) pm.addNestedPass<FuncOp>(createPackMatmulPass());
 
+  pm.addNestedPass<FuncOp>(createTransformBatchMatmulForCpuPass());
   pm.addNestedPass<FuncOp>(createTransformConvForCpuPass());
   pm.addNestedPass<FuncOp>(createTransformScatterForCpuPass());
-  pm.addNestedPass<FuncOp>(createTransformReduceForCpuPass(
-      options.vectorSize, options.reduction1DTileSize,
-      options.reduction2DTileSizes));
+
+  TransformReduceForCpuPassOptions reductionOpts;
+  reductionOpts.enableHeuristic = options.reductionEnableHeuristic;
+  reductionOpts.tileSize1D = options.reduction1DTileSize;
+  reductionOpts.splitRatio1D = options.reduction1DSplitRatio;
+  reductionOpts.parallelDimTileSize2D = options.reduction2DParallelDimTileSize;
+  reductionOpts.reductionDimTileSize2D =
+      options.reduction2DReductionDimTileSize;
+  pm.addNestedPass<FuncOp>(createTransformReduceForCpuPass(reductionOpts));
+
   pm.addNestedPass<FuncOp>(
       createTransformDotForCpuPass(options.matmulTileSizes, options.cpuName));
   // Upstream generalization of tensor.pack/unpack (i.e. tensor.pack/unpack ->

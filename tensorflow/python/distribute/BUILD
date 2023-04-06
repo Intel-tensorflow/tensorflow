@@ -697,6 +697,7 @@ distribute_py_test(
     ],
     tpu_tags = [
         "no_oss",
+        "no_gpu",  # b/276511061
     ],
     xla_enable_strict_auto_jit = False,  # PSStrategy doesn't work on _xla tests
     deps = [
@@ -1076,7 +1077,10 @@ distribute_py_test(
     srcs = ["strategy_combinations_test.py"],
     disable_mlir_bridge = False,
     python_version = "PY3",
-    tags = ["no_cuda_asan"],  # TODO(b/195246941) b/196591124
+    tags = [
+        "no_cuda_asan",  # TODO(b/195246941) b/196591124
+        "no_gpu",  # b/276511061
+    ],
     deps = [
         ":central_storage_strategy",
         ":collective_all_reduce_strategy",
@@ -1404,6 +1408,7 @@ py_library(
         "//tensorflow/python:summary_ops_v2",
         "//tensorflow/python:training",
         "//tensorflow/python:variable_scope",
+        "//tensorflow/python:variable_v1",
         "//tensorflow/python:variables",
         "//tensorflow/python/client:session",
         "//tensorflow/python/data/ops:dataset_ops",

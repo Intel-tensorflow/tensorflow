@@ -13,23 +13,18 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef TENSORFLOW_COMPILER_XLA_SERVICE_GPU_ALL_REDUCE_KERNEL_H_
-#define TENSORFLOW_COMPILER_XLA_SERVICE_GPU_ALL_REDUCE_KERNEL_H_
+syntax = "proto3";
 
-#include "third_party/nccl/nccl.h"
+package xla.memory_space_assignment;
 
-namespace xla::gpu {
+// Memory space assignment options for slicing prefetches into smaller
+// asynchronous copies, reducing prefetch memory allocation pressure.
+//
+// No prefetch slicing is performed if max_slices == 0.
+message SlicedPrefetchOptions {
+  // The maximum number of slices into which to slice a prefetch.
+  uint32 max_slices = 1;
 
-inline constexpr int kMaxBuffers = 32;
-inline constexpr int kMaxNumGpus = 16;
-inline constexpr int kLaunchBounds = 256;
-
-enum SyncFlag { SYNC_NONE = 0, SYNC_START = 1, SYNC_END = 2 };
-
-const void* GetSyncKernel();
-const void* GetAllReduceKernel(ncclDataType_t dtype, int64_t* num_elements,
-                               int cc_major);
-
-}  // namespace xla::gpu
-
-#endif  // TENSORFLOW_COMPILER_XLA_SERVICE_GPU_ALL_REDUCE_KERNEL_H_
+  // The minimum size (in bytes) of any slice.
+  uint64 min_slice_bytes = 2;
+}
