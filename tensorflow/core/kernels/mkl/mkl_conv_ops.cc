@@ -97,6 +97,7 @@ struct MklConvFwdParams {
   memory::dims fuse_bn_dims;
   MklTensorFormat tf_fmt;
   bool native_format;
+  bool is_depthwise;
   string dtypes = string("");
   struct PostOpParam {
     string name;
@@ -112,7 +113,7 @@ struct MklConvFwdParams {
                    memory::dims strides, memory::dims dilations,
                    memory::dims padding_left, memory::dims padding_right,
                    memory::dims fuse_bn_dims, MklTensorFormat tf_fmt,
-                   bool native_format)
+                   bool native_format, bool is_depthwise)
       : src_dims(src_dims),
         filter_dims(filter_dims),
         bias_dims(bias_dims),
@@ -123,7 +124,8 @@ struct MklConvFwdParams {
         padding_right(padding_right),
         fuse_bn_dims(fuse_bn_dims),
         tf_fmt(tf_fmt),
-        native_format(native_format) {}
+        native_format(native_format),
+        is_depthwise(is_depthwise) {}
 };
 
 // With quantization, input, filter, and output can have different types
@@ -487,8 +489,9 @@ class MklConvFwdPrimitive : public MklPrimitive {
         } else if (post_op_param.name == "wei_scale") {
           is_scale_set.insert({"wei", true});
           const int scale_size = post_op_param.param.size();
-          post_ops_attr.set_scales_mask(DNNL_ARG_WEIGHTS,
-                                        scale_size == 1 ? 0 : 2);
+          const int mask =
+              scale_size == 1 ? 0 : convFwdDims.is_depthwise ? 3 : 1;
+          post_ops_attr.set_scales_mask(DNNL_ARG_WEIGHTS, mask);
           context_.wei_scale_md.reset(new memory::desc(
               {scale_size}, MklDnnType<float>(), memory::format_tag::x));
           context_.wei_scale_mem.reset(
@@ -1016,7 +1019,7 @@ class MklConvOp : public OpKernel {
       MklConvFwdParams convFwdDims(
           src_dims, filter_dims, fuse_biasadd_ ? bias_dims : NONE_DIMS,
           dst_dims_mkl_order, strides, dilations, padding_left, padding_right,
-          fuse_bn_dims, tf_fmt, native_format);
+          fuse_bn_dims, tf_fmt, native_format, is_depthwise);
 
       // TODO(intel-tf): Extend the basic parameters for data types and fusions
       this->ExtendConvFwdParams(context, convFwdDims);
@@ -2568,7 +2571,7 @@ class MklQuantizedConvOp
       if (depth == 1) {
         reorder_attr.set_scales_mask(DNNL_ARG_DST, 0);
       } else {
-        reorder_attr.set_scales_mask(DNNL_ARG_DST, 2);
+        reorder_attr.set_scales_mask(DNNL_ARG_DST, 1);
       }
 
       auto bias_md = memory::desc({static_cast<int>(bias_tensor.NumElements())},

@@ -114,7 +114,7 @@ class MklRequantizePerChannelOp : public OpKernel {
 #ifndef ENABLE_ONEDNN_V3
       reorder_attr.set_output_scales(2, scales);
 #else
-      reorder_attr.set_scales_mask(DNNL_ARG_DST, 0);
+      reorder_attr.set_scales_mask(DNNL_ARG_DST, 2);
       auto scale_mem =
           memory({{scales.size()}, MklDnnType<float>(), memory::format_tag::x},
                  cpu_engine_, scales.data());
