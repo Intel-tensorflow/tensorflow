@@ -531,14 +531,12 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
     rinfo_.push_back({csinfo_.matmul,
                       mkl_op_registry::GetMklOpName(csinfo_.matmul),
                       CopyAttrsAll, MatMulRewrite, kRewriteForOpNameChange});
-#ifndef ENABLE_ONEDNN_V3
     rinfo_.push_back({csinfo_.leakyrelu,
                       mkl_op_registry::GetMklOpName(csinfo_.leakyrelu),
                       CopyAttrsAll, LeakyReluRewrite, GetRewriteCause()});
     rinfo_.push_back({csinfo_.leakyrelu_grad,
                       mkl_op_registry::GetMklOpName(csinfo_.leakyrelu_grad),
                       CopyAttrsAll, LeakyReluRewrite, GetRewriteCause()});
-#endif  // !ENABLE_ONEDNN_V3
     rinfo_.push_back(
         {csinfo_.max_pool, mkl_op_registry::GetMklOpName(csinfo_.max_pool),
          CopyAttrsAll, NonDepthBatchWisePoolRewrite, GetRewriteCause()});
@@ -684,7 +682,6 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
                       mkl_op_registry::GetMklOpName(csinfo_.quantize_v2),
                       CopyAttrsAll, QuantizeOpRewrite,
                       kRewriteForOpNameChange});
-#ifndef ENABLE_ONEDNN_V3
     rinfo_.push_back({csinfo_.relu, mkl_op_registry::GetMklOpName(csinfo_.relu),
                       CopyAttrsAll, AlwaysRewrite, GetRewriteCause()});
     rinfo_.push_back({csinfo_.relu_grad,
@@ -696,15 +693,18 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
     rinfo_.push_back({csinfo_.relu6_grad,
                       mkl_op_registry::GetMklOpName(csinfo_.relu6_grad),
                       CopyAttrsAll, AlwaysRewrite, GetRewriteCause()});
+#ifndef ENABLE_ONEDNN_V3
     rinfo_.push_back({csinfo_.requantize,
                       mkl_op_registry::GetMklOpName(csinfo_.requantize),
                       CopyAttrsAll, AlwaysRewrite, GetRewriteCause()});
+#endif  // !ENABLE_ONEDNN_V3
     // Optimized TanhGrad support exists only in DNNL 1.x.
     rinfo_.push_back({csinfo_.tanh, mkl_op_registry::GetMklOpName(csinfo_.tanh),
                       CopyAttrsAll, AlwaysRewrite, GetRewriteCause()});
     rinfo_.push_back({csinfo_.tanh_grad,
                       mkl_op_registry::GetMklOpName(csinfo_.tanh_grad),
                       CopyAttrsAll, AlwaysRewrite, GetRewriteCause()});
+#ifndef ENABLE_ONEDNN_V3
     rinfo_.push_back({csinfo_.reshape,
                       mkl_op_registry::GetMklOpName(csinfo_.reshape),
                       CopyAttrsAll, AlwaysRewrite, GetRewriteCause()});

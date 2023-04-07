@@ -14,7 +14,7 @@ limitations under the License.
 ==============================================================================*/
 
 // See docs in ../ops/nn_ops.cc.
-#if defined(INTEL_MKL) && !defined(ENABLE_ONEDNN_V3)
+#ifdef INTEL_MKL
 
 #include <unordered_map>
 
@@ -40,20 +40,40 @@ using EltwiseFwdPd = dnnl::eltwise_forward::primitive_desc;
 using EltwiseBwdPd = dnnl::eltwise_backward::primitive_desc;
 
 namespace tensorflow {
+#ifndef ENABLE_ONEDNN_V3
+#define GET_MEMORY_DESC(md) md.data
+#define GET_RELU6_ALGORITHM dnnl::algorithm::eltwise_bounded_relu
+#define GET_RELU6_PARAMS RELU6_UPPER_BOUND, 0.0f
+#define SET_MKL_LAYOUT(md) SetMklLayout(&md)
+#else
+#define GET_MEMORY_DESC(md) md
+#define GET_RELU6_ALGORITHM dnnl::algorithm::eltwise_clip
+#define GET_RELU6_PARAMS 0.0f, RELU6_UPPER_BOUND
+#define SET_MKL_LAYOUT(md) SetMklLayout(md)
+#endif  // !ENABLE_ONEDNN_V3
 
 template <typename T>
 class MklEltwiseFwdParams {
  public:
   memory::dims src_dims;
   memory::desc src_md;
+#ifdef ENABLE_ONEDNN_V3
+  memory::desc dst_md;
+#endif  // ENABLE_ONEDNN_V3
   algorithm alg_kind;
   float alpha;
   float beta;
 
   MklEltwiseFwdParams(memory::dims src_dims, memory::desc src_md,
+#ifdef ENABLE_ONEDNN_V3
+                      memory::desc dst_md,
+#endif  // ENABLE_ONEDNN_V3
                       algorithm alg_kind, float alpha, float beta)
       : src_dims(src_dims),
         src_md(src_md),
+#ifdef ENABLE_ONEDNN_V3
+        dst_md(dst_md),
+#endif  // ENABLE_ONEDNN_V3
         alg_kind(alg_kind),
         alpha(alpha),
         beta(beta) {}
@@ -80,7 +100,7 @@ class MklEltwiseFwdPrimitive : public MklPrimitive {
 #ifdef DNNL_AARCH64_USE_ACL
     mutex_lock lock(primitive_execution_mu_);
 #endif
-#ifndef ENABLE_ONEDNN_OPENMP
+#if !defined(ENABLE_ONEDNN_OPENMP) && !defined(ENABLE_ONEDNN_V3)
     context_.src_mem->set_data_handle(
         static_cast<void*>(const_cast<T*>(src_data)), *fwd_stream);
     context_.dst_mem->set_data_handle(static_cast<void*>(dst_data),
@@ -89,7 +109,7 @@ class MklEltwiseFwdPrimitive : public MklPrimitive {
     context_.src_mem->set_data_handle(
         static_cast<void*>(const_cast<T*>(src_data)));
     context_.dst_mem->set_data_handle(static_cast<void*>(dst_data));
-#endif  // !ENABLE_ONEDNN_OPENMP
+#endif  // !ENABLE_ONEDNN_OPENMP && !ENABLE_ONEDNN_V3
     DCHECK_EQ(context_.fwd_primitives.size(),
               context_.fwd_primitives_args.size());
     execute_primitives(context_.fwd_primitives, fwd_stream,
@@ -110,7 +130,9 @@ class MklEltwiseFwdPrimitive : public MklPrimitive {
     std::shared_ptr<memory> dst_mem;
 
     // desc & primitive desc
+#ifndef ENABLE_ONEDNN_V3
     std::shared_ptr<dnnl::eltwise_forward::desc> fwd_desc;
+#endif  // !ENABLE_ONEDNN_V3
     std::shared_ptr<EltwiseFwdPd> fwd_pd;
 
     // memory desc
@@ -127,7 +149,9 @@ class MklEltwiseFwdPrimitive : public MklPrimitive {
     EltwiseFwdContext()
         : src_mem(nullptr),
           dst_mem(nullptr),
+#ifndef ENABLE_ONEDNN_V3
           fwd_desc(nullptr),
+#endif  // !ENABLE_ONEDNN_V3
           fwd_pd(nullptr),
           src_md(nullptr),
           dst_md(nullptr),
@@ -137,13 +161,20 @@ class MklEltwiseFwdPrimitive : public MklPrimitive {
   // Eltwise forward primitive setup
   void Setup(const MklEltwiseFwdParams<T>& fwdParams) {
     // create memory descriptors for eltwise data with specified format
-    context_.src_md.reset(new memory::desc(fwdParams.src_md.data));
+    context_.src_md.reset(new memory::desc(GET_MEMORY_DESC(fwdParams.src_md)));
 
     // Create an eltwise forward descriptor and primitive descriptor
+#ifndef ENABLE_ONEDNN_V3
     context_.fwd_desc.reset(new eltwise_forward::desc(
         prop_kind::forward, fwdParams.alg_kind, *context_.src_md,
         fwdParams.alpha, fwdParams.beta));
     context_.fwd_pd.reset(new EltwiseFwdPd(*context_.fwd_desc, cpu_engine_));
+#else
+    context_.dst_md.reset(new memory::desc(fwdParams.dst_md));
+    context_.fwd_pd.reset(new EltwiseFwdPd(
+        cpu_engine_, prop_kind::forward, fwdParams.alg_kind, *context_.src_md,
+        *context_.dst_md, fwdParams.alpha, fwdParams.beta));
+#endif  // !ENABLE_ONEDNN_V3
     auto fwd_pd = context_.fwd_pd.get();
 
     // Create memory primitive based on dummy data
@@ -262,7 +293,7 @@ class MklEltwiseBwdPrimitive : public MklPrimitive {
 #ifdef DNNL_AARCH64_USE_ACL
     mutex_lock lock(primitive_execution_mu_);
 #endif
-#ifndef ENABLE_ONEDNN_OPENMP
+#if !defined(ENABLE_ONEDNN_OPENMP) && !defined(ENABLE_ONEDNN_V3)
     context_.src_mem->set_data_handle(
         static_cast<void*>(const_cast<T*>(src_data)), *bwd_stream);
     context_.diff_dst_mem->set_data_handle(
@@ -275,7 +306,7 @@ class MklEltwiseBwdPrimitive : public MklPrimitive {
     context_.diff_dst_mem->set_data_handle(
         static_cast<void*>(const_cast<T*>(diff_dst_data)));
     context_.diff_src_mem->set_data_handle(static_cast<void*>(diff_src_data));
-#endif  // !ENABLE_ONEDNN_OPENMP
+#endif  // !ENABLE_ONEDNN_OPENMP && !ENABLE_ONEDNN_V3
     DCHECK_EQ(context_.bwd_primitives.size(),
               context_.bwd_primitives_args.size());
     execute_primitives(context_.bwd_primitives, bwd_stream,
@@ -298,15 +329,23 @@ class MklEltwiseBwdPrimitive : public MklPrimitive {
     std::shared_ptr<memory> diff_src_mem;
 
     // Backward Eltwise descriptor.
+#ifndef ENABLE_ONEDNN_V3
     std::shared_ptr<dnnl::eltwise_backward::desc> bwd_desc;
+#endif  // !ENABLE_ONEDNN_V3
 
     // Memory descriptors.
     std::shared_ptr<memory::desc> src_md;
     std::shared_ptr<memory::desc> diff_dst_md;
+#ifdef ENABLE_ONEDNN_V3
+    std::shared_ptr<memory::desc> dst_md;
+    std::shared_ptr<memory::desc> diff_src_md;
+#endif  // ENABLE_ONEDNN_V3
     std::shared_ptr<memory::desc> common_md;
 
     // Forward and backward descriptors and primitive descriptors.
+#ifndef ENABLE_ONEDNN_V3
     std::shared_ptr<dnnl::eltwise_forward::desc> fwd_desc;
+#endif  // !ENABLE_ONEDNN_V3
     std::shared_ptr<EltwiseFwdPd> fwd_pd;
     std::shared_ptr<EltwiseBwdPd> bwd_pd;
 
@@ -323,8 +362,14 @@ class MklEltwiseBwdPrimitive : public MklPrimitive {
           diff_src_mem(nullptr),
           src_md(nullptr),
           diff_dst_md(nullptr),
+#ifdef ENABLE_ONEDNN_V3
+          dst_md(nullptr),
+          diff_src_md(nullptr),
+#endif  // ENABLE_ONEDNN_V3
           common_md(nullptr),
+#ifndef ENABLE_ONEDNN_V3
           fwd_desc(nullptr),
+#endif  // !ENABLE_ONEDNN_V3
           fwd_pd(nullptr),
           bwd_pd(nullptr),
           eltwise_bwd(nullptr) {}
@@ -333,10 +378,17 @@ class MklEltwiseBwdPrimitive : public MklPrimitive {
   // Eltwise backward primitive setup
   void Setup(const MklEltwiseBwdParams<T>& bwdParams) {
     // Create memory descriptors for eltwise data w/ no specified format
-    context_.src_md.reset(new memory::desc(bwdParams.common_md.data));
-    context_.diff_dst_md.reset(new memory::desc(bwdParams.common_md.data));
+    context_.src_md.reset(
+        new memory::desc(GET_MEMORY_DESC(bwdParams.common_md)));
+    context_.diff_dst_md.reset(
+        new memory::desc(GET_MEMORY_DESC(bwdParams.common_md)));
+#ifdef ENABLE_ONEDNN_V3
+    context_.dst_md.reset(new memory::desc(bwdParams.common_md));
+    context_.diff_src_md.reset(new memory::desc(bwdParams.common_md));
+#endif  // ENABLE_ONEDNN_V3
 
     // Create forward eltwise primitive.
+#ifndef ENABLE_ONEDNN_V3
     context_.fwd_desc.reset(new dnnl::eltwise_forward::desc(
         prop_kind::forward_training, bwdParams.alg_kind, *context_.src_md,
         bwdParams.alpha, bwdParams.beta));
@@ -346,6 +398,15 @@ class MklEltwiseBwdPrimitive : public MklPrimitive {
         bwdParams.alpha, bwdParams.beta));
     context_.bwd_pd.reset(
         new EltwiseBwdPd(*context_.bwd_desc, cpu_engine_, *context_.fwd_pd));
+#else
+    context_.fwd_pd.reset(new EltwiseFwdPd(
+        cpu_engine_, prop_kind::forward_training, bwdParams.alg_kind,
+        *context_.src_md, *context_.dst_md, bwdParams.alpha, bwdParams.beta));
+    context_.bwd_pd.reset(
+        new EltwiseBwdPd(cpu_engine_, bwdParams.alg_kind, *context_.diff_src_md,
+                         *context_.diff_dst_md, *context_.src_md,
+                         bwdParams.alpha, bwdParams.beta, *context_.fwd_pd));
+#endif  // !ENABLE_ONEDNN_V3
 
     auto bwd_pd = context_.bwd_pd.get();
 
@@ -474,7 +535,13 @@ class MklReluOpBase : public OpKernel {
         src_md = MklDnnData<T>::CreateBlockedMemDesc(src_dims, src_strides);
       }
       // Try to get an eltwise forward primitive from caching pool
+#ifndef ENABLE_ONEDNN_V3
       MklEltwiseFwdParams<T> fwdParams(src_dims, src_md, alg_kind, alpha_,
+#else
+      memory::desc dst_md = src_md;
+      MklEltwiseFwdParams<T> fwdParams(src_dims, src_md, dst_md, alg_kind,
+                                       alpha_,
+#endif  // !ENABLE_ONEDNN_V3
                                        beta_);
       MklEltwiseFwdPrimitive<T>* eltwise_fwd =
           MklEltwiseFwdPrimitiveFactory<T>::Get(fwdParams);
@@ -500,7 +567,7 @@ class MklReluOpBase : public OpKernel {
       if (is_src_reordered || dnn_shape_src.IsMklTensor()) {
         dnn_shape_dst.SetMklTensor(true);
         auto dst_pd = eltwise_fwd_pd->dst_desc();
-        dnn_shape_dst.SetMklLayout(&dst_pd);
+        dnn_shape_dst.SET_MKL_LAYOUT(dst_pd);
         dnn_shape_dst.SetElemType(MklDnnType<T>());
         if (dnn_shape_src.IsMklTensor()) {
           dnn_shape_dst.SetTfLayout(dnn_shape_src.GetDimension(),
@@ -712,7 +779,7 @@ class MklReluGradOpBase : public OpKernel {
       if (dnn_shape_src.IsMklTensor() || dnn_shape_diff_dst.IsMklTensor()) {
         auto diff_src_pd = eltwise_bwd_pd->diff_src_desc();
         dnn_shape_diff_src.SetMklTensor(true);
-        dnn_shape_diff_src.SetMklLayout(&diff_src_pd);
+        dnn_shape_diff_src.SET_MKL_LAYOUT(diff_src_pd);
         dnn_shape_diff_src.SetElemType(MklDnnType<T>());
         if (dnn_shape_src.IsMklTensor()) {
           dnn_shape_diff_src.SetTfLayout(dnn_shape_src.GetDimension(),
@@ -994,14 +1061,13 @@ class MklTanhGradOp
 
 #define RELU6_UPPER_BOUND 6.0f
 template <typename Device, typename T>
-class MklRelu6Op
-    : public MklReluOpBase<Device, T, dnnl::algorithm::eltwise_bounded_relu> {
+class MklRelu6Op : public MklReluOpBase<Device, T, GET_RELU6_ALGORITHM> {
  public:
   ~MklRelu6Op() {}
 
   explicit MklRelu6Op(OpKernelConstruction* context)
-      : MklReluOpBase<Device, T, dnnl::algorithm::eltwise_bounded_relu>(
-            context, RELU6_UPPER_BOUND, 0.0f) {}
+      : MklReluOpBase<Device, T, GET_RELU6_ALGORITHM>(context,
+                                                      GET_RELU6_PARAMS) {}
 
   virtual void Compute_Scalar(OpKernelContext* context) {
     const size_t src_index = 0;  // index of src input tensor
@@ -1025,14 +1091,13 @@ class MklRelu6Op
 
 template <typename Device, typename T>
 class MklRelu6GradOp
-    : public MklReluGradOpBase<Device, T,
-                               dnnl::algorithm::eltwise_bounded_relu> {
+    : public MklReluGradOpBase<Device, T, GET_RELU6_ALGORITHM> {
  public:
   ~MklRelu6GradOp() {}
 
   explicit MklRelu6GradOp(OpKernelConstruction* context)
-      : MklReluGradOpBase<Device, T, dnnl::algorithm::eltwise_bounded_relu>(
-            context, RELU6_UPPER_BOUND, 0.0f) {}
+      : MklReluGradOpBase<Device, T, GET_RELU6_ALGORITHM>(context,
+                                                          GET_RELU6_PARAMS) {}
 
   virtual void Compute_Scalar(OpKernelContext* context) {
     const size_t diff_dst_index = 0;  // index of diff_dst input tensor
@@ -1058,6 +1123,7 @@ class MklRelu6GradOp
     return;
   }
 };
+#undef RELU6_UPPER_BOUND
 
 template <typename Device, typename T>
 class MklLeakyReluOp
@@ -1225,6 +1291,11 @@ TF_CALL_bfloat16(REGISTER_RELU6_MKL_SUPPORTED_KERNELS_TYPES);
 TF_CALL_float(REGISTER_LeakyRelu_MKL_SUPPORTED_KERNELS_TYPES);
 TF_CALL_bfloat16(REGISTER_LeakyRelu_MKL_SUPPORTED_KERNELS_TYPES);
 
+#undef GET_MEMORY_DESC
+#undef GET_RELU6_ALGORITHM
+#undef GET_RELU6_PARAMS
+#undef SET_MKL_LAYOUT
+
 }  // namespace tensorflow
 
-#endif  // INTEL_MKL && !ENABLE_ONEDNN_V3
+#endif  // INTEL_MKL
