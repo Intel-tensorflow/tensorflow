@@ -420,12 +420,10 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
     rinfo_.push_back({csinfo_.concatv2,
                       mkl_op_registry::GetMklOpName(csinfo_.concatv2),
                       CopyAttrsAll, ConcatV2Rewrite, GetRewriteCause()});
-#ifndef ENABLE_ONEDNN_V3
     rinfo_.push_back(
         {csinfo_.conjugate_transpose,
          mkl_op_registry::GetMklOpName(csinfo_.conjugate_transpose),
          CopyAttrsAll, AlwaysRewrite, kRewriteForOpNameChange});
-#endif  // !ENABLE_ONEDNN_V3
     rinfo_.push_back(
         {csinfo_.conv2d, mkl_op_registry::GetMklOpName(csinfo_.conv2d),
          CopyAttrsConvCheckConstFilter, AlwaysRewrite, GetRewriteCause()});
@@ -724,13 +722,13 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
     rinfo_.push_back({csinfo_.sub, mkl_op_registry::GetMklOpName(csinfo_.sub),
                       CopyAttrsAll, RewriteIfAtleastOneMklInput,
                       GetRewriteCause()});
+#endif  // !ENABLE_ONEDNN_V3
     rinfo_.push_back({csinfo_.transpose,
                       mkl_op_registry::GetMklOpName(csinfo_.transpose),
                       CopyAttrsAll, AlwaysRewrite, kRewriteForOpNameChange});
 
     // Add info about which ops to add workspace edge to and the slots.
     wsinfo_.push_back({csinfo_.lrn, csinfo_.lrn_grad, 0, 2, 1, 3});
-#endif  // !ENABLE_ONEDNN_V3
     wsinfo_.push_back({csinfo_.max_pool, csinfo_.max_pool_grad, 0, 1, 1, 3});
     wsinfo_.push_back(
         {csinfo_.max_pool3d, csinfo_.max_pool3d_grad, 0, 1, 1, 3});
