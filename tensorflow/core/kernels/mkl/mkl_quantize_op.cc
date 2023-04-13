@@ -559,11 +559,12 @@ class MklQuantizeV2Op : public OpKernel {
     fwdParams.post_op_params.param.push_back(scale_factor);
 #endif  // ENABLE_ONEDNN_V3
 
+    MklDnnThreadPool eigen_tp(ctx);
     MklReorderWithScalePrimitive* reorder_prim =
         MklReorderWithScalePrimitiveFactory<T>::Get(src.GetUsrMem(),
                                                     dst.GetUsrMem(), fwdParams);
     std::shared_ptr<stream> cpu_stream;
-    MklDnnThreadPool eigen_tp(ctx);
+
     cpu_stream.reset(CreateStream(&eigen_tp, reorder_prim->GetEngine()));
     reorder_prim->Execute(src.GetUsrMemDataHandle(), dst.GetUsrMemDataHandle(),
 #ifdef ENABLE_ONEDNN_V3

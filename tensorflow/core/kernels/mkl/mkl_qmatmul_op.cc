@@ -251,6 +251,7 @@ class MklDnnQuantizedMatMulOp
       this->ExtendMklDnnMatMulFwdParams(context, matmul_fwd_dims);
 
       // Get a MatMul fwd from primitive pool.
+      MklDnnThreadPool eigen_tp(context);
       matmul_fwd =
           MklDnnMatMulFwdPrimitiveFactory<float, Tinput, Tweight, Tbias,
                                           Toutput>::Get(matmul_fwd_dims, 0);
@@ -314,7 +315,7 @@ class MklDnnQuantizedMatMulOp
       }
 
       std::shared_ptr<stream> cpu_stream;
-      MklDnnThreadPool eigen_tp(context);
+
       cpu_stream.reset(CreateStream(&eigen_tp, matmul_fwd->GetEngine()));
 
       UserScratchPad<unsigned char> scratch_pad;

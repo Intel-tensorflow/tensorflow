@@ -120,6 +120,7 @@ class MklRequantizePerChannelOp : public OpKernel {
                  cpu_engine_, scales.data());
 #endif  // !ENABLE_ONEDNN_V3
 
+      MklDnnThreadPool eigen_tp(ctx);
       memory::dims dims_mkl_order =
           TFShapeToMklDnnDimsInNCHW(input.shape(), FORMAT_NHWC);
       memory::desc input_md = memory::desc(dims_mkl_order, MklDnnType<qint32>(),
@@ -151,7 +152,7 @@ class MklRequantizePerChannelOp : public OpKernel {
           ReorderPd(cpu_engine_, input_mem_prim->get_desc(), cpu_engine_,
                     output_mem_prim->get_desc(), reorder_attr);
       std::shared_ptr<stream> reorder_stream;
-      MklDnnThreadPool eigen_tp(ctx);
+
       reorder_stream.reset(CreateStream(&eigen_tp, cpu_engine_));
       std::unordered_map<int, dnnl::memory> reorder_args = {
           {DNNL_ARG_FROM, *input_mem_prim}, {DNNL_ARG_TO, *output_mem_prim}};

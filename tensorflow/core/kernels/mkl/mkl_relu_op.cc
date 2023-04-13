@@ -543,11 +543,12 @@ class MklReluOpBase : public OpKernel {
                                        alpha_,
 #endif  // !ENABLE_ONEDNN_V3
                                        beta_);
+      MklDnnThreadPool eigen_tp(context);
       MklEltwiseFwdPrimitive<T>* eltwise_fwd =
           MklEltwiseFwdPrimitiveFactory<T>::Get(fwdParams);
       auto eltwise_fwd_pd = eltwise_fwd->GetEltwiseFwdPd();
       std::shared_ptr<stream> fwd_cpu_stream;
-      MklDnnThreadPool eigen_tp(context);
+
       fwd_cpu_stream.reset(CreateStream(&eigen_tp, eltwise_fwd->GetEngine()));
       // Check if src needs to be reordered
       bool is_src_reordered = false;
@@ -749,12 +750,13 @@ class MklReluGradOpBase : public OpKernel {
       MklEltwiseBwdParams<T> bwdParams(src_dims, common_md, alg_kind, alpha_,
                                        beta_, GetTypeOfInputTensorFromFwdOp());
 
+      MklDnnThreadPool eigen_tp(context);
       MklEltwiseBwdPrimitive<T>* eltwise_bwd =
           MklEltwiseBwdPrimitiveFactory<T>::Get(bwdParams);
 
       auto eltwise_bwd_pd = eltwise_bwd->GetEltwiseBwdPd();
       std::shared_ptr<stream> bwd_cpu_stream;
-      MklDnnThreadPool eigen_tp(context);
+
       bwd_cpu_stream.reset(CreateStream(&eigen_tp, eltwise_bwd->GetEngine()));
       // check whether need reorder for src / diff_dst
       const T* src_data = src_tensor.flat<T>().data();
