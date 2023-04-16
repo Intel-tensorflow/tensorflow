@@ -625,7 +625,8 @@ class MklDnnQuantizedMatMulOp
           reorder_net_args.insert(
               {DNNL_ARG_ATTR_SCALES | DNNL_ARG_DST, scale_mem});
 #endif  // ENABLE_ONEDNN_V3
-          net.at(0).execute(*reorder_stream, reorder_net_args);
+          std::vector<MemoryArgsMap> net_args{reorder_net_args};
+          ExecutePrimitive(net, &net_args, this->cpu_engine_, context);
         } else {
           context->CtxFailure(
               errors::InvalidArgument("Quantization mode must be"
