@@ -26,6 +26,7 @@ limitations under the License.
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/tensor_util.h"
+#include "tensorflow/core/kernels/mkl/mkl_kernel_util.h"
 #include "tensorflow/core/util/mkl_util.h"
 #include "tensorflow/core/util/onednn_env_vars.h"
 #ifdef DNNL_AARCH64_USE_ACL
@@ -652,6 +653,13 @@ class MklDnnMatMulOpBase : public OpKernel {
       return;
     }
 
+#ifdef ENABLE_ONEDNN_V3
+    // For now, cache weights only for blocked format
+    if (weight_md.get_format_kind() != memory::format_kind::blocked) {
+      return;
+    }
+#endif  // ENABLE_ONEDNN_V3
+
     // reorder and cache the weight
     weight.SetUsrMem(weight_md, &weight_tensor);
     weight.CheckReorderToOpMem(matmul_fwd_pd.get()->weights_desc(), cpu_engine_,
@@ -671,6 +679,7 @@ class MklDnnMatMulOpBase : public OpKernel {
 
     // cache the memory descriptor
     auto expected_md = matmul_fwd_pd->weights_desc();
+#ifndef ENABLE_ONEDNN_V3
     TensorShape weight_mkl_format;
     weight_mkl_format.AddDim(sizeof(expected_md) / sizeof(Tweight));
 
@@ -679,6 +688,13 @@ class MklDnnMatMulOpBase : public OpKernel {
                                           weight_mkl_format, &weight_oi_md_));
     *reinterpret_cast<memory::desc*>(weight_oi_md_.flat<Tweight>().data()) =
         expected_md;
+#else
+    weight_oi_md_ = FilterMemoryDesc(
+        expected_md.get_ndims(), expected_md.get_inner_nblks(),
+        expected_md.get_data_type(), expected_md.get_dims(),
+        expected_md.get_inner_blks(), expected_md.get_inner_idxs(),
+        expected_md.get_strides());
+#endif  // !ENABLE_ONEDNN_V3
   }
 
   Tweight* GetCachedWeight(OpKernelContext* context,
@@ -686,6 +702,7 @@ class MklDnnMatMulOpBase : public OpKernel {
       TF_LOCKS_EXCLUDED(mu_) {
     tf_shared_lock lock(mu_);
     const Tensor& weight_t = weight_oi_;
+#ifndef ENABLE_ONEDNN_V3
     const Tensor& weight_md_t = weight_oi_md_;
 
     // Check if the memory descriptor of the cached weight is same as
@@ -699,6 +716,25 @@ class MklDnnMatMulOpBase : public OpKernel {
       }
     }
     return nullptr;
+#else
+    // Return the cached weights only if the dimensions of the cached weights
+    // and the current weights match. Otherwise, return nullptr.
+    //
+    // TODO(intel-tf): The following check assumes that all dimensions are
+    // known before checking for equality. We may have to modify it in the
+    // future once we support runtime dimensions (especially if the dimensions
+    // are still unknown at this point).
+    if (weight_oi_md_ ==
+        FilterMemoryDesc(expected_md.get_ndims(), expected_md.get_inner_nblks(),
+                         expected_md.get_data_type(), expected_md.get_dims(),
+                         expected_md.get_inner_blks(),
+                         expected_md.get_inner_idxs(),
+                         expected_md.get_strides())) {
+      return static_cast<Tweight*>(
+          const_cast<Tweight*>(weight_t.flat<Tweight>().data()));
+    }
+    return nullptr;
+#endif  // !ENABLE_ONEDNN_V3
   }
 
   engine cpu_engine_ = engine(engine::kind::cpu, 0);
@@ -725,18 +761,27 @@ class MklDnnMatMulOpBase : public OpKernel {
     tensor::DeepCopy(temp_scaled_bias_tensor, &cached_bias_data_pt_);
   }
 
-  void GetCachedBias(void** bias_data) TF_LOCKS_EXCLUDED(bias_cache_mutex_) {
+  void GetCachedBias(float min_input, float max_input, void** bias_data)
+      TF_LOCKS_EXCLUDED(bias_cache_mutex_) {
     tf_shared_lock lock(bias_cache_mutex_);
     const Tensor& cached_bias_data = cached_bias_data_pt_;
-    *bias_data = static_cast<void*>(const_cast<TSCALED_BIAS*>(
-        cached_bias_data.flat<TSCALED_BIAS>().data()));
+    if (IsCachedBiasValid(min_input, max_input)) {
+      *bias_data = static_cast<void*>(const_cast<TSCALED_BIAS*>(
+          cached_bias_data.flat<TSCALED_BIAS>().data()));
+    } else {
+      *bias_data = nullptr;
+    }
   }
 
  protected:
   // Tensor to save reordered weight
   mutex mu_;
   Tensor weight_oi_ TF_GUARDED_BY(mu_);
+#ifndef ENABLE_ONEDNN_V3
   Tensor weight_oi_md_ TF_GUARDED_BY(mu_);
+#else
+  FilterMemoryDesc weight_oi_md_ TF_GUARDED_BY(mu_);
+#endif  // !ENABLE_ONEDNN_V3
 
   bool is_weight_const_;
 

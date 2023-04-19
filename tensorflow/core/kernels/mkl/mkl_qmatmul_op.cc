@@ -285,9 +285,6 @@ class MklDnnQuantizedMatMulOp
         // TF default format is IO. So in that case convert weight from IO
         // to OI for the first iteration and cache it to reuse in the
         // subsequent iterations, if the weight is constant.
-#ifndef ENABLE_ONEDNN_V3
-        // TODO(intel-tf): enable weights caching once it is enabled in the base
-        // class.
         if (this->is_weight_const_) {
           // Check if the weight is already cached or not
           if (this->IsWeightCacheEmpty(context)) {
@@ -299,8 +296,6 @@ class MklDnnQuantizedMatMulOp
               this->GetCachedWeight(context, matmul_fwd_pd->weights_desc());
           is_weight_cached = (weight_data != nullptr);
         }
-
-#endif  // !ENABLE_ONEDNN_V3
         if (!is_weight_cached) {
           weight.SetUsrMem(weight_md, &weight_tensor);
           weight.CheckReorderToOpMem(matmul_fwd_pd.get()->weights_desc(),
@@ -320,13 +315,17 @@ class MklDnnQuantizedMatMulOp
 
       UserScratchPad<unsigned char> scratch_pad;
       scratch_pad.AllocateSPTensor(matmul_fwd, context);
-
+#ifndef ENABLE_ONEDNN_V3
+      Tbias* bias_data = this->GetBiasHandle(
+          context, matmul_fwd_pd, bias_tensor, weight_tensor, cpu_stream);
+#else
       void* bias_data = static_cast<void*>(
           const_cast<Tbias*>(bias_tensor.flat<Tbias>().data()));
       // Temporary tensor for scaled bias when bias needs to be scaled.
       Tensor temp_scaled_bias_tensor;
       this->GetBiasHandle(context, matmul_fwd_pd, bias_tensor, weight_tensor,
                           cpu_stream, &temp_scaled_bias_tensor, &bias_data);
+#endif  // !ENABLE_ONEDNN_V3
       // Execute inner-product
       matmul_fwd->Execute(src_data, weight_data, bias_data, dst_data,
                           matmul_fwd_dims, scratch_pad.Get(), cpu_stream);
@@ -507,21 +506,18 @@ class MklDnnQuantizedMatMulOp
   //  B's32 = Q'a * Qw * Bf32 + Q'a * Qw * Min(Af32) * 1 * Wf32
   // If input is quantized via SCALE,
   //   Bs32 = Qa * Qw * Bf32.
-  void GetBiasHandle(
+#ifndef ENABLE_ONEDNN_V3
+  Tbias* GetBiasHandle(
       OpKernelContext* context,
       std::shared_ptr<dnnl::inner_product_forward::primitive_desc>&
           mkldnn_matmul_fwd_pd,
       const Tensor& bias_tensor, const Tensor& weight_tensor,
-      std::shared_ptr<stream> reorder_stream, Tensor* temp_scaled_bias_tensor,
-      void** bias_data) {
+      std::shared_ptr<stream> reorder_stream) {
     // If the bias is qint32, it means the bias is already converted offline.
     // and it can be added to matmul output directly.
-#ifndef ENABLE_ONEDNN_V3
     if (std::is_same<Tbias, qint32>::value) {
-#else
-    if (std::is_same<Tbias, float>::value && mode_ == QUANTIZE_MODE_SCALED) {
-#endif  // !ENABLE_ONEDNN_V3
-      return;
+      return static_cast<Tbias*>(
+          const_cast<Tbias*>(bias_tensor.flat<Tbias>().data()));
     } else {
       // If the bias is fp32, then need to calculate the bias
       const float min_input = context->input(3).flat<float>()(0);
@@ -531,11 +527,120 @@ class MklDnnQuantizedMatMulOp
 
       std::vector<dnnl::primitive> net;
       float out_scale;
+      // If the bias is float and input quantize is MIN_FIRST, bias has to be
+      // compensated with B's32 = Q'a * Qw * Bf32 + Q'a * Qw * Min(Af32) * 1 *
+      // Wf32.
+      if (mode_ == QUANTIZE_MODE_MIN_FIRST) {
+        int k = weight_tensor.dim_size(0);
+        int n = weight_tensor.dim_size(1);
+        float* comp_bias = GetCompBiasBuffer(n);
 
-      if (!this->IsBiasCacheEmpty() &&
-          this->IsCachedBiasValid(min_input, max_input)) {
-        this->GetCachedBias(bias_data);
+        qint8* wt_buf = static_cast<qint8*>(
+            const_cast<qint8*>(weight_tensor.flat<qint8>().data()));
+
+        const float* bias_buf = static_cast<float*>(
+            const_cast<float*>(bias_tensor.flat<float>().data()));
+
+        float qa_amin = 255 * min_input / (max_input - min_input);
+
+        out_scale = (255.0 * 127.0) /
+                    ((max_input - min_input) *
+                     std::max(std::abs(max_weight), std::abs(min_weight)));
+
+#ifndef ENABLE_ONEDNN_OPENMP
+        auto parallel_func = [&](int64 start, int64 end) {
+          for (int64 j = start; j < end; j++) {
+            int x = 0;
+            for (int64 i = 0; i < k; ++i) {
+              x += wt_buf[i * n + j];
+            }
+            comp_bias[j] =
+                ((bias_buf[j] * out_scale) + static_cast<float>(x * qa_amin));
+          }
+        };
+
+        const float kArithCost = 2.5f;
+        const float kMovCost = 1.0f;
+        float shard_cost = 4 * kArithCost + kMovCost;
+        const DeviceBase::CpuWorkerThreads& worker_threads =
+            *(context->device()->tensorflow_cpu_worker_threads());
+        Shard(worker_threads.num_threads, worker_threads.workers, n, shard_cost,
+              parallel_func);
+#else
+#pragma omp parallel for schedule(static)
+        for (int j = 0; j < n; ++j) {
+          int x = 0;
+          for (int i = 0; i < k; ++i) {
+            x += wt_buf[i * n + j];
+          }
+          comp_bias[j] =
+              ((bias_buf[j] * out_scale) + static_cast<float>(x * qa_amin));
+        }
+#endif  // !ENABLE_ONEDNN_OPENMP
+        return reinterpret_cast<Tbias*>(comp_bias_);
+
+      } else if (mode_ == QUANTIZE_MODE_SCALED) {
+        // If the bias is float and input quantize is SCALE, bias has to be
+        // compensated with Bs32 = Qa * Qw * Bf32.
+        out_scale = 255.0 * 127.0 / max_input *
+                    std::max(std::abs(max_weight), std::abs(min_weight));
+
+        std::vector<float> scales;
+        scales.push_back(out_scale);
+        dnnl::primitive_attr bias_attr;
+        bias_attr.set_output_scales(0, scales);
+
+        void* bias_buf = static_cast<void*>(
+            const_cast<Tbias*>(bias_tensor.flat<Tbias>().data()));
+        input_bias_ = new memory(mkldnn_matmul_fwd_pd->bias_desc(),
+                                 this->cpu_engine_, bias_buf);
+        scaled_bias_ =
+            new memory(mkldnn_matmul_fwd_pd->bias_desc(), this->cpu_engine_);
+
+        auto reorder_desc = dnnl::reorder::primitive_desc(
+            *input_bias_, *scaled_bias_, bias_attr);
+        net.push_back(dnnl::reorder(reorder_desc));
+        std::unordered_map<int, memory> reorder_net_args = {
+            {DNNL_ARG_FROM, *input_bias_}, {DNNL_ARG_TO, *scaled_bias_}};
+        net.at(0).execute(*reorder_stream, reorder_net_args);
+
+        return reinterpret_cast<Tbias*>(scaled_bias_->get_data_handle());
       } else {
+        context->CtxFailure(
+            errors::InvalidArgument("Quantization mode must be"
+                                    "either MIN_FIRST or SCALED."));
+        return nullptr;
+      }
+    }
+  }
+#else
+  void GetBiasHandle(
+      OpKernelContext* context,
+      std::shared_ptr<dnnl::inner_product_forward::primitive_desc>&
+          mkldnn_matmul_fwd_pd,
+      const Tensor& bias_tensor, const Tensor& weight_tensor,
+      std::shared_ptr<stream> reorder_stream, Tensor* temp_scaled_bias_tensor,
+      void** bias_data) {
+    if (std::is_same<Tbias, float>::value && mode_ == QUANTIZE_MODE_SCALED) {
+      return;
+    } else {
+      // If the bias is qint32 or quant mode is MIN_FIRST, then we need to
+      // calculate the bias.
+      const float min_input = context->input(3).flat<float>()(0);
+      const float max_input = context->input(4).flat<float>()(0);
+      const float min_weight = context->input(5).flat<float>()(0);
+      const float max_weight = context->input(6).flat<float>()(0);
+
+      std::vector<dnnl::primitive> net;
+      float out_scale;
+
+      bool is_cached_bias_valid = false;
+      bool is_bias_cache_empty = this->IsBiasCacheEmpty();
+      if (!is_bias_cache_empty) {
+        this->GetCachedBias(min_input, max_input, bias_data);
+        is_cached_bias_valid = (*bias_data != nullptr);
+      }
+      if (is_bias_cache_empty || !is_cached_bias_valid) {
         auto scaled_bias_md = mkldnn_matmul_fwd_pd->bias_desc();
         TensorShape scaled_bias_shape;
         scaled_bias_shape.AddDim(
@@ -570,10 +675,6 @@ class MklDnnQuantizedMatMulOp
             for (int i = 0; i < k; ++i) {
               x += wt_buf[i * n + j];
             }
-#ifndef ENABLE_ONEDNN_V3
-            comp_bias[j] = ((static_cast<float>(bias_buf[j]) * out_scale) +
-                            static_cast<float>(x * qa_amin));
-#else
             if (std::is_same<Tbias, qint32>::value) {
               // Starting oneDNN v3.0, bias is expected to be dequantized to
               // float32.
@@ -582,12 +683,9 @@ class MklDnnQuantizedMatMulOp
               // Bias is float32 but still needs to be compensated.
               comp_bias[j] = static_cast<float>(bias_buf[j]) + (x * qa_amin);
             }
-#endif  // !ENABLE_ONEDNN_V3
           }
         } else if (mode_ == QUANTIZE_MODE_SCALED) {
-          // For oneDNN < v3.0, if the bias is float32 and input quantization
-          // mode is SCALED, bias has to be compensated with Bs32 = Qa * Qw *
-          // Bf32. For oneDNN >= v3.0, if bias is qint32 and input quantization
+          // For oneDNN >= v3.0, if bias is qint32 and input quantization
           // mode is SCALED, bias needs to be dequantized to float32.
           out_scale = 255.0 * 127.0 /
                       (max_input *
@@ -598,18 +696,12 @@ class MklDnnQuantizedMatMulOp
           dnnl::primitive_attr bias_attr;
           void* bias_buf = static_cast<void*>(
               const_cast<Tbias*>(bias_tensor.flat<Tbias>().data()));
-#ifndef ENABLE_ONEDNN_V3
-          bias_attr.set_output_scales(0, scales);
-          auto input_bias_mem = memory(mkldnn_matmul_fwd_pd->bias_desc(),
-                                       this->cpu_engine_, bias_buf);
-#else
           bias_attr.set_scales_mask(DNNL_ARG_DST, 0);
           auto input_bias_mem =
               memory({{static_cast<int>(bias_tensor.NumElements())},
                       MklDnnType<Tbias>(),
                       memory::format_tag::x},
                      this->cpu_engine_, bias_buf);
-#endif  // !ENABLE_ONEDNN_V3
           auto scaled_bias_mem = memory(mkldnn_matmul_fwd_pd->bias_desc(),
                                         this->cpu_engine_, scaled_bias_buf);
 
@@ -618,13 +710,11 @@ class MklDnnQuantizedMatMulOp
           net.push_back(dnnl::reorder(reorder_desc));
           std::unordered_map<int, memory> reorder_net_args = {
               {DNNL_ARG_FROM, input_bias_mem}, {DNNL_ARG_TO, scaled_bias_mem}};
-#ifdef ENABLE_ONEDNN_V3
           auto scale_mem =
               memory({{1}, MklDnnType<float>(), memory::format_tag::x},
                      this->cpu_engine_, scales.data());
           reorder_net_args.insert(
               {DNNL_ARG_ATTR_SCALES | DNNL_ARG_DST, scale_mem});
-#endif  // ENABLE_ONEDNN_V3
           std::vector<MemoryArgsMap> net_args{reorder_net_args};
           ExecutePrimitive(net, &net_args, this->cpu_engine_, context);
         } else {
@@ -646,9 +736,7 @@ class MklDnnQuantizedMatMulOp
   }
 
   bool IsCachedBiasValid(float current_min_input,
-                         float current_max_input) override
-      TF_LOCKS_EXCLUDED(this->bias_cache_mutex_) {
-    tf_shared_lock lock(this->bias_cache_mutex_);
+                         float current_max_input) override {
     if (this->is_bias_const_ && this->is_weight_const_ &&
         std::abs(current_min_input - saved_min_input_) < 1e-5 &&
         std::abs(current_max_input - saved_max_input_) < 1e-5) {
@@ -656,6 +744,7 @@ class MklDnnQuantizedMatMulOp
     }
     return false;
   }
+#endif  // ENABLE_ONEDNN_V3
 
  private:
   memory* input_bias_ = nullptr;
