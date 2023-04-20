@@ -93,9 +93,9 @@ def safe_remove(is_dry: bool, path: Path):
             path.unlink(missing_ok=True)
 
         if is_dry:
-            print("Dry run remove {path}")
+            print(f"Dry run remove {path}")
         else:
-            print("Removed {path}")
+            print(f"Removed {path}")
 
     except Exception as e:
         print(f"Safe remove {path} failed with error {e}", file=sys.stderr)
