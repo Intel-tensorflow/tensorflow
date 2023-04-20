@@ -17,6 +17,7 @@ import argparse
 import doctest
 import sys
 import os
+import stat
 
 from pathlib import Path
 from typing import Optional, Iterable
@@ -79,10 +80,15 @@ def parse_args(test_args: Optional[str] = None) -> argparse.ArgumentParser:
         return p.parse_args()
 
 
+def onerror(func, path, error):
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
+
+
 def safe_remove(is_dry: bool, path: Path):
     try:
         if path.is_dir():
-            shutil.rmtree(path)
+            shutil.rmtree(path, onerror=onerror)
         else:
             path.unlink(missing_ok=True)
 
