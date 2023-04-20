@@ -82,9 +82,15 @@ def parse_args(test_args: Optional[str] = None) -> argparse.ArgumentParser:
 def safe_remove(is_dry: bool, path: Path):
     try:
         if path.is_dir():
-            shutil.rmtree(path, ignore_errors=True)
+            shutil.rmtree(path)
         else:
             path.unlink(missing_ok=True)
+
+        if is_dry:
+            print("Dry run remove {path}")
+        else:
+            print("Removed {path}")
+
     except Exception as e:
         print(f"Safe remove {path} failed with error {e}", file=sys.stderr)
 
@@ -93,7 +99,7 @@ def remove_subitems(is_dry: bool, path: Path):
     if is_dry:
         print(f"Dry run remove {'directory' if path.is_dir() else 'file'} {path} and it is exist {path.exists()}")
     else:
-        print(f"Remove {'directory subitems' if path.is_dir() else 'file'} {path}")
+        print(f"Removing {'directory subitems' if path.is_dir() else 'file'} {path}")
         if path.is_dir():
             for item in os.listdir(path):
                 safe_remove(is_dry, path.joinpath(item))
@@ -110,7 +116,7 @@ def remove_glob_subitems(is_dry: bool, glob_path: [str, Path], is_remove_root: b
 
     if is_remove_root:
         for path in paths:
-            print(f"Remove {'directory ' if path.is_dir() else 'file'} {path}")
+            print(f"Removing {'directory ' if path.is_dir() else 'file'} {path}")
             safe_remove(is_dry, path)
     else:
         for path in paths:
