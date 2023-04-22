@@ -78,7 +78,8 @@ class MklEltwiseFwdActivationParams {
 #endif  // ENABLE_ONEDNN_V3
         alg_kind(alg_kind),
         alpha(alpha),
-        beta(beta) {}
+        beta(beta) {
+  }
 };
 
 template <typename T>
@@ -162,7 +163,8 @@ class MklEltwiseFwdActivationPrimitive : public MklPrimitive {
           src_md(nullptr),
           dst_md(nullptr),
           src_mpd(nullptr),
-          eltwise_fwd(nullptr) {}
+          eltwise_fwd(nullptr) {
+    }
   };
 
   // Eltwise forward primitive setup

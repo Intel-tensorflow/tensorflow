@@ -120,7 +120,8 @@ class MklSoftmaxPrimitive : public MklPrimitive {
 #endif  // !ENABLE_ONEDNN_V3
           src_md(nullptr),
           fwd_pd(nullptr),
-          softmax_fwd(nullptr) {}
+          softmax_fwd(nullptr) {
+    }
   };
 
   // Softmax forward primitive setup

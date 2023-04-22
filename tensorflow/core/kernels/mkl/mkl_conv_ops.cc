@@ -473,6 +473,7 @@ class MklConvFwdPrimitive : public MklPrimitive {
 #endif  //! ENABLE_ONEDNN_V3
 #ifndef ENABLE_ONEDNN_V3
         } else if (post_op_param.name == "output_scale") {
+#ifndef ENABLE_ONEDNN_V3
           if (post_op_param.param.size() == 1) {
             post_ops_attr.set_output_scales(0, post_op_param.param);
           } else {
@@ -848,6 +849,10 @@ class MklConvOp : public OpKernel {
           errors::InvalidArgument("filter must not have zero elements "
                                   "(i.e. all dimensions must be non-zero)"));
 
+      if (std::is_same<Tinput, float>::value) {
+        (void)SetFPMathMode();
+      }
+
       MklDnnShape src_mkl_shape, filter_mkl_shape;
       GetMklShape(context, kInputIndex_Src, &src_mkl_shape, native_format);
       GetMklShape(context, kInputIndex_Filter, &filter_mkl_shape,
@@ -1062,7 +1067,7 @@ class MklConvOp : public OpKernel {
         // converted for the first time. This cached filter can then be reused
         // in subsequent iterations.
 #ifndef ENABLE_ONEDNN_V3
-        // TODO(intel-tf): Enable this for oneDNN v3.x
+        // TODO(intel-tf): Enable weight caching for oneDNN v3.x
         if (is_filter_const_) {
           if (IsFilterCacheEmpty(context)) {
             // Cache filter if it is not already cached.
@@ -1315,8 +1320,16 @@ class MklConvOp : public OpKernel {
     auto dst_md = conv_prim_desc.dst_desc();
 
     if (!std::is_same<Ttemp_output, Toutput>::value) {
+#ifndef ENABLE_ONEDNN_V3
       dst_md.data.data_type =
           static_cast<dnnl_data_type_t>(MklDnnType<Toutput>());
+#else
+      // Since oneDNN v3.x exposes only an opaque memory descriptor, re-create
+      // the same dst_md as before, but with type == Toutput
+      dst_md =
+          memory::desc(output_dims_mkl_order, MklDnnType<Toutput>(),
+                       MklTensorFormatToMklDnnDataFormat(output_tf_format));
+#endif  // !ENABLE_ONEDNN_V3
     }
 #else
     auto dst_md =
@@ -2402,11 +2415,20 @@ class MklQuantizedConvOp
              std::max(std::abs(max_filter[i]), std::abs(min_filter[i])));
       }
       dnnl::primitive_attr reorder_attr;
+#ifndef ENABLE_ONEDNN_V3
       if (depth == 1) {
         reorder_attr.set_output_scales(0, scales);
       } else {
         reorder_attr.set_output_scales(2, scales);
       }
+#else
+      // TODO(intel-tf): Enable this for int8 when using oneDNN v3.x
+      // and return a status instead of using DCHECK_EQ
+      DCHECK_EQ(depth, 1);
+      reorder_attr.set_scales_mask(DNNL_ARG_SRC, 0);
+      reorder_attr.set_scales_mask(DNNL_ARG_WEIGHTS, 0);
+      reorder_attr.set_scales_mask(DNNL_ARG_DST, 0);
+#endif  // !ENABLE_ONEDNN_V3
       auto summand_md = memory::desc(output_dims_mkl_order, MklDnnType<Tbias>(),
                                      memory::format_tag::nhwc);
       void* summand_buf =
@@ -2484,11 +2506,20 @@ class MklQuantizedConvOp
     }
     if (!is_bias_const_ || IsBiasCacheEmpty(context) || !scales_are_valid) {
       dnnl::primitive_attr bias_attr;
+#ifndef ENABLE_ONEDNN_V3
       if (depth == 1) {
         bias_attr.set_output_scales(0, scales_);
       } else {
         bias_attr.set_output_scales(1, scales_);
       }
+#else
+      // TODO(intel-tf): Enable this for int8 when using oneDNN v3.x
+      // and return a status instead of using DCHECK_EQ
+      DCHECK_EQ(depth, 1);
+      bias_attr.set_scales_mask(DNNL_ARG_SRC, 0);
+      bias_attr.set_scales_mask(DNNL_ARG_WEIGHTS, 0);
+      bias_attr.set_scales_mask(DNNL_ARG_DST, 0);
+#endif  // !ENABLE_ONEDNN_V3
 
       auto bias_md = memory::desc({static_cast<int>(bias_tensor.NumElements())},
                                   MklDnnType<Tbias>(), memory::format_tag::x);

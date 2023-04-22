@@ -1125,7 +1125,7 @@ TEST_F(MklFusedMatMulCacheTest, WeightCachedTrue) { Run(true); }
 
 // Test that a non-const filter can not be cached.
 TEST_F(MklFusedMatMulCacheTest, WeightCachedFalse) { Run(false); }
-#endif // !ENABLE_ONEDNN_V3
+#endif  // !ENABLE_ONEDNN_V3
 
 class BiasCacheTest : public OpsTestBase {
  public:
@@ -1266,7 +1266,7 @@ TEST_F(BiasCacheTest, Conv2DBiasCacheTestOldAPI) {
 TEST_F(BiasCacheTest, Conv2DBiasCacheTestNewAPI) {
   TestConv2DBiasCacheTest(false);
 }
-#endif // !ENABLE_ONEDNN_V3
+#endif  // !ENABLE_ONEDNN_V3
 
 // Testing fusion of pad and fusedconv2d
 template <typename T>

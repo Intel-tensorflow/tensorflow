@@ -328,6 +328,7 @@ py_strict_library(
         "//tensorflow/python/eager:def_function",
         "//tensorflow/python/eager:function",
         "//tensorflow/python/trackable:base",
+        "//tensorflow/python/types:core",
         "//tensorflow/python/util:compat",
         "//tensorflow/python/util:nest",
         "@absl_py//absl/logging",
@@ -402,7 +403,7 @@ py_strict_library(
         "//tensorflow/python/trackable:resource",
         "//tensorflow/python/trackable:trackable_utils",
         "//tensorflow/python/training/saving:trace_saveable_util",
-        "//tensorflow/python/types",
+        "//tensorflow/python/types:core",
         "//tensorflow/python/util:compat",
         "//tensorflow/python/util:object_identity",
         "//tensorflow/python/util:tf_export",
@@ -699,7 +700,6 @@ py_strict_library(
     deps = [
         ":nested_structure_coder",
         "//tensorflow/core:protos_all_py",
-        "//tensorflow/core/function/capture:capture_container",
         "//tensorflow/python:func_graph",
         "//tensorflow/python/eager:function",
         "//tensorflow/python/util:nest",
@@ -740,7 +740,7 @@ py_strict_library(
         "//tensorflow/core:protos_all_py",
         "//tensorflow/python:dtypes",
         "//tensorflow/python/framework:type_spec_registry",
-        "//tensorflow/python/types",
+        "//tensorflow/python/types:internal",
         "//tensorflow/python/util:compat",
         "//tensorflow/python/util:nest",
         "//tensorflow/python/util:tf_export",
@@ -767,7 +767,7 @@ tf_py_strict_test(
         "//tensorflow/python/framework:type_spec_registry",
         "//tensorflow/python/ops/ragged:ragged_tensor",
         "//tensorflow/python/platform:client_testlib",
-        "//tensorflow/python/types",
+        "//tensorflow/python/types:internal",
     ],
 )
 
@@ -868,7 +868,10 @@ tf_python_pybind_extension(
     #    }),
     #    static_deps = tf_python_pybind_static_deps(),
     features = ["-layering_check"],
-    visibility = ["//tensorflow/python/training:__subpackages__"],
+    visibility = [
+        "//tensorflow/python/checkpoint:__subpackages__",
+        "//tensorflow/python/training:__subpackages__",
+    ],
     deps = [
         ":pywrap_saved_model_headers",
         "//tensorflow/cc/experimental/libexport:save",

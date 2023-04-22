@@ -393,6 +393,15 @@ def ReplicaIDToDeviceOrdinalPass : Pass<"tf-replica-id-to-device-ordinal", "mlir
   }];
 }
 
+def EmbeddingPipeliningPass : Pass<"tf-embedding-pipelining", "mlir::ModuleOp"> {
+  let summary = "Rewrite graph for embedding pipelining";
+  let constructor = "TFDevice::CreateEmbeddingPipeliningPass()";
+    let description = [{
+    For architectures that support accelerated embedding lookups, this pass will
+    rewrite the graph to use pipelining for better device utilization.
+  }];
+}
+
 def ConvertReadonlyReferenceVariablesToResourceVariablesPass :
   Pass<"tf-readonly-references-to-resources", "mlir::func::FuncOp"> {
   let summary = "Convert readonly reference variables to resource variables.";
@@ -1115,6 +1124,13 @@ def ClusterOutliningPass : Pass<"tf-device-cluster-outlining", "ModuleOp"> {
   }];
 
   let constructor = "TFDevice::CreateClusterOutliningPass()";
+
+  let options = [
+    Option<"globally_unique_func_names_", "globally-unique-func-names", "bool",
+           /*default=*/"true",
+           "If true, the pass adds extra identifiers to make function names "
+           "globally unique within a process, not just within a module.">
+  ];
 }
 
 def ConvertTfControlFlowToScfPass : Pass<"convert-tf-control-flow-to-scf", "ModuleOp"> {
@@ -1168,6 +1184,13 @@ def LaunchOutliningPass : Pass<"tf-device-launch-outlining", "ModuleOp"> {
   }];
 
   let constructor = "TFDevice::CreateLaunchOutliningPass()";
+
+  let options = [
+    Option<"globally_unique_func_names_", "globally-unique-func-names", "bool",
+           /*default=*/"true",
+           "If true, the pass adds extra identifiers to make function names "
+           "globally unique within a process, not just within a module.">
+  ];
 }
 
 def ConvertLaunchFuncToTFCallPass : Pass<"tf-device-convert-launch-func-to-tf-call", "ModuleOp"> {
@@ -1814,6 +1837,12 @@ def ReplicateInvariantOpHoistingPass : Pass<"tf-replicate-invariant-op-hoisting"
     region and hoists them out. It also makes `tf.Shape` ops replicate invariant
     if possible. This currently updates or replaces `tf.Shape` ops of replicated
     arguments, either tensors or resources.
+
+    The primary benefit of the pass is to hoist `num_replicas` `_TPUCompile`s
+    into a single `_TPUCompile`.
+
+    This pass assumes that when a `tf.Shape` directly inputs from `replicate`
+    params, then it is the same shape across replicas.
 
     For example, the following
 

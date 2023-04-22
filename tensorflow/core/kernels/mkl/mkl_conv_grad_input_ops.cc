@@ -180,7 +180,8 @@ class MklConvBwdInputPrimitive : public MklPrimitive {
           conv_bwd_input(nullptr),
           diff_src_md(nullptr),
           filter_md(nullptr),
-          diff_dst_md(nullptr) {}
+          diff_dst_md(nullptr) {
+    }
   };
 
   void Setup(const MklConvBwdInputParams& convBwdInputDims) {
@@ -348,6 +349,10 @@ class MklConvCustomBackpropInputOp
           errors::InvalidArgument("input_sizes must be 4 or 5-dimensional, "
                                   "got: ",
                                   diff_dst_tensor.dims()));
+
+      if (std::is_same<T, float>::value) {
+        (void)SetFPMathMode();
+      }
 
       MklDnnShape src_mkl_shape, filter_mkl_shape, diff_dst_mkl_shape;
       GetMklShape(context, kInputIdx, &src_mkl_shape, native_format);
