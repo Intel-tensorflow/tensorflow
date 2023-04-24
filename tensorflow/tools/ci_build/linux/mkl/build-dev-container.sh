@@ -221,7 +221,7 @@ function test_container()
 
   debug "Performing basic sanity checks on the running container..."
   {
-    ${DOCKER_BINARY} exec ${CONTAINER_ID} bash -c "${PYTHON} -c 'from tensorflow.python import _pywrap_util_port; print(_pywrap_util_port.IsMklEnabled())'"
+    ${DOCKER_BINARY} exec ${CONTAINER_ID} bash -c "${PYTHON} -c 'import tensorflow as tf; from tensorflow.python.framework import test_util; print(test_util.IsMklEnabled())'"
     echo "PASS: MKL enabled test in ${TEMP_IMAGE_NAME}"
   } || {
     ${DOCKER_BINARY} exec ${CONTAINER_ID} bash -c "${PYTHON} -c 'from tensorflow.python import pywrap_tensorflow; print(pywrap_tensorflow.IsMklEnabled())'"
