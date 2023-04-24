@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#if defined(INTEL_MKL) && !defined(ENABLE_ONEDNN_V3)
+#if defined(INTEL_MKL)
 
 #define EIGEN_USE_THREADS
 
@@ -599,4 +599,4 @@ REGISTER_KERNEL_BUILDER(Name("_MklQuantizeV2")
 
 }  // namespace tensorflow
 
-#endif  // INTEL_MKL && !ENABLE_ONEDNN_V3
+#endif  // INTEL_MKL

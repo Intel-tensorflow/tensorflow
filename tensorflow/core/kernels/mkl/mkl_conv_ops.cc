@@ -473,7 +473,6 @@ class MklConvFwdPrimitive : public MklPrimitive {
 #endif  //! ENABLE_ONEDNN_V3
 #ifndef ENABLE_ONEDNN_V3
         } else if (post_op_param.name == "output_scale") {
-#ifndef ENABLE_ONEDNN_V3
           if (post_op_param.param.size() == 1) {
             post_ops_attr.set_output_scales(0, post_op_param.param);
           } else {

@@ -382,4 +382,4 @@ TF_CALL_bfloat16(REGISTER_MATMUL_MKL);
 #endif  // DNNL_AARCH64_USE_ACL
 
 }  // end namespace tensorflow
-#endif  // INTEL_MKL && !ENABLE_ONEDNN_V3
+#endif  // INTEL_MKL
