@@ -159,7 +159,7 @@ inline void execute_primitives(
   }
 }
 
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
 #define ARE_MEMORY_DESCS_EQUAL(md1, md2) dnnl_memory_desc_equal(&md1, &md2)
 #define CREATE_MEMORY_DESC_USING_STRIDES dnnl_memory_desc_init_by_strides
 #define GET_MEMORY_DESC get_desc().data
@@ -171,7 +171,7 @@ inline void execute_primitives(
 #define GET_MEMORY_DESC get_desc()
 #define GET_MEMORY_DESC_USING_MKLDNN_SHAPE_PTR GetMklLayout()
 #define MEMORY_DESC memory::desc
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
 
 // In oneDNN v1.x, the format (ex. NCHW) used to initialize a memory descriptor
 // (md) structure will no longer be recorded in its `format` field. Instead, it
@@ -455,14 +455,14 @@ class MklDnnShape {
   inline void SetElemType(memory::data_type dt) { data_.T_ = dt; }
   inline const memory::data_type GetElemType() { return data_.T_; }
 
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
   inline void SetMklLayout(memory::desc* md) {
     CHECK_NOTNULL(md);
     data_.mkl_md_ = md->data;
   }
 #else
   inline void SetMklLayout(const memory::desc& md) { data_.mkl_md_ = md; }
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
 
   inline const memory::desc GetMklLayout() const {
     return memory::desc(data_.mkl_md_);
@@ -1313,7 +1313,7 @@ inline void CreateAndExecuteReorder(const ReorderPd& reorder_desc,
   std::vector<primitive> net;
   net.push_back(dnnl::reorder(reorder_desc));
   std::vector<MemoryArgsMap> net_args;
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
   net_args.push_back({{DNNL_ARG_FROM, src_mem}, {DNNL_ARG_TO, dst_mem}});
 #else
   if (scale_mem != nullptr) {
@@ -1323,7 +1323,7 @@ inline void CreateAndExecuteReorder(const ReorderPd& reorder_desc,
   } else {
     net_args.push_back({{DNNL_ARG_FROM, src_mem}, {DNNL_ARG_TO, dst_mem}});
   }
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
   ExecutePrimitive(net, &net_args, engine, ctx);
 }
 
@@ -1485,11 +1485,11 @@ class MklDnnData {
                                   std::shared_ptr<stream> t_stream = nullptr) {
     CHECK_NOTNULL(user_memory_);
     CHECK_NOTNULL(data_buffer);
-#if !defined(ENABLE_ONEDNN_OPENMP) && !defined(ENABLE_ONEDNN_V3)
+#if !defined(ENABLE_ONEDNN_OPENMP) && defined(ENABLE_ONEDNN_V2)
     user_memory_->set_data_handle(data_buffer, *t_stream);
 #else
     user_memory_->set_data_handle(data_buffer);
-#endif  // !ENABLE_ONEDNN_OPENMP && !ENABLE_ONEDNN_V3
+#endif  // !ENABLE_ONEDNN_OPENMP && ENABLE_ONEDNN_V2
   }
 
   /// Set function for data buffer of user memory primitive.
@@ -2147,7 +2147,7 @@ class MklReorderPrimitiveFactory : public MklPrimitiveFactory<T> {
     FactoryKeyCreator key_creator;
     auto const& from_desc = from->GET_MEMORY_DESC;
     auto const& to_desc = to->GET_MEMORY_DESC;
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
     memory::dims from_dims(from_desc.dims, &from_desc.dims[from_desc.ndims]);
     memory::dims to_dims(to_desc.dims, &to_desc.dims[to_desc.ndims]);
     auto from_strides = from_desc.format_desc.blocking.strides;
@@ -2186,7 +2186,7 @@ class MklReorderPrimitiveFactory : public MklPrimitiveFactory<T> {
     memory::dims to_inner_blks = to_desc.get_inner_blks();
     memory::dims to_inner_idxs = to_desc.get_inner_idxs();
     memory::dims to_strides = to_desc.get_strides();
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
 
     key_creator.AddAsKey(prefix);
 #ifdef DNNL_AARCH64_USE_ACL
@@ -2194,7 +2194,7 @@ class MklReorderPrimitiveFactory : public MklPrimitiveFactory<T> {
     // need to make sure that memory for those primitives is cached per thread.
     key_creator.AddAsKey(std::this_thread::get_id());
 #endif
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
     key_creator.AddAsKey(static_cast<int>(from_desc.extra.flags));
     key_creator.AddAsKey(static_cast<int>(from_inner_nblks));
     key_creator.AddAsKey(from_inner_blks_1);
@@ -2224,7 +2224,7 @@ class MklReorderPrimitiveFactory : public MklPrimitiveFactory<T> {
     key_creator.AddAsKey(to_inner_idxs);
     key_creator.AddAsKey(static_cast<int>(to_desc.get_data_type()));
     key_creator.AddAsKey(to_dims);
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
     return key_creator.GetKey();
   }
 

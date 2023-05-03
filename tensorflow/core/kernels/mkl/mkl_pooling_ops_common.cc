@@ -25,19 +25,19 @@ limitations under the License.
 #include "tensorflow/core/framework/kernel_shape_util.h"
 
 namespace tensorflow {
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
 #define GET_MEMORY_DESC(md) md.data
 #else
 #define GET_MEMORY_DESC(md) md
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
 using dnnl::prop_kind;
 
 template <typename T>
 void MklPoolingFwdPrimitive<T>::Setup(const MklPoolingParams& fwdParams) {
   DCHECK(fwdParams.alg_kind == dnnl::algorithm::pooling_max ||
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
          fwdParams.alg_kind == dnnl::algorithm::pooling_avg ||
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
          fwdParams.alg_kind == dnnl::algorithm::pooling_avg_include_padding ||
          fwdParams.alg_kind == dnnl::algorithm::pooling_avg_exclude_padding)
       << "Pooling algorithm kind is not supported";
@@ -57,7 +57,7 @@ void MklPoolingFwdPrimitive<T>::Setup(const MklPoolingParams& fwdParams) {
                                              : memory::format_tag::any));
 
   // Create a pooling descriptor.
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
   context_.fwd_desc.reset(new pooling_forward::desc(
       fwdParams.prop_kind, fwdParams.alg_kind, *context_.src_md,
       *context_.dst_md, fwdParams.strides, fwdParams.filter_dims,
@@ -69,7 +69,7 @@ void MklPoolingFwdPrimitive<T>::Setup(const MklPoolingParams& fwdParams) {
       cpu_engine_, fwdParams.prop_kind, fwdParams.alg_kind, *context_.src_md,
       *context_.dst_md, fwdParams.strides, fwdParams.filter_dims,
       fwdParams.dilations, fwdParams.padding_left, fwdParams.padding_right));
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
   context_.dst_fmt = static_cast<memory::format_tag>(memory::format_tag::any);
 
   // Create oneDNN internal memory object with dummy data.
@@ -103,7 +103,7 @@ void MklPoolingFwdPrimitive<T>::Execute(const T* src_data, T* dst_data,
 #ifdef DNNL_AARCH64_USE_ACL
   mutex_lock lock(primitive_execution_mu_);
 #endif
-#if !defined(ENABLE_ONEDNN_OPENMP) && !defined(ENABLE_ONEDNN_V3)
+#if !defined(ENABLE_ONEDNN_OPENMP) && defined(ENABLE_ONEDNN_V2)
   context_.src_mem->set_data_handle(
       static_cast<void*>(const_cast<T*>(src_data)), *fwd_stream);
   context_.dst_mem->set_data_handle(static_cast<void*>(dst_data), *fwd_stream);
@@ -123,7 +123,7 @@ void MklPoolingFwdPrimitive<T>::Execute(const T* src_data, T* dst_data,
     DCHECK(ws_data != nullptr);
     context_.ws_mem->set_data_handle(ws_data);
   }
-#endif  // !ENABLE_ONEDNN_OPENMP && !ENABLE_ONEDNN_V3
+#endif  // !ENABLE_ONEDNN_OPENMP && ENABLE_ONEDNN_V2
   execute_primitives(context_.fwd_primitives, fwd_stream, context_.net_args);
 
   // Set back data handle.
@@ -146,9 +146,9 @@ template class MklPoolingFwdPrimitive<qint8>;
 template <typename T>
 void MklPoolingBwdPrimitive<T>::Setup(const MklPoolingParams& bwdParams) {
   DCHECK(bwdParams.alg_kind == dnnl::algorithm::pooling_max ||
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
          bwdParams.alg_kind == dnnl::algorithm::pooling_avg ||
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
          bwdParams.alg_kind == dnnl::algorithm::pooling_avg_include_padding ||
          bwdParams.alg_kind == dnnl::algorithm::pooling_avg_exclude_padding)
       << "Pooling algorithm kind is not supported";
@@ -163,7 +163,7 @@ void MklPoolingBwdPrimitive<T>::Setup(const MklPoolingParams& bwdParams) {
                                              ? bwdParams.src_format
                                              : memory::format_tag::any));
 
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
   // Create a backward primitive. The implementation for backward must comply to
   // the workspace format it gets from forward pass, so we directly use src_md
   // and dst_md here.
@@ -189,7 +189,7 @@ void MklPoolingBwdPrimitive<T>::Setup(const MklPoolingParams& bwdParams) {
       cpu_engine_, bwdParams.alg_kind, *context_.src_md, *context_.dst_md,
       bwdParams.strides, bwdParams.filter_dims, bwdParams.dilations,
       bwdParams.padding_left, bwdParams.padding_right, *context_.fwd_pd));
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
 
   // Create oneDNN internal memory object with dummy data.
   context_.diff_src_mem.reset(new memory(context_.bwd_pd.get()->diff_src_desc(),
@@ -220,7 +220,7 @@ void MklPoolingBwdPrimitive<T>::Execute(const T* diff_dst_data,
 #ifdef DNNL_AARCH64_USE_ACL
   mutex_lock lock(primitive_execution_mu_);
 #endif
-#if !defined(ENABLE_ONEDNN_OPENMP) && !defined(ENABLE_ONEDNN_V3)
+#if !defined(ENABLE_ONEDNN_OPENMP) && defined(ENABLE_ONEDNN_V2)
   context_.diff_dst_mem->set_data_handle(
       static_cast<void*>(const_cast<T*>(diff_dst_data)), *bwd_stream);
   context_.diff_src_mem->set_data_handle(static_cast<void*>(diff_src_data),
@@ -237,7 +237,7 @@ void MklPoolingBwdPrimitive<T>::Execute(const T* diff_dst_data,
     DCHECK(ws_data != nullptr);
     context_.ws_mem->set_data_handle(const_cast<void*>(ws_data));
   }
-#endif  // !ENABLE_ONEDNN_OPENMP && !ENABLE_ONEDNN_V3
+#endif  // !ENABLE_ONEDNN_OPENMP && ENABLE_ONEDNN_V2
 
   execute_primitives(context_.bwd_primitives, bwd_stream, context_.net_args);
 
@@ -326,13 +326,13 @@ void MklPoolParameters::Init(OpKernelContext* context,
     col_stride = GetTensorDim(stride, data_format, 'W');
     depth_stride = GetTensorDim(stride, data_format, 'C');
 
-#ifdef ENABLE_ONEDNN_V3
+#ifndef ENABLE_ONEDNN_V2
     // TODO(intel-tf): we are setting dilations to 0 to mimic the behavior of
     // oneDNN v2.x integration code. We can extend this in the future to support
     // dilations != 0
     row_dilation = 0;
     col_dilation = 0;
-#endif  // ENABLE_ONEDNN_V3
+#endif  // !ENABLE_ONEDNN_V2
 
     // We only support 2D pooling across width/height and depthwise
     // pooling, not a combination.
@@ -355,12 +355,12 @@ void MklPoolParameters::Init(OpKernelContext* context,
     col_stride = GetTensorDim(stride, data_format, '2');
     depth_stride = GetTensorDim(stride, data_format, 'C');
 
-#ifdef ENABLE_ONEDNN_V3
+#ifndef ENABLE_ONEDNN_V2
     // TODO(intel-tf): TensorFlow's 3D-pooling API does not support dilations
     planes_dilation = 0;
     row_dilation = 0;
     col_dilation = 0;
-#endif  // ENABLE_ONEDNN_V3
+#endif  // !ENABLE_ONEDNN_V2
 
     // We only support 3D pooling across depth/width/height and depthwise
     // pooling, not a combination.

@@ -39,7 +39,7 @@ using ReorderPd = dnnl::reorder::primitive_desc;
 
 namespace tensorflow {
 
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
 #define APPEND_DEPTHWISE(wei_dt, bias_dt, dst_dt, kernel, stride, padding, \
                          scales_mask, scales)                              \
   append_dw(wei_dt, bias_dt, dst_dt, kernel, stride, padding, scales_mask, \
@@ -69,7 +69,7 @@ namespace tensorflow {
 #define SCALE wei_scale
 #define SUMMAND_SCALE_U8(summand_range, output_range) summand_range / 255.0f
 #define SUMMAND_SCALE_S8(summand_range, output_range) summand_range / 127.0f
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
 
 // TODO(intel-tf) Remove this once old API of quantized ops is abandoned
 namespace quantized_fusions {
@@ -172,7 +172,7 @@ class MklConvFwdPrimitive : public MklPrimitive {
     // should happen under the lock.
     mutex_lock lock(primitive_execution_mu_);
 #endif
-#if !defined(ENABLE_ONEDNN_OPENMP) && !defined(ENABLE_ONEDNN_V3)
+#if !defined(ENABLE_ONEDNN_OPENMP) && defined(ENABLE_ONEDNN_V2)
     context_.src_mem->set_data_handle(
         static_cast<void*>(const_cast<Tinput*>(src_data)), *fwd_stream);
     context_.filter_mem->set_data_handle(
@@ -254,7 +254,7 @@ class MklConvFwdPrimitive : public MklPrimitive {
     context_.dst_mem->set_data_handle(
         static_cast<void*>(const_cast<Toutput*>(dst_data)));
     if (sp_data) context_.sp_mem->set_data_handle(static_cast<void*>(sp_data));
-#endif  // !ENABLE_ONEDNN_OPENMP && !ENABLE_ONEDNN_V3
+#endif  // !ENABLE_ONEDNN_OPENMP && ENABLE_ONEDNN_V2
 
     DCHECK_EQ(context_.fwd_primitives.size(),
               context_.fwd_primitives_args.size());
@@ -318,9 +318,9 @@ class MklConvFwdPrimitive : public MklPrimitive {
     std::shared_ptr<dnnl::memory> dst_scale_mem;
 
     // Desc & primitive desc
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
     std::shared_ptr<dnnl::convolution_forward::desc> fwd_desc;
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
     std::shared_ptr<ConvFwdPd> fwd_pd;
 
     // Memory desc
@@ -359,9 +359,9 @@ class MklConvFwdPrimitive : public MklPrimitive {
           src_scale_mem(nullptr),
           wei_scale_mem(nullptr),
           dst_scale_mem(nullptr),
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
           fwd_desc(nullptr),
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
           src_md(nullptr),
           filter_md(nullptr),
           bias_md(nullptr),
@@ -406,7 +406,7 @@ class MklConvFwdPrimitive : public MklPrimitive {
                                                 MklDnnType<Tbias>(),
                                                 memory::format_tag::any));
       }
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
       // Create a convolution descriptor
       context_.fwd_desc.reset(new convolution_forward::desc(
           prop_kind::forward, dnnl::algorithm::convolution_direct,
@@ -419,7 +419,7 @@ class MklConvFwdPrimitive : public MklPrimitive {
           *context_.src_md, *context_.filter_md, *context_.dst_md,
           convFwdDims.strides, convFwdDims.dilations, convFwdDims.padding_left,
           convFwdDims.padding_right));
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
     }
 
     if (!convFwdDims.fuse_bn_dims.empty()) {
@@ -456,7 +456,7 @@ class MklConvFwdPrimitive : public MklPrimitive {
         } else if (post_op_param.name == "sum") {
           DCHECK_EQ(post_op_param.param.size(), 1);
           float op_scale = post_op_param.param[0];
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
           post_ops.append_sum(op_scale);
 #else
           if (post_op_param.dtype != DT_INVALID) {
@@ -470,8 +470,8 @@ class MklConvFwdPrimitive : public MklPrimitive {
           } else {
             post_ops.append_sum(op_scale);
           }
-#endif  //! ENABLE_ONEDNN_V3
-#ifndef ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
+#ifdef ENABLE_ONEDNN_V2
         } else if (post_op_param.name == "output_scale") {
           if (post_op_param.param.size() == 1) {
             post_ops_attr.set_output_scales(0, post_op_param.param);
@@ -503,7 +503,7 @@ class MklConvFwdPrimitive : public MklPrimitive {
                                                        memory::format_tag::x));
           context_.dst_scale_mem.reset(
               new memory(*context_.dst_scale_md, cpu_engine_, DummyData));
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
         } else if (post_op_param.name == "fuse_bn") {
           post_ops.append_binary(dnnl::algorithm::binary_sub,
                                  *context_.bn_mean_md);
@@ -516,19 +516,19 @@ class MklConvFwdPrimitive : public MklPrimitive {
         } else {
           DCHECK((post_op_param.name == "activation") ||
                  (post_op_param.name == "sum") ||
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
                  (post_op_param.name == "output_scale") ||
 #else
                  (post_op_param.name == "src_scale") ||
                  (post_op_param.name == "wei_scale") ||
                  (post_op_param.name == "dst_scale") ||
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
                  (post_op_param.name == "fuse_bn"));
         }
       }
       post_ops_attr.set_post_ops(post_ops);
     }
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
     context_.fwd_pd.reset(
         new ConvFwdPd(*context_.fwd_desc, post_ops_attr, cpu_engine_));
 #else
@@ -545,7 +545,7 @@ class MklConvFwdPrimitive : public MklPrimitive {
           convFwdDims.strides, convFwdDims.dilations, convFwdDims.padding_left,
           convFwdDims.padding_right, post_ops_attr));
     }
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
 
     // Create memory primitive based on dummy data
     context_.src_mem.reset(
@@ -571,12 +571,12 @@ class MklConvFwdPrimitive : public MklPrimitive {
              {DNNL_ARG_BIAS, *context_.bias_mem},
              {DNNL_ARG_SCRATCHPAD, *context_.sp_mem},
              {DNNL_ARG_DST, *context_.dst_mem},
-#ifdef ENABLE_ONEDNN_V3
+#ifndef ENABLE_ONEDNN_V2
              {DNNL_ARG_ATTR_SCALES | DNNL_ARG_SRC, *context_.src_scale_mem},
              {DNNL_ARG_ATTR_SCALES | DNNL_ARG_WEIGHTS, *context_.wei_scale_mem},
              { DNNL_ARG_ATTR_SCALES | DNNL_ARG_DST,
               *context_.dst_scale_mem }
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
              });
       } else {
         context_.fwd_primitives_args.push_back(
@@ -616,12 +616,12 @@ class MklConvFwdPrimitive : public MklPrimitive {
              {DNNL_ARG_WEIGHTS, *context_.filter_mem},
              {DNNL_ARG_SCRATCHPAD, *context_.sp_mem},
              {DNNL_ARG_DST, *context_.dst_mem},
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
              {DNNL_ARG_ATTR_SCALES | DNNL_ARG_SRC, *context_.src_scale_mem},
              {DNNL_ARG_ATTR_SCALES | DNNL_ARG_WEIGHTS, *context_.wei_scale_mem},
              { DNNL_ARG_ATTR_SCALES | DNNL_ARG_DST,
               *context_.dst_scale_mem }
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
              });
       } else {
         context_.fwd_primitives_args.push_back(
@@ -717,7 +717,7 @@ class MklConvFwdPrimitiveFactory : public MklPrimitiveFactory<float> {
         for (auto& param : post_op_param.param) {
           key_creator.AddAsKey(param);
         }
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
       } else if (post_op_param.name == "output_scale") {
         key_creator.AddAsKey(post_op_param.partial_key);
 #else
@@ -727,7 +727,7 @@ class MklConvFwdPrimitiveFactory : public MklPrimitiveFactory<float> {
         key_creator.AddAsKey(post_op_param.partial_key);
       } else if (post_op_param.name == "dst_scale") {
         key_creator.AddAsKey(post_op_param.partial_key);
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
       } else if (post_op_param.name == "fuse_bn") {
         key_creator.AddAsKey(post_op_param.name);
         key_creator.AddAsKey(convFwdDims.fuse_bn_dims);
@@ -1310,11 +1310,11 @@ class MklConvOp : public OpKernel {
                                     MklDnnShape* output_mkl_shape,
                                     Tensor** output_tensor) {
     DCHECK(output_tensor);
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
     auto dst_md = conv_prim_desc.dst_desc();
 
     if (!std::is_same<Ttemp_output, Toutput>::value) {
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
       dst_md.data.data_type =
           static_cast<dnnl_data_type_t>(MklDnnType<Toutput>());
 #else
@@ -1323,7 +1323,7 @@ class MklConvOp : public OpKernel {
       dst_md =
           memory::desc(output_dims_mkl_order, MklDnnType<Toutput>(),
                        MklTensorFormatToMklDnnDataFormat(output_tf_format));
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
     }
 #else
     auto dst_md =
@@ -1332,7 +1332,7 @@ class MklConvOp : public OpKernel {
             : memory::desc(conv_prim_desc.dst_desc().get_dims(),
                            MklDnnType<Toutput>(),
                            MklTensorFormatToMklDnnDataFormat(output_tf_format));
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
 
     // Allocate shape of MKL tensor
     output_mkl_shape->SetMklTensor(true);
@@ -1421,11 +1421,11 @@ class MklConvOp : public OpKernel {
   string data_format_str_;
   TensorFormat data_format_;
   Tensor cached_filter_data_ TF_GUARDED_BY(mu_);
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
   Tensor cached_filter_md_ TF_GUARDED_BY(mu_);
 #else
   FilterMemoryDesc cached_filter_md_ TF_GUARDED_BY(mu_);
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
 
   // Initialize to values the template is instantiated with
   bool fuse_biasadd_ = bias_enabled;
@@ -1475,7 +1475,7 @@ class MklConvOp : public OpKernel {
     *filter_tensor = &cached_filter_data_;
 
     memory::desc weights_desc = conv_prim_desc.weights_desc();
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
     // There is no tensor format in DNNL 1.x. So we cache the complete filter
     // descriptor as flat byte array.
     TensorShape cached_filter_md_shape;
@@ -1494,7 +1494,7 @@ class MklConvOp : public OpKernel {
         weights_desc.get_data_type(), weights_desc.get_dims(),
         weights_desc.get_inner_blks(), weights_desc.get_inner_idxs(),
         weights_desc.get_strides());
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
   }
 
   void AllocateTensor(OpKernelContext* context, const ConvFwdPd& conv_prim_desc,
@@ -1555,12 +1555,12 @@ class MklConvOp : public OpKernel {
       return;
     }
 
-#ifdef ENABLE_ONEDNN_V3
+#ifndef ENABLE_ONEDNN_V2
     // For now, cache filter only for blocked format
     if (filter_md.get_format_kind() != memory::format_kind::blocked) {
       return;
     }
-#endif  // ENABLE_ONEDNN_V3
+#endif  // !ENABLE_ONEDNN_V2
 
     // Otherwise, cache reordered filter
     filter.SetUsrMem(filter_md, &filter_tensor);
@@ -1576,7 +1576,7 @@ class MklConvOp : public OpKernel {
     memcpy(cached_filter_data, filter_data, cached_filter_data_size);
   }
 
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
   // TODO(intel-tf): This function is no longer used and needs to be removed
   bool AreMemoryDescriptorsEqual(const memory::desc& filter_md,
                                  const Tensor& cached_filter_md) {
@@ -1594,14 +1594,14 @@ class MklConvOp : public OpKernel {
     }
     return true;
   }
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
 
   Tfilter* GetCachedFilter(OpKernelContext* context,
                            const memory::desc& filter_md)
       TF_LOCKS_EXCLUDED(mu_) {
     tf_shared_lock lock(mu_);
     const Tensor& cached_filter_data = cached_filter_data_;
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
     const Tensor& cached_filter_md = cached_filter_md_;
 
     // Check if the memory descriptor of the cached weights is the same as
@@ -1629,7 +1629,7 @@ class MklConvOp : public OpKernel {
           const_cast<Tfilter*>(cached_filter_data.flat<Tfilter>().data()));
     }
     return nullptr;
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
   }
 };
 
@@ -2010,19 +2010,19 @@ class MklQuantizedConvOp
     // If Requantize is fused, we set output_scale as first post op since it is
     // logically applied before any post op. Then we maintain the order of post
     // ops according to the order of fused_ops.
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
     int idx = fuse_requantize ? 1 : 0;
 #else
     post_op_to_idx_["src_scale"] = 0;
     post_op_to_idx_["wei_scale"] = 1;
     post_op_to_idx_["dst_scale"] = 2;
     int idx = 3;
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
     for (int i = 0; i < fused_ops_.size(); ++i) {
       if (fused_ops_[i] == "Requantize") {
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
         post_op_to_idx_["output_scale"] = 0;
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
       } else if (fused_ops_[i] == "Sum") {
         post_op_to_idx_["sum"] = idx++;
       } else if (fused_ops_[i] == "Relu") {
@@ -2215,18 +2215,18 @@ class MklQuantizedConvOp
         float float_filter_range =
             std::max(std::abs(min_filter[i]), std::abs(max_filter[i]));
         // To understand the scaling, please see mkl_requantize_ops_test.
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
         scales[i] = int_output_limit * float_input_range * float_filter_range /
                     (int_const_scale_limit * float_output_range);
 #else
         wei_scale[i] = float_filter_range / 127.0;
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
       }
       // we are creating a partial key here to use with primitive key caching to
       // improve key creation performance. Instead of using actual values we are
       // using the pointers for min/max_filter_vector, and this works since the
       // filter vector here is a constant.
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
       FactoryKeyCreator param_key;
       param_key.AddAsKey<float>(min_input);
       param_key.AddAsKey<float>(max_input);
@@ -2246,9 +2246,9 @@ class MklQuantizedConvOp
           dnnl::algorithm::undef,
           {dst_scale},
           dst_param_key.GetKey()};
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
     } else {
-#ifdef ENABLE_ONEDNN_V3
+#ifndef ENABLE_ONEDNN_V2
       if (!std::is_same<Toutput, qint32>::value)
         TF_CHECK_OK(Status(absl::StatusCode::kFailedPrecondition,
                            "Output datatype is expected to be qint32."));
@@ -2271,10 +2271,10 @@ class MklQuantizedConvOp
           dnnl::algorithm::undef,
           {dst_scale},
           dst_param_key.GetKey()};
-#endif  // ENABLE_ONEDNN_V3
+#endif  // !ENABLE_ONEDNN_V2
     }
 
-#ifdef ENABLE_ONEDNN_V3
+#ifndef ENABLE_ONEDNN_V2
     FactoryKeyCreator src_param_key;
     src_param_key.AddAsKey<float>(min_input);
     src_param_key.AddAsKey<float>(max_input);
@@ -2288,7 +2288,7 @@ class MklQuantizedConvOp
         src_param_key.GetKey()};
     params.post_op_params[post_op_to_idx_["wei_scale"]] = {
         "wei_scale", dnnl::algorithm::undef, wei_scale, wei_param_key.GetKey()};
-#endif  // ENABLE_ONEDNN_V3
+#endif  // !ENABLE_ONEDNN_V2
     if (this->get_fuse_add()) {
       // Calculate the scale (beta in oneDNN api term) for sum
       DataType summand_dt = this->input_type(this->get_input_add_idx());
@@ -2363,9 +2363,9 @@ class MklQuantizedConvOp
                                                          dnnl::algorithm::undef,
                                                          {1.0},
                                                          "",
-#ifdef ENABLE_ONEDNN_V3
+#ifndef ENABLE_ONEDNN_V2
                                                          summand_dt
-#endif  // ENABLE_ONEDNN_V3
+#endif  // !ENABLE_ONEDNN_V2
         };
       }
     }
@@ -2413,7 +2413,7 @@ class MklQuantizedConvOp
                         "Summand cannot be forwarded in the current fusion."));
         return;
       }
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
       MklConvOp<
           Device, Tinput, /*Tfilter*/ qint8, Tbias, Toutput, Ttemp_output,
           /*Tpadding*/ int32,
@@ -2448,7 +2448,7 @@ class MklQuantizedConvOp
              std::max(std::abs(max_filter[i]), std::abs(min_filter[i])));
       }
       dnnl::primitive_attr reorder_attr;
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
       if (depth == 1) {
         reorder_attr.set_output_scales(0, scales);
       } else {
@@ -2461,7 +2461,7 @@ class MklQuantizedConvOp
       reorder_attr.set_scales_mask(DNNL_ARG_SRC, 0);
       reorder_attr.set_scales_mask(DNNL_ARG_WEIGHTS, 0);
       reorder_attr.set_scales_mask(DNNL_ARG_DST, 0);
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
       auto summand_md = memory::desc(output_dims_mkl_order, MklDnnType<Tbias>(),
                                      memory::format_tag::nhwc);
       void* summand_buf =
@@ -2493,7 +2493,7 @@ class MklQuantizedConvOp
                   errors::InvalidArgument(
                       "Summand cannot be forwarded in the current fusion."));
 
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
     }
   }
 
@@ -2503,7 +2503,7 @@ class MklQuantizedConvOp
     if (!this->get_fuse_biasadd()) {
       return nullptr;
     }
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
     if (std::is_same<Tbias, qint32>::value) {
       return static_cast<Tbias*>(
           const_cast<Tbias*>(bias_tensor.flat<Tbias>().data()));
@@ -2539,7 +2539,7 @@ class MklQuantizedConvOp
     }
     if (!is_bias_const_ || IsBiasCacheEmpty(context) || !scales_are_valid) {
       dnnl::primitive_attr bias_attr;
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
       if (depth == 1) {
         bias_attr.set_output_scales(0, scales_);
       } else {
@@ -2552,7 +2552,7 @@ class MklQuantizedConvOp
       bias_attr.set_scales_mask(DNNL_ARG_SRC, 0);
       bias_attr.set_scales_mask(DNNL_ARG_WEIGHTS, 0);
       bias_attr.set_scales_mask(DNNL_ARG_DST, 0);
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
 
       auto bias_md = memory::desc({static_cast<int>(bias_tensor.NumElements())},
                                   MklDnnType<Tbias>(), memory::format_tag::x);
@@ -2675,7 +2675,7 @@ class MklQuantizedConvOp
     }
     return GetCachedBias(context);
 
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
   }
 
   bool is_bias_const_;

@@ -32,10 +32,6 @@ load(
     "//third_party/mkl:build_defs.bzl",
     "if_mkl_ml",
 )
-load(
-    "//third_party/mkl_dnn:build_defs.bzl",
-    "if_onednn_v3",
-)
 load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 load(
     "//tensorflow:tensorflow.default.bzl",
@@ -108,9 +104,9 @@ PACKAGE_STATIC_DEPS = [
     "@local_config_tensorrt//:__subpackages__",
     "@local_execution_config_platform//:__subpackages__",
     "@mkl_dnn_acl_compatible//:__subpackages__",
-    "@mkl_dnn_v1//:__subpackages__",
     "@nccl_archive//:__subpackages__",
     "@nvtx_archive//:__subpackages__",
+    "@onednn_v3//:__subpackages__",
     "@org_sqlite//:__subpackages__",
     "@platforms//:__subpackages__",
     "@snappy//:__subpackages__",
@@ -128,7 +124,7 @@ PACKAGE_STATIC_DEPS = [
     "@flatbuffers//:__subpackages__",
     "@nccl_archive//:__subpackages__",
     "@triton//:__subpackages__",
-] + tsl_async_value_deps() + if_onednn_v3(["@onednn_v3//:__subpackages__"])
+] + tsl_async_value_deps()
 
 package(
     # copybara:uncomment default_applicable_licenses = [":license"],

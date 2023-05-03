@@ -41,7 +41,7 @@ using BatchNormBwdPd = dnnl::batch_normalization_backward::primitive_desc;
 
 namespace tensorflow {
 
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
 #define FORWARD_INFERENCE prop_kind::forward_scoring
 #define GET_DIFF_SCALE_DATA_BUFFER diff_scale_shift_data
 #define GET_DIFF_SCALE_SHIFT_DATA_BUFFERS diff_scale_shift_data
@@ -63,7 +63,7 @@ namespace tensorflow {
 #define SCALE_SHIFT_NET_ARGS \
   {DNNL_ARG_SCALE, *context_.scale_mem}, { DNNL_ARG_SHIFT, *context_.shift_mem }
 #define SET_MKL_LAYOUT(md) SetMklLayout(md)
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
 
 using CPUDevice = Eigen::ThreadPoolDevice;
 
@@ -77,16 +77,16 @@ struct MklBatchNormFwdParams {
   TensorFormat data_format;
   FusedBNActivationMode activation_mode;
   memory::desc src_md;
-#ifdef ENABLE_ONEDNN_V3
+#ifndef ENABLE_ONEDNN_V2
   memory::desc dst_md;
-#endif  // ENABLE_ONEDNN_V3
+#endif  // !ENABLE_ONEDNN_V2
 
   MklBatchNormFwdParams(const memory::dims& src_dims, int depth, float eps,
                         bool training, TensorFormat data_format,
                         memory::desc src_md,
-#ifdef ENABLE_ONEDNN_V3
+#ifndef ENABLE_ONEDNN_V2
                         memory::desc dst_md,
-#endif  // ENABLE_ONEDNN_V3
+#endif  // !ENABLE_ONEDNN_V2
                         FusedBNActivationMode activation_mode)
       : src_dims(src_dims),
         depth(depth),
@@ -94,12 +94,12 @@ struct MklBatchNormFwdParams {
         training(training),
         data_format(data_format),
         activation_mode(activation_mode),
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
         src_md(src_md) {}
 #else
         src_md(src_md),
         dst_md(dst_md) {}
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
 };
 
 template <typename T, typename U>
@@ -118,18 +118,18 @@ class MklFusedBatchNormFwdPrimitive : public MklPrimitive {
   //   dst_data:         output data buffer of dst
   //   mean_data:        output data buffer of means
   //   variance_data:    output data buffer of variances
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
   void Execute(const T* src_data, const U* scale_shift_data, T* dst_data,
 #else
   void Execute(const T* src_data, const U* scale_data, const U* shift_data,
                T* dst_data,
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
                U* mean_data, U* variance_data,
                std::shared_ptr<stream> fwd_stream, U* workspace_data) {
 #ifdef DNNL_AARCH64_USE_ACL
     mutex_lock lock(primitive_execution_mu_);
 #endif
-#if !defined(ENABLE_ONEDNN_OPENMP) && !defined(ENABLE_ONEDNN_V3)
+#if !defined(ENABLE_ONEDNN_OPENMP) && defined(ENABLE_ONEDNN_V2)
     // TODO(intel-tf): Create a common function and avoid the duplicate code
     context_.src_mem->set_data_handle(
         static_cast<void*>(const_cast<T*>(src_data)), *fwd_stream);
@@ -156,7 +156,7 @@ class MklFusedBatchNormFwdPrimitive : public MklPrimitive {
     context_.dst_mem->set_data_handle(static_cast<void*>(dst_data));
 
     if (IS_SCALE_AND_SHIFT_FLAG_SET) {
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
       context_.scale_shift_mem->set_data_handle(
           static_cast<void*>(const_cast<U*>(scale_shift_data)));
 #else
@@ -164,7 +164,7 @@ class MklFusedBatchNormFwdPrimitive : public MklPrimitive {
           static_cast<void*>(const_cast<U*>(scale_data)));
       context_.shift_mem->set_data_handle(
           static_cast<void*>(const_cast<U*>(shift_data)));
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
     }
 
     if ((context_.pkind == prop_kind::forward_training) ||
@@ -175,7 +175,7 @@ class MklFusedBatchNormFwdPrimitive : public MklPrimitive {
     if (workspace_data != nullptr) {
       context_.ws_mem->set_data_handle(workspace_data);
     }
-#endif  // !ENABLE_ONEDNN_OPENMP && !ENABLE_ONEDNN_V3
+#endif  // !ENABLE_ONEDNN_OPENMP && ENABLE_ONEDNN_V2
 
     // Execute batch-normalization forward primitives.
     execute_primitives(context_.fwd_primitives, fwd_stream, context_.net_args);
@@ -184,12 +184,12 @@ class MklFusedBatchNormFwdPrimitive : public MklPrimitive {
     context_.dst_mem->set_data_handle(DummyData);
 
     if (IS_SCALE_AND_SHIFT_FLAG_SET) {
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
       context_.scale_shift_mem->set_data_handle(DummyData);
 #else
       context_.scale_mem->set_data_handle(DummyData);
       context_.shift_mem->set_data_handle(DummyData);
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
     }
 
     if ((context_.pkind == prop_kind::forward_training) ||
@@ -220,12 +220,12 @@ class MklFusedBatchNormFwdPrimitive : public MklPrimitive {
 
     // Inputs/outputs memory.
     std::shared_ptr<dnnl::memory> src_mem;
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
     std::shared_ptr<dnnl::memory> scale_shift_mem;
 #else
     std::shared_ptr<dnnl::memory> scale_mem;
     std::shared_ptr<dnnl::memory> shift_mem;
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
     std::shared_ptr<dnnl::memory> dst_mem;
     std::shared_ptr<dnnl::memory> mean_mem;
     std::shared_ptr<dnnl::memory> variance_mem;
@@ -244,12 +244,12 @@ class MklFusedBatchNormFwdPrimitive : public MklPrimitive {
         : flags(0),
           pkind(prop_kind::forward_training),
           src_mem(nullptr),
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
           scale_shift_mem(nullptr),
 #else
           scale_mem(nullptr),
           shift_mem(nullptr),
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
           dst_mem(nullptr),
           mean_mem(nullptr),
           variance_mem(nullptr),
@@ -271,7 +271,7 @@ class MklFusedBatchNormFwdPrimitive : public MklPrimitive {
     // Memory descriptor
     auto src_md = fwdParams.src_md;
     // Create forward BatchNorm descriptor and primitive descriptor.
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
     auto fwd_desc = batch_normalization_forward::desc(
         context_.pkind, src_md, fwdParams.eps,
         static_cast<dnnl::normalization_flags>(context_.flags));
@@ -282,7 +282,7 @@ class MklFusedBatchNormFwdPrimitive : public MklPrimitive {
     context_.fwd_pd.reset(new BatchNormFwdPd(
         cpu_engine_, context_.pkind, src_md, dst_md, fwdParams.eps,
         static_cast<dnnl::normalization_flags>(context_.flags)));
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
 
     // Create memory primitive based on dummy data
     context_.src_mem.reset(
@@ -292,7 +292,7 @@ class MklFusedBatchNormFwdPrimitive : public MklPrimitive {
 
     memory::dims m_dims = {1, fwdParams.depth};
     if (IS_SCALE_AND_SHIFT_FLAG_SET) {
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
       memory::dims s_dims = {2, fwdParams.depth};
       context_.scale_shift_mem.reset(
           new memory({{s_dims}, MklDnnType<U>(), memory::format_tag::nc},
@@ -305,7 +305,7 @@ class MklFusedBatchNormFwdPrimitive : public MklPrimitive {
       context_.shift_mem.reset(
           new memory({{s_dims}, MklDnnType<U>(), memory::format_tag::x},
                      cpu_engine_, DummyData));
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
     }
 
     if (fwdParams.training || (IS_SET(use_global_stats))) {
@@ -478,18 +478,18 @@ struct MklBatchNormBwdParams {
   bool training;
   TensorFormat data_format;
   memory::desc src_md;
-#ifdef ENABLE_ONEDNN_V3
+#ifndef ENABLE_ONEDNN_V2
   memory::desc dst_md;
   memory::desc diff_src_md;
-#endif  // ENABLE_ONEDNN_V3
+#endif  // !ENABLE_ONEDNN_V2
   memory::desc diff_dst_md;
 
   MklBatchNormBwdParams(memory::dims src_dims, memory::dims diff_dst_dims,
                         int depth, float eps, bool training,
                         TensorFormat data_format, memory::desc src_md,
-#ifdef ENABLE_ONEDNN_V3
+#ifndef ENABLE_ONEDNN_V2
                         memory::desc dst_md, memory::desc diff_src_md,
-#endif  // ENABLE_ONEDNN_V3
+#endif  // !ENABLE_ONEDNN_V2
                         memory::desc diff_dst_md)
       : src_dims(src_dims),
         diff_dst_dims(diff_dst_dims),
@@ -498,10 +498,10 @@ struct MklBatchNormBwdParams {
         training(training),
         data_format(data_format),
         src_md(src_md),
-#ifdef ENABLE_ONEDNN_V3
+#ifndef ENABLE_ONEDNN_V2
         dst_md(dst_md),
         diff_src_md(diff_src_md),
-#endif  // ENABLE_ONEDNN_V3
+#endif  // !ENABLE_ONEDNN_V2
         diff_dst_md(diff_dst_md) {}
 };
 
@@ -528,19 +528,19 @@ class MklFusedBatchNormBwdPrimitive : public MklPrimitive {
   //                          intermediate results is not implemented
   //                          on CPU as of now.
   void Execute(const T* src_data, const U* mean_data, const U* variance_data,
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
                const T* diff_dst_data, const U* scale_shift_data,
                T* diff_src_data, U* diff_scale_shift_data, U* res_space_data,
 #else
                // oneDNN v3.x does not require 'shift_data'
                const T* diff_dst_data, const U* scale_data, T* diff_src_data,
                U* diff_scale_data, U* diff_shift_data, U* res_space_data,
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
                std::shared_ptr<stream> bwd_stream) {
 #ifdef DNNL_AARCH64_USE_ACL
     mutex_lock lock(primitive_execution_mu_);
 #endif
-#if !defined(ENABLE_ONEDNN_OPENMP) && !defined(ENABLE_ONEDNN_V3)
+#if !defined(ENABLE_ONEDNN_OPENMP) && defined(ENABLE_ONEDNN_V2)
     // TODO(intel-tf): Create a common function and avoid the duplicate code
     context_.src_mem->set_data_handle(
         static_cast<void*>(const_cast<T*>(src_data)), *bwd_stream);
@@ -571,7 +571,7 @@ class MklFusedBatchNormBwdPrimitive : public MklPrimitive {
         static_cast<void*>(const_cast<T*>(diff_dst_data)));
 
     if (IS_SCALE_AND_SHIFT_FLAG_SET) {
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
       context_.scale_shift_mem->set_data_handle(
           static_cast<void*>(const_cast<U*>(scale_shift_data)));
       context_.diff_scale_shift_mem->set_data_handle(
@@ -583,11 +583,11 @@ class MklFusedBatchNormBwdPrimitive : public MklPrimitive {
           static_cast<void*>(diff_scale_data));
       context_.diff_shift_mem->set_data_handle(
           static_cast<void*>(diff_shift_data));
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
     }
 
     context_.diff_src_mem->set_data_handle(static_cast<void*>(diff_src_data));
-#endif  // !ENABLE_ONEDNN_OPENMP && !ENABLE_ONEDNN_V3
+#endif  // !ENABLE_ONEDNN_OPENMP && ENABLE_ONEDNN_V2
     // Execute backward batch-normalization primitives.
     DCHECK_EQ(context_.bwd_primitives.size(), context_.net_args.size());
     execute_primitives(context_.bwd_primitives, bwd_stream, context_.net_args);
@@ -598,14 +598,14 @@ class MklFusedBatchNormBwdPrimitive : public MklPrimitive {
     context_.variance_mem->set_data_handle(DummyData);
     context_.diff_dst_mem->set_data_handle(DummyData);
     if (IS_SCALE_AND_SHIFT_FLAG_SET) {
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
       context_.scale_shift_mem->set_data_handle(DummyData);
       context_.diff_scale_shift_mem->set_data_handle(DummyData);
 #else
       context_.scale_mem->set_data_handle(DummyData);
       context_.diff_scale_mem->set_data_handle(DummyData);
       context_.diff_shift_mem->set_data_handle(DummyData);
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
     }
     context_.diff_src_mem->set_data_handle(DummyData);
   }
@@ -626,14 +626,14 @@ class MklFusedBatchNormBwdPrimitive : public MklPrimitive {
     std::shared_ptr<dnnl::memory> mean_mem;
     std::shared_ptr<dnnl::memory> variance_mem;
     std::shared_ptr<dnnl::memory> diff_dst_mem;
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
     std::shared_ptr<dnnl::memory> scale_shift_mem;
     std::shared_ptr<dnnl::memory> diff_scale_shift_mem;
 #else
     std::shared_ptr<dnnl::memory> scale_mem;
     std::shared_ptr<dnnl::memory> diff_scale_mem;
     std::shared_ptr<dnnl::memory> diff_shift_mem;
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
     std::shared_ptr<dnnl::memory> diff_src_mem;
 
     // Backward batch-normalization primitive descriptor.
@@ -650,14 +650,14 @@ class MklFusedBatchNormBwdPrimitive : public MklPrimitive {
           mean_mem(nullptr),
           variance_mem(nullptr),
           diff_dst_mem(nullptr),
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
           scale_shift_mem(nullptr),
           diff_scale_shift_mem(nullptr),
 #else
           scale_mem(nullptr),
           diff_scale_mem(nullptr),
           diff_shift_mem(nullptr),
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
           diff_src_mem(nullptr) {}
   };
 
@@ -674,13 +674,13 @@ class MklFusedBatchNormBwdPrimitive : public MklPrimitive {
                                       memory::format_tag::nc);
     auto mean_desc = memory::desc({1, bwdParams.depth}, MklDnnType<U>(),
                                   memory::format_tag::nc);
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
     auto scale_shift_desc = memory::desc({2, bwdParams.depth}, MklDnnType<U>(),
                                          memory::format_tag::nc);
 #else
     auto scale_shift_desc =
         memory::desc({bwdParams.depth}, MklDnnType<U>(), memory::format_tag::x);
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
     auto diff_scale_shift_desc = scale_shift_desc;
 
     // Forward batch-normalization descriptor and primitive descriptor.
@@ -689,7 +689,7 @@ class MklFusedBatchNormBwdPrimitive : public MklPrimitive {
         bwdParams.training
             ? GET_SCALE_AND_SHIFT_FLAGS
             : (GET_SCALE_AND_SHIFT_FLAGS | GET_FLAG(use_global_stats));
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
     auto fwd_desc = batch_normalization_forward::desc(
         prop_kind::forward_training, src_md, bwdParams.eps,
         static_cast<dnnl::normalization_flags>(bn_flags));
@@ -714,7 +714,7 @@ class MklFusedBatchNormBwdPrimitive : public MklPrimitive {
         cpu_engine_, prop_kind::backward, diff_src_md, diff_dst_md, src_md,
         bwdParams.eps, static_cast<dnnl::normalization_flags>(bn_flags),
         fwd_pd));
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
 
     // Create memory primitives.
     context_.src_mem.reset(new memory(src_md, cpu_engine_, DummyData));
@@ -723,7 +723,7 @@ class MklFusedBatchNormBwdPrimitive : public MklPrimitive {
     context_.variance_mem.reset(
         new memory(variance_desc, cpu_engine_, DummyData));
     context_.mean_mem.reset(new memory(mean_desc, cpu_engine_, DummyData));
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
     context_.scale_shift_mem.reset(
         new memory(scale_shift_desc, cpu_engine_, DummyData));
     context_.diff_scale_shift_mem.reset(
@@ -735,7 +735,7 @@ class MklFusedBatchNormBwdPrimitive : public MklPrimitive {
         new memory(diff_scale_shift_desc, cpu_engine_, DummyData));
     context_.diff_shift_mem.reset(
         new memory(diff_scale_shift_desc, cpu_engine_, DummyData));
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
     context_.diff_src_mem.reset(new memory(src_md, cpu_engine_, DummyData));
 
     context_.bn_bwd.reset(new batch_normalization_backward(*context_.bwd_pd));
@@ -745,7 +745,7 @@ class MklFusedBatchNormBwdPrimitive : public MklPrimitive {
          {DNNL_ARG_VARIANCE, *context_.variance_mem},
          {DNNL_ARG_DIFF_DST, *context_.diff_dst_mem},
          {DNNL_ARG_DIFF_SRC, *context_.diff_src_mem},
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
          {DNNL_ARG_SCALE_SHIFT, *context_.scale_shift_mem},
          {DNNL_ARG_DIFF_SCALE_SHIFT, *context_.diff_scale_shift_mem}});
 #else
@@ -753,7 +753,7 @@ class MklFusedBatchNormBwdPrimitive : public MklPrimitive {
          {DNNL_ARG_SCALE, *context_.scale_mem},
          {DNNL_ARG_DIFF_SCALE, *context_.diff_scale_mem},
          {DNNL_ARG_DIFF_SHIFT, *context_.diff_shift_mem}});
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
     context_.bwd_primitives.push_back(*context_.bn_bwd);
   }
 
@@ -967,12 +967,12 @@ class MklFusedBatchNormOp : public OpKernel {
       Tensor* reserved_space_tensor = nullptr;
 
       MklDnnData<T> src(&cpu_engine_);
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
       MklDnnData<U> scale_shift(&cpu_engine_);
 #else
       MklDnnData<U> scale(&cpu_engine_);
       MklDnnData<U> shift(&cpu_engine_);
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
       MklDnnData<U> wksp(&cpu_engine_);
 
       memory::format_tag dnn_fmt;
@@ -999,17 +999,17 @@ class MklFusedBatchNormOp : public OpKernel {
       auto src_md = dnn_shape_src.IsMklTensor()
                         ? dnn_shape_src.GetMklLayout()
                         : memory::desc(src_dims, MklDnnType<T>(), dnn_fmt);
-#ifdef ENABLE_ONEDNN_V3
+#ifndef ENABLE_ONEDNN_V2
       auto dst_md = memory::desc(src_dims, MklDnnType<T>(), dnn_fmt);
-#endif  // ENABLE_ONEDNN_V3
+#endif  // !ENABLE_ONEDNN_V2
 
       MklBatchNormFwdParams fwdParams(src_dims, depth_, epsilon_, is_training_,
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
                                       tensor_format_, src_md, activation_mode_);
 #else
                                       tensor_format_, src_md, dst_md,
                                       activation_mode_);
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
 
       // Get forward batch-normalization op from the primitive caching pool.
       MklDnnThreadPool eigen_tp(context);
@@ -1047,7 +1047,7 @@ class MklFusedBatchNormOp : public OpKernel {
       else
         SetMeanVariance(est_mean_tensor, est_variance_tensor);
 
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
       // oneDNN packs scale & shift as a combined array in float32 type
       // <scale>...<scale><shift>...<shift>
       scale_shift.AllocateBuffer(2 * depth_ * sizeof(U));
@@ -1068,7 +1068,7 @@ class MklFusedBatchNormOp : public OpKernel {
       const U* shift_tf = shift_tensor.flat<U>().data();
       std::memcpy(scale_data, scale_tf, depth_ * sizeof(U));
       std::memcpy(shift_data, shift_tf, depth_ * sizeof(U));
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
 
       char* saved_mean_data_tf =
           reinterpret_cast<char*>(saved_mean_tensor->flat<U>().data());
@@ -1109,12 +1109,12 @@ class MklFusedBatchNormOp : public OpKernel {
       AllocateOutputSetMklShape(context, kDstIndex, &dst_tensor, tf_shape_dst,
                                 dnn_shape_dst, native_format);
 
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
       U* scale_shift_op_data = scale_shift_data;
 #else
       U* scale_op_data = scale_data;
       U* shift_op_data = shift_data;
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
       U* mean_op_data = saved_mean_tensor->flat<U>().data();
       U* variance_op_data = saved_variance_tensor->flat<U>().data();
       T* dst_data = dst_tensor->flat<T>().data();
@@ -1123,12 +1123,12 @@ class MklFusedBatchNormOp : public OpKernel {
       std::shared_ptr<stream> fwd_cpu_stream;
 
       fwd_cpu_stream.reset(CreateStream(&eigen_tp, bn_fwd->GetEngine()));
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
       bn_fwd->Execute(src_data, scale_shift_op_data, dst_data, mean_op_data,
 #else
       bn_fwd->Execute(src_data, scale_op_data, shift_op_data, dst_data,
                       mean_op_data,
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
                       variance_op_data, fwd_cpu_stream, ws_data);
       float adjust_factor = 1.0;
       if (is_training_) {
@@ -1445,14 +1445,14 @@ class MklFusedBatchNormGradOp : public OpKernel {
 
       MklDnnData<T> src(&cpu_engine_);
       MklDnnData<T> diff_dst(&cpu_engine_);
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
       MklDnnData<U> scale_shift(&cpu_engine_);
       MklDnnData<U> diff_scale_shift(&cpu_engine_);
 #else
       MklDnnData<U> scale(&cpu_engine_);
       MklDnnData<U> diff_scale(&cpu_engine_);
       MklDnnData<U> diff_shift(&cpu_engine_);
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
 
       memory::dims src_dims =
           dnn_shape_src.IsMklTensor()
@@ -1473,11 +1473,11 @@ class MklFusedBatchNormGradOp : public OpKernel {
           dnn_shape_diff_dst.IsMklTensor()
               ? dnn_shape_diff_dst.GetMklLayout()
               : memory::desc(diff_dst_dims, MklDnnType<T>(), dnn_fmt);
-#ifdef ENABLE_ONEDNN_V3
+#ifndef ENABLE_ONEDNN_V2
       memory::desc dst_md = memory::desc(src_dims, MklDnnType<T>(), dnn_fmt);
       memory::desc diff_src_md =
           memory::desc(diff_dst_dims, MklDnnType<T>(), dnn_fmt);
-#endif  // ENABLE_ONEDNN_V3
+#endif  // !ENABLE_ONEDNN_V2
 
       MklDnnData<T> reorder_src(&cpu_engine_);
       MklDnnData<T> reorder_diff_dst(&cpu_engine_);
@@ -1506,7 +1506,7 @@ class MklFusedBatchNormGradOp : public OpKernel {
         }
       }
 
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
       // scale_shift -- oneDNN packs scales/shifts as scale_shift in order
       // of scale, ..., scale, shift, ...., shift
       scale_shift.AllocateBuffer(2 * depth_ * sizeof(U));
@@ -1527,13 +1527,13 @@ class MklFusedBatchNormGradOp : public OpKernel {
       std::memcpy(scale_data_tf, scale_tf, depth_ * sizeof(U));
       diff_scale.AllocateBuffer(depth_ * sizeof(U));
       diff_shift.AllocateBuffer(depth_ * sizeof(U));
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
 
       MklBatchNormBwdParams bwdParams(src_dims, diff_dst_dims, depth_, epsilon_,
                                       is_training_, tensor_format_, src_md,
-#ifdef ENABLE_ONEDNN_V3
+#ifndef ENABLE_ONEDNN_V2
                                       dst_md, diff_src_md,
-#endif  // ENABLE_ONEDNN_V3
+#endif  // !ENABLE_ONEDNN_V2
                                       diff_dst_md);
       MklDnnThreadPool eigen_tp(context);
       MklFusedBatchNormBwdPrimitive<T, U>* bn_bwd =
@@ -1578,7 +1578,7 @@ class MklFusedBatchNormGradOp : public OpKernel {
           static_cast<U*>(const_cast<U*>(saved_mean_tensor.flat<U>().data()));
       U* variance_data = static_cast<U*>(
           const_cast<U*>(saved_variance_tensor.flat<U>().data()));
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
       U* scale_shift_data = scale_shift_data_tf;
       U* diff_scale_shift_data =
           static_cast<U*>(diff_scale_shift.GetAllocatedBuffer());
@@ -1586,7 +1586,7 @@ class MklFusedBatchNormGradOp : public OpKernel {
       U* scale_data = scale_data_tf;
       U* diff_scale_data = static_cast<U*>(diff_scale.GetAllocatedBuffer());
       U* diff_shift_data = static_cast<U*>(diff_shift.GetAllocatedBuffer());
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
       T* diff_src_data = static_cast<T*>(diff_src_tensor->flat<T>().data());
 
       U* res_space_data =

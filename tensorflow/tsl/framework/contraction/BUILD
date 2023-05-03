@@ -94,7 +94,7 @@ cc_library(
         "//tensorflow/tsl:linux_ppc64le": [],
         "//tensorflow/tsl:linux_s390x": [],
         "//tensorflow/tsl:macos_arm64": [],
-        "//conditions:default": ["@mkl_dnn_v1//:mkl_dnn"],
+        "//conditions:default": ["@onednn_v3//:mkl_dnn"],
     }),
 )
 
