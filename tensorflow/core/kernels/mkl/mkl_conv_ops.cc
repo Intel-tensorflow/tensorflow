@@ -570,15 +570,14 @@ class MklConvFwdPrimitive : public MklPrimitive {
              {DNNL_ARG_WEIGHTS, *context_.filter_mem},
              {DNNL_ARG_BIAS, *context_.bias_mem},
              {DNNL_ARG_SCRATCHPAD, *context_.sp_mem},
-             {DNNL_ARG_DST, *context_.dst_mem}
-#ifndef ENABLE_ONEDNN_V3
-            });
-#else
-             ,
+             {DNNL_ARG_DST, *context_.dst_mem},
+#ifdef ENABLE_ONEDNN_V3
              {DNNL_ARG_ATTR_SCALES | DNNL_ARG_SRC, *context_.src_scale_mem},
              {DNNL_ARG_ATTR_SCALES | DNNL_ARG_WEIGHTS, *context_.wei_scale_mem},
-             {DNNL_ARG_ATTR_SCALES | DNNL_ARG_DST, *context_.dst_scale_mem}});
+             { DNNL_ARG_ATTR_SCALES | DNNL_ARG_DST,
+              *context_.dst_scale_mem }
 #endif  // !ENABLE_ONEDNN_V3
+             });
       } else {
         context_.fwd_primitives_args.push_back(
             {{DNNL_ARG_SRC, *context_.src_mem},
@@ -616,15 +615,14 @@ class MklConvFwdPrimitive : public MklPrimitive {
             {{DNNL_ARG_SRC, *context_.src_mem},
              {DNNL_ARG_WEIGHTS, *context_.filter_mem},
              {DNNL_ARG_SCRATCHPAD, *context_.sp_mem},
-             {DNNL_ARG_DST, *context_.dst_mem}
+             {DNNL_ARG_DST, *context_.dst_mem},
 #ifndef ENABLE_ONEDNN_V3
-            });
-#else
-             ,
              {DNNL_ARG_ATTR_SCALES | DNNL_ARG_SRC, *context_.src_scale_mem},
              {DNNL_ARG_ATTR_SCALES | DNNL_ARG_WEIGHTS, *context_.wei_scale_mem},
-             {DNNL_ARG_ATTR_SCALES | DNNL_ARG_DST, *context_.dst_scale_mem}});
+             { DNNL_ARG_ATTR_SCALES | DNNL_ARG_DST,
+              *context_.dst_scale_mem }
 #endif  // !ENABLE_ONEDNN_V3
+             });
       } else {
         context_.fwd_primitives_args.push_back(
             {{DNNL_ARG_SRC, *context_.src_mem},
@@ -2361,13 +2359,14 @@ class MklQuantizedConvOp
               ""};
         }
       } else {
-        params.post_op_params[post_op_to_idx_["sum"]] = {
-            "sum", dnnl::algorithm::undef, {1.0}, ""
-#ifndef ENABLE_ONEDNN_V3
+        params.post_op_params[post_op_to_idx_["sum"]] = {"sum",
+                                                         dnnl::algorithm::undef,
+                                                         {1.0},
+                                                         "",
+#ifdef ENABLE_ONEDNN_V3
+                                                         summand_dt
+#endif  // ENABLE_ONEDNN_V3
         };
-#else
-            , summand_dt};
-#endif  // !ENABLE_ONEDNN_V3
       }
     }
 
