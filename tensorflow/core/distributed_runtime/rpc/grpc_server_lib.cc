@@ -206,7 +206,6 @@ Status GrpcServer::Init(const GrpcServerOptions& opts) {
     worker_env_.device_mgr = opts.local_device_mgr;
     owned_device_manager_.reset(nullptr);
   }
-  worker_env_.local_devices = worker_env_.device_mgr->ListDevices();
   master_env_.local_devices = worker_env_.device_mgr->ListDevices();
 
   int num_tasks = 0;
@@ -304,7 +303,8 @@ Status GrpcServer::Init(const GrpcServerOptions& opts) {
     }
   } else {
     worker_env_.collective_executor_mgr = CreateProdRpcCollectiveExecutorMgr(
-        config, worker_env_.device_mgr, worker_cache, default_worker_name);
+        config, worker_env_.device_mgr, MaybeCreateNcclCommunicator(config),
+        worker_cache, default_worker_name);
   }
 
   auto* grpc_coordination_service =
@@ -488,6 +488,7 @@ Status GrpcServer::UpdateServerDef(const ServerDef& server_def) {
   }
   worker_env_.collective_executor_mgr = CreateProdRpcCollectiveExecutorMgr(
       server_def_.default_session_config(), worker_env_.device_mgr,
+      MaybeCreateNcclCommunicator(server_def_.default_session_config()),
       worker_cache, default_worker_name);
 
   master_env_.worker_cache = worker_cache;

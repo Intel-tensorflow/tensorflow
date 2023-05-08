@@ -16,6 +16,7 @@ limitations under the License.
 #include "tensorflow/core/data/dataset_utils.h"
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cstdlib>
 #include <functional>
@@ -856,7 +857,7 @@ Status CopyBatch(CopyBatchParams params,
 absl::flat_hash_set<tstring> CreateGraphRewriteConfigs(const Options& options) {
   absl::flat_hash_set<tstring> configs;
   const auto& autotune_options = options.autotune_options();
-  std::vector<tstring> autotune_only_optimizations = {
+  std::array<tstring, 7> autotune_only_optimizations = {
       kAutotuneBufferSizesOpt,
       kBatchParallelizationOpt,
       kDisablePrefetchLegacyAutotuneOpt,
@@ -950,7 +951,8 @@ namespace {
 REGISTER_DATASET_EXPERIMENT("allow_small_function_optimizations",
                             RandomJobSamplePercentage<0>, AllTasks);
 REGISTER_DATASET_EXPERIMENT("autotune_buffer_optimization",
-                            RandomJobSamplePercentage<50>, AllTasks);
+                            RandomJobSamplePercentage<25>,
+                            IndependentHostTasks);
 REGISTER_DATASET_EXPERIMENT(kFilterParallelizationOpt,
                             RandomJobSamplePercentage<0>, AllTasks);
 REGISTER_DATASET_EXPERIMENT("min_outer_interleave_parallelism",
@@ -962,8 +964,7 @@ REGISTER_DATASET_EXPERIMENT("serialize_input_cycle_length",
 REGISTER_DATASET_EXPERIMENT("stage_based_autotune",
                             RandomJobSamplePercentage<0>, IndependentHostTasks);
 REGISTER_DATASET_EXPERIMENT("stage_based_autotune_v2",
-                            RandomJobSamplePercentage<25>,
-                            IndependentHostTasks);
+                            RandomJobSamplePercentage<0>, IndependentHostTasks);
 REGISTER_DATASET_EXPERIMENT("data_transfer", RandomJobSamplePercentage<1>,
                             IndependentHostTasks);
 }  // namespace

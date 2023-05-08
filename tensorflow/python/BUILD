@@ -175,10 +175,11 @@ py_library(
         ":nccl_ops",
         ":nn",
         ":ops",
-        ":platform",
         ":proto_ops",
         ":pywrap_tensorflow",
         ":pywrap_tfe",
+        ":random_crop_ops",
+        ":ref_variable",
         ":rnn_ops_gen",
         ":script_ops",
         ":sendrecv_ops_gen",
@@ -191,16 +192,20 @@ py_library(
         ":tensor_array_ops",
         ":training",
         ":uniform_quant_ops_gen",
+        ":variable_v1",
         ":weights_broadcast_ops",
         ":while_v2",
         "//tensorflow/core:protos_all_py",
+        "//tensorflow/python/autograph",
         "//tensorflow/python/autograph/utils:testing",
         "//tensorflow/python/client",
         "//tensorflow/python/client:_pywrap_events_writer",
         "//tensorflow/python/client:pywrap_tf_session",
         "//tensorflow/python/compat",
         "//tensorflow/python/compat:v2_compat",
-        "//tensorflow/python/compiler",
+        "//tensorflow/python/compiler/mlir",
+        "//tensorflow/python/compiler/tensorrt:init_py",
+        "//tensorflow/python/compiler/xla:compiler_py",
         "//tensorflow/python/data",
         "//tensorflow/python/debug:debug_py",
         "//tensorflow/python/distribute",
@@ -319,18 +324,6 @@ py_library(
         "//tensorflow/python/distribute/failure_handling:preemption_watcher",
         "//tensorflow/python/util:tf_decorator",
         "//tensorflow/python/util:tf_export",
-    ],
-)
-
-alias(
-    name = "util",
-    actual = "//tensorflow/python/util:util",
-    deprecation = "This target has been split. Depend on the sub-targets in //third_party/tensorflow/python/util instead.",
-    visibility = visibility + [
-        "//tensorflow:__pkg__",
-        "//third_party/py/tensorflow_core:__subpackages__",
-        "//third_party/py/tf_agents:__subpackages__",
-        "//third_party/py/tfx:__subpackages__",
     ],
 )
 
@@ -860,7 +853,11 @@ tf_gen_op_wrapper_private_py(
 
 tf_gen_op_wrapper_private_py(
     name = "parsing_ops_gen",
-    visibility = ["//learning/brain/python/ops:__pkg__"],
+    visibility = [
+        "//learning/brain/python/ops:__pkg__",
+        "//tensorflow/python/autograph/operators:__pkg__",
+        "//tensorflow/python/data/ops:__pkg__",
+    ],
 )
 
 tf_gen_op_wrapper_private_py(
@@ -1287,6 +1284,7 @@ py_library(
         ":cond",
         ":ops",
         ":training",
+        ":variable_v1",
         "//tensorflow/python/framework",
     ],
 )
@@ -1455,7 +1453,6 @@ py_library(
         ":control_flow_util",
         ":functional_ops_gen",
         ":math_ops",
-        ":platform",
         ":tensor_array_ops",
         ":while_loop",
         "//tensorflow/core:protos_all_py",
@@ -1563,7 +1560,6 @@ py_library(
     srcs = ["ops/control_flow_util.py"],
     srcs_version = "PY3",
     deps = [
-        ":platform",
         "//tensorflow/python/platform:tf_logging",
     ],
 )
@@ -1583,6 +1579,7 @@ py_strict_library(
         "//tensorflow/python/eager/polymorphic_function:atomic_function",
         "//tensorflow/python/eager/polymorphic_function:monomorphic_function",
         "//tensorflow/python/eager/polymorphic_function:tracing_compiler",
+        "//tensorflow/python/eager/polymorphic_function:transform",
         "//tensorflow/python/framework:func_graph",
         "//tensorflow/python/framework:function_def_to_graph",
         "//tensorflow/python/framework:ops",
@@ -1707,7 +1704,7 @@ py_library(
         "//tensorflow/python/framework:auto_control_deps_utils",
         "//tensorflow/python/framework:constant_op",
         "//tensorflow/python/framework:dtypes",
-        "//tensorflow/python/framework:function_def_to_graph",
+        "//tensorflow/python/framework:func_graph",
         "//tensorflow/python/framework:indexed_slices",
         "//tensorflow/python/framework:ops",
         "//tensorflow/python/framework:tensor_conversion",
@@ -1831,7 +1828,6 @@ py_library(
         ":data_flow_grad",
         ":data_flow_ops",
         ":math_ops",
-        ":platform",
         ":resource_variable_ops",
         ":sparse_ops",
         ":variables",
@@ -1914,7 +1910,6 @@ py_library(
         ":math_grad",
         ":math_ops",
         ":optional_grad",
-        ":platform",
         ":random_grad",
         ":tensor_array_ops",
         ":unconnected_gradients",
@@ -1940,13 +1935,11 @@ py_library(
         ":default_gradient",
         ":functional_ops_gen",
         ":math_ops",
-        ":platform",
         ":resource_variable_ops",
         ":unconnected_gradients",
         "//tensorflow/core:protos_all_py",
         "//tensorflow/python/eager:backprop_util",
         "//tensorflow/python/eager:context",
-        "//tensorflow/python/framework",
         "//tensorflow/python/framework:composite_tensor",
         "//tensorflow/python/framework:composite_tensor_gradient",
         "//tensorflow/python/framework:dtypes",
@@ -2234,7 +2227,6 @@ py_library(
     srcs_version = "PY3",
     deps = [
         ":logging_ops_gen",
-        ":platform",
         ":string_ops",
         "//tensorflow/python/compat",
         "//tensorflow/python/framework:dtypes",
@@ -2490,7 +2482,6 @@ py_library(
         ":array_ops",
         ":math_ops",
         ":nn_ops_gen",
-        ":platform",
         ":random_ops",
         ":stateless_random_ops",
         ":variables",
@@ -2573,7 +2564,6 @@ py_library(
     srcs = ["ops/partitioned_variables.py"],
     srcs_version = "PY3",
     deps = [
-        ":platform",
         ":variable_scope",
         "//tensorflow/python/framework:dtypes",
         "//tensorflow/python/framework:fast_tensor_util",
@@ -2610,6 +2600,25 @@ py_library(
         "//tensorflow/python/framework:dtypes",
         "//tensorflow/python/framework:ops",
         "//tensorflow/python/framework:random_seed",
+        "//tensorflow/python/util:deprecation",
+        "//tensorflow/python/util:dispatch",
+        "//tensorflow/python/util:tf_export",
+    ],
+)
+
+py_strict_library(
+    name = "random_crop_ops",
+    srcs = ["ops/random_crop_ops.py"],
+    srcs_version = "PY3",
+    deps = [
+        ":array_ops",
+        ":control_flow_assert",
+        ":control_flow_ops",
+        ":math_ops",
+        ":random_ops",
+        ":stateless_random_ops",
+        "//tensorflow/python/framework:dtypes",
+        "//tensorflow/python/framework:ops",
         "//tensorflow/python/util:deprecation",
         "//tensorflow/python/util:dispatch",
         "//tensorflow/python/util:tf_export",
@@ -2710,7 +2719,7 @@ py_library(
     deps = [
         ":array_ops",
         ":script_ops_gen",
-        "//tensorflow/python/autograph/operators",
+        "//tensorflow/python/autograph/operators:py_builtins",
         "//tensorflow/python/eager:backprop",
         "//tensorflow/python/eager:backprop_util",
         "//tensorflow/python/eager:record",
@@ -2800,6 +2809,7 @@ py_library(
         ":control_flow_ops",
         ":math_ops",
         ":sparse_ops_gen",
+        ":special_math_ops",
         "//tensorflow/python/framework:constant_op",
         "//tensorflow/python/framework:dtypes",
         "//tensorflow/python/framework:fast_tensor_util",
@@ -2936,6 +2946,7 @@ py_library(
         ":sparse_ops",
         ":state_ops",
         ":variable_scope",
+        ":variable_v1",
         ":variables",
         ":weights_broadcast_ops",
         "//tensorflow/python/distribute:distribute_lib",
@@ -2958,7 +2969,6 @@ py_library(
         ":check_ops",
         ":control_flow_ops",
         ":math_ops",
-        ":platform",
         ":special_math_ops_gen",
         "//tensorflow/compiler/tf2xla/ops:gen_xla_ops",
         "//tensorflow/python/framework:fast_tensor_util",
@@ -3080,7 +3090,7 @@ py_library(
         ":tensor_array_ops",
         ":variable_scope",
         ":variables",
-        "//tensorflow/python/compiler",
+        "//tensorflow/python/compiler/tensorrt:trt_convert_py",
         "//tensorflow/python/eager:wrap_function",
         "//tensorflow/python/ops/distributions",
         "//tensorflow/python/ops/linalg",
@@ -3166,7 +3176,6 @@ py_library(
     srcs = ["ops/template.py"],
     srcs_version = "PY3",
     deps = [
-        ":platform",
         ":variable_scope",
         "//tensorflow/python/eager:context",
         "//tensorflow/python/eager:function",
@@ -3234,11 +3243,8 @@ py_library(
     deps = [
         ":array_ops",
         ":init_ops",
-        ":platform",
-        ":ref_variable",
         ":resource_variable_ops",
         ":tf2",
-        ":variable_v1",
         ":variables",
         "//tensorflow/python/eager:context",
         "//tensorflow/python/eager:monitoring",
@@ -3291,8 +3297,10 @@ py_library(
     deps = [
         ":array_ops",
         ":array_ops_gen",
+        ":resource_variable_ops",
         ":state_ops",
         ":state_ops_gen",
+        ":variable_scope",
         ":variable_v1",
         ":variables",
         "//tensorflow/core:protos_all_py",
@@ -3316,6 +3324,7 @@ py_library(
     deps = [
         ":cond",
         ":state_ops",
+        ":variable_scope",
         ":variables",
         "//tensorflow/python/framework:ops",
         "//tensorflow/python/util:tf_export",
@@ -3330,7 +3339,6 @@ py_library(
     deps = [
         ":array_ops",
         ":gradients",
-        ":platform",
         "//tensorflow/python/framework:constant_op",
         "//tensorflow/python/framework:dtypes",
         "//tensorflow/python/framework:fast_tensor_util",
@@ -3350,7 +3358,6 @@ py_library(
     deps = [
         ":array_ops",
         ":gradients",
-        ":platform",
         "//tensorflow/python/framework:dtypes",
         "//tensorflow/python/framework:indexed_slices",
         "//tensorflow/python/framework:ops",
@@ -3470,7 +3477,6 @@ cuda_py_test(
         ":math_ops",
         ":nn_grad",
         ":nn_ops",
-        ":platform",
         "//tensorflow/python/framework:constant_op",
         "//tensorflow/python/framework:dtypes",
         "//tensorflow/python/framework:sparse_tensor",
@@ -4421,7 +4427,6 @@ py_library(
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
-        ":platform",
         "//tensorflow/python/framework:ops",
         "//tensorflow/python/platform:tf_logging",
     ],
@@ -4543,7 +4548,6 @@ cuda_py_test(
         ":nn",
         ":nn_grad",
         ":nn_ops_gen",
-        ":platform",
         ":random_ops",
         ":variables",
         "//tensorflow/python/client",
@@ -4562,7 +4566,6 @@ cuda_py_test(
         ":array_ops",
         ":client_testlib",
         ":collective_ops",
-        ":platform",
         ":variables",
         "//tensorflow/core:protos_all_py",
         "//tensorflow/python/client",
@@ -4581,7 +4584,6 @@ cuda_py_test(
         ":client_testlib",
         ":control_flow_ops",
         ":gradients",
-        ":platform",
         ":variables",
         "//tensorflow/core:protos_all_py",
         "//tensorflow/python/client",
@@ -4615,7 +4617,6 @@ cuda_py_test(
         ":client_testlib",
         ":control_flow_ops",
         ":nn_ops",
-        ":platform",
         ":platform_benchmark",
         ":random_ops",
         ":variable_v1",
@@ -4638,7 +4639,6 @@ cuda_py_test(
         ":array_ops",
         ":client_testlib",
         ":control_flow_ops",
-        ":platform",
         ":platform_benchmark",
         ":variables",
         "//tensorflow/core:protos_all_py",
@@ -4659,7 +4659,6 @@ cuda_py_test(
         ":array_ops",
         ":client_testlib",
         ":control_flow_ops",
-        ":platform",
         ":platform_benchmark",
         ":variables",
         "//tensorflow/core:protos_all_py",
@@ -4691,7 +4690,6 @@ py_library(
         ":client_testlib",
         ":control_flow_ops",
         ":math_ops",
-        ":platform",
         ":platform_benchmark",
         ":random_ops",
         ":variable_v1",
@@ -5125,13 +5123,6 @@ py_library(
     name = "platform_test",
     srcs_version = "PY3",
     deps = ["//tensorflow/python/platform:test"],
-)
-
-alias(
-    name = "platform",
-    actual = "//tensorflow/python/platform:platform",
-    deprecation = "This target has been split. Depend on the sub-targets instead.",
-    visibility = ["//visibility:public"],
 )
 
 alias(
@@ -5593,7 +5584,7 @@ alias(
 py_library(
     name = "dtensor",
     deps = [
-        "//tensorflow/dtensor/python:core",
+        "//tensorflow/dtensor/python:dtensor",
     ],
 )
 

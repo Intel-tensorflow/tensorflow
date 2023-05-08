@@ -78,6 +78,7 @@ cc_library(
         "//tensorflow/compiler/jit/kernels:xla_ops",
         "//tensorflow/compiler/tf2xla/kernels:xla_dummy_ops",
         "//tensorflow/compiler/tf2xla/kernels:xla_ops",
+        "//tensorflow/core/tfrt/common:pjrt_cpu_client_registration",
     ] + if_libtpu(
         if_false = ["//tensorflow/compiler/xla/service:cpu_plugin"],
         if_true = [],
@@ -95,6 +96,7 @@ cc_library(
         "//tensorflow/compiler/tf2xla/kernels:xla_ops",
         "//tensorflow/compiler/tf2xla/kernels:xla_dummy_ops",
         "//tensorflow/compiler/xla/service:gpu_plugin",
+        "//tensorflow/core/tfrt/common:pjrt_gpu_client_registration",
     ]),
     alwayslink = 1,
 )
@@ -347,10 +349,16 @@ cc_library(
         ":pjrt_device_compiler_client",
         ":xla_device_compiler_client",
         ":xla_device_context",
+        "//tensorflow/compiler/xla:executable_run_options",
+        "//tensorflow/compiler/xla/hlo/ir:hlo",
         "//tensorflow/compiler/xla/pjrt:pjrt_client",
+        "//tensorflow/compiler/xla/service:executable",
         "//tensorflow/core/tfrt/common:create_pjrt_client_util",
         "//tensorflow/core/tfrt/common:pjrt_util",
         "//tensorflow/core/tpu:tpu_defs",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/types:span",
     ],
     alwayslink = 1,
 )
@@ -522,6 +530,7 @@ cc_library(
         "//tensorflow/tsl/framework:device_id_utils",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/cleanup",
+        "@com_google_absl//absl/container:flat_hash_set",
     ],
 )
 
@@ -552,6 +561,7 @@ tf_cc_test(
         "//tensorflow/tsl/lib/core:status_test_util",
         "//tensorflow/tsl/platform:status",
         "//tensorflow/tsl/platform:statusor",
+        "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -726,6 +736,8 @@ cc_library(
     name = "xla_kernel_creator",
     srcs = [
         "xla_kernel_creator.cc",
+    ],
+    hdrs = [
         "xla_kernel_creator.h",
     ],
     visibility = [
@@ -1614,6 +1626,7 @@ tf_cuda_cc_test(
         ":flags",
         ":xla_device",
         ":xla_gpu_device",
+        ":xla_gpu_jit",
         "//tensorflow/compiler/tf2xla:xla_op_registry",
         "//tensorflow/core:framework_internal",
         "//tensorflow/core:test",

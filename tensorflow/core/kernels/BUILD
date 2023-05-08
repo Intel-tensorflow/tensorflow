@@ -524,6 +524,15 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "numeric_options_utils",
+    hdrs = ["numeric_options_utils.h"],
+    deps = [
+        "//tensorflow/compiler/xla/stream_executor:numeric_options",
+        "//tensorflow/core/util:determinism_for_kernels",
+    ],
+)
+
 tf_cuda_library(
     name = "gpu_utils",
     srcs = if_cuda_or_rocm(["gpu_utils.cc"]),
@@ -3453,11 +3462,11 @@ tf_kernel_library(
         "//tensorflow/tsl/framework/contraction:eigen_contraction_kernel",
     ] + mkl_deps() + if_cuda([
         ":matmul_util",
+        "//tensorflow/compiler/xla/stream_executor/cuda:cublas_plugin",
         "//tensorflow/compiler/xla/stream_executor/gpu:gpu_asm_opts",
         "//tensorflow/compiler/xla/stream_executor/gpu:redzone_allocator",
         "//tensorflow/compiler/xla/stream_executor:tf_allocator_adapter",
         "//tensorflow/core/profiler/lib:scoped_annotation",
-        "//tensorflow/tsl/platform/default/build_config:cublas_plugin",
     ]) + if_cuda_or_rocm([
         ":conv_ops_gpu_hdrs",
         ":gpu_utils",
@@ -3475,10 +3484,10 @@ cc_library(
     deps = if_cuda([
         "@com_google_absl//absl/container:flat_hash_map",
         "//tensorflow/compiler/xla:status_macros",
+        "//tensorflow/compiler/xla/stream_executor/cuda:cublas_plugin",
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
         "//tensorflow/core/platform:tensor_float_32_hdr_lib",
-        "//tensorflow/tsl/platform/default/build_config:cublas_plugin",
         "//tensorflow/core/util:env_var",
         "//tensorflow/compiler/xla/stream_executor/cuda:cublas_lt_header",
     ]) + if_static(["//tensorflow/core/platform:tensor_float_32_utils"]),
@@ -3570,7 +3579,7 @@ tf_kernel_library(
     prefix = "fft_ops",
     deps = MATH_DEPS + [
     ] + if_cuda([
-        "//tensorflow/tsl/platform/default/build_config:cufft_plugin",
+        "//tensorflow/compiler/xla/stream_executor/cuda:cufft_plugin",
     ]),
 )
 
@@ -3995,9 +4004,10 @@ tf_kernel_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/synchronization",
     ] + if_cuda([
+        ":numeric_options_utils",
+        "//tensorflow/compiler/xla/stream_executor/cuda:cublas_plugin",
+        "//tensorflow/compiler/xla/stream_executor/cuda:cudnn_plugin",
         "//tensorflow/compiler/xla/stream_executor/gpu:gpu_asm_opts",
-        "//tensorflow/tsl/platform/default/build_config:cublas_plugin",
-        "//tensorflow/tsl/platform/default/build_config:cudnn_plugin",
         "//tensorflow/compiler/xla/stream_executor:tf_allocator_adapter",
         "//tensorflow/compiler/xla/stream_executor:stream_executor_headers",
         "//tensorflow/core/platform:stream_executor",
@@ -4421,6 +4431,7 @@ tf_kernel_library(
         ":conv_ops",
         ":eigen_helpers",
         ":loose_headers",
+        ":numeric_options_utils",
         ":ops_util",
         "//tensorflow/core:core_cpu",
         "//tensorflow/core:framework",
@@ -4428,7 +4439,6 @@ tf_kernel_library(
         "//tensorflow/core:lib_internal",
         "//tensorflow/core/framework:bounds_check",
         "//tensorflow/core/platform:stream_executor",
-        "//tensorflow/core/util:determinism_for_kernels",
         "//third_party/eigen3",
     ],
 )
@@ -4681,6 +4691,7 @@ cc_library(
     name = "stateless_random_ops_v2_util",
     hdrs = ["stateless_random_ops_v2_util.h"],
     deps = [
+        ":random_op",
         ":stateless_random_ops_v2_header",
         "//tensorflow/core:framework",
     ],
@@ -6378,6 +6389,7 @@ filegroup(
         "stateless_random_gamma_op.h",
         "stateless_random_ops.h",
         "stateless_random_ops_v2.h",
+        "stochastic_cast_op.h",
         "string_to_hash_bucket_fast_op.h",
         "string_to_hash_bucket_op.h",
         "string_util.h",
@@ -6690,6 +6702,7 @@ filegroup(
         "stateless_random_ops_v2.cc",
         "stateless_random_ops_v2_util.h",
         "stateless_shuffle.cc",
+        "stochastic_cast_op.cc",
         "string_format_op.cc",
         "string_join_op.cc",
         "string_length_op.cc",
@@ -7753,6 +7766,38 @@ cc_library(
         "//tensorflow/core/framework:graph_proto_cc",
         "//tensorflow/core/framework:node_def_proto_cc",
         "//tensorflow/core/framework:types_proto_cc",
+    ],
+)
+
+tf_kernel_library(
+    name = "stochastic_cast_op",
+    prefix = "stochastic_cast_op",
+    deps = [
+        ":stateless_random_ops_v2_util",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:lib",
+        "//third_party/eigen3",
+    ],
+)
+
+tf_cc_test(
+    name = "stochastic_cast_op_test",
+    timeout = "moderate",
+    srcs = ["stochastic_cast_op_test.cc"],
+    shard_count = 48,
+    deps = [
+        ":cwise_lib",
+        ":ops_testutil",
+        ":ops_util",
+        ":stochastic_cast_op",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+        "//tensorflow/core/framework:fake_input",
+        "//tensorflow/core/framework:types_proto_cc",
+        "//third_party/eigen3",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 

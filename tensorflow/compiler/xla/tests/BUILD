@@ -2078,7 +2078,6 @@ xla_test(
 xla_test(
     name = "collective_ops_test_e2e",
     srcs = ["collective_ops_test_e2e.cc"],
-    args = ["--xla_force_host_platform_device_count=4"],
     backend_tags = {
         # This test is tagged "manual" because it requires multiple GPUs, and
         # Forge only supports single-GPU tests.  Guitar skips "manual" tests
@@ -2090,9 +2089,6 @@ xla_test(
             "no_oss",
             "notap",
             "jitrt_executable",
-        ],
-        "cpu": [
-            "notsan",
         ],
     },
     backends = [
@@ -2112,7 +2108,9 @@ xla_test(
         "//tensorflow/compiler/xla:xla_data_proto_cc",
         "//tensorflow/compiler/xla/client:local_client",
         "//tensorflow/compiler/xla/hlo/ir:hlo",
+        "//tensorflow/compiler/xla/hlo/utils:hlo_matchers",
         "//tensorflow/compiler/xla/service:hlo_runner",
+        "//tensorflow/compiler/xla/service/gpu:backend_configs_cc",
         "//tensorflow/tsl/platform:test",
     ],
 )

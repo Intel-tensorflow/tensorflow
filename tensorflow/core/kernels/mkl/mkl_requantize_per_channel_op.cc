@@ -114,7 +114,7 @@ class MklRequantizePerChannelOp : public OpKernel {
 #ifndef ENABLE_ONEDNN_V3
       reorder_attr.set_output_scales(2, scales);
 #else
-      reorder_attr.set_scales_mask(DNNL_ARG_DST, 2);
+      reorder_attr.set_scales_mask(DNNL_ARG_SRC, 2);
       auto scale_mem =
           memory({{scales.size()}, MklDnnType<float>(), memory::format_tag::x},
                  cpu_engine_, scales.data());
@@ -157,7 +157,7 @@ class MklRequantizePerChannelOp : public OpKernel {
       std::unordered_map<int, dnnl::memory> reorder_args = {
           {DNNL_ARG_FROM, *input_mem_prim}, {DNNL_ARG_TO, *output_mem_prim}};
 #ifdef ENABLE_ONEDNN_V3
-      reorder_args.insert({DNNL_ARG_ATTR_SCALES | DNNL_ARG_DST, scale_mem});
+      reorder_args.insert({DNNL_ARG_ATTR_SCALES | DNNL_ARG_SRC, scale_mem});
 #endif  // ENABLE_ONEDNN_V3
       std::unique_ptr<dnnl::primitive> reorder_prim(
           new dnnl::reorder(reorder_pd));

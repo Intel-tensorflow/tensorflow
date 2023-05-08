@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#if defined(INTEL_MKL)
+#ifdef INTEL_MKL
 
 #define EIGEN_USE_THREADS
 
@@ -120,17 +120,17 @@ class MklReorderWithScalePrimitive : public MklPrimitive {
 #else
     context_.src_mem->set_data_handle(src_data);
     context_.dst_mem->set_data_handle(dst_data);
+#endif  // !ENABLE_ONEDNN_OPENMP && !ENABLE_ONEDNN_V3
 #ifdef ENABLE_ONEDNN_V3
     context_.scale_mem->set_data_handle(scale_data);
 #endif  // ENABLE_ONEDNN_V3
-#endif  // !ENABLE_ONEDNN_OPENMP && !ENABLE_ONEDNN_V3
     context_.reorder_prim->execute(*reorder_stream, context_.prim_args);
     // After execution, set data handle back.
     context_.src_mem->set_data_handle(DummyData);
     context_.dst_mem->set_data_handle(DummyData);
 #ifdef ENABLE_ONEDNN_V3
     context_.scale_mem->set_data_handle(DummyData);
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V3
   }
 
  private:
@@ -159,7 +159,8 @@ class MklReorderWithScalePrimitive : public MklPrimitive {
           scale_mem(nullptr),
 #endif  // ENABLE_ONEDNN_V3
           reorder_pd(nullptr),
-          reorder_prim(nullptr) {}
+          reorder_prim(nullptr) {
+    }
   } context_;
 
   // Reorder primitive setup
@@ -184,7 +185,7 @@ class MklReorderWithScalePrimitive : public MklPrimitive {
     scales.push_back(post_op_params.param[0]);
     post_ops_attr.set_output_scales(0, scales);
 #else
-    post_ops_attr.set_scales_mask(DNNL_ARG_DST, 0 /* mask */);
+    post_ops_attr.set_scales_mask(DNNL_ARG_SRC, 0 /* mask */);
 #endif  // !ENABLE_ONEDNN_V3
 
     context_.reorder_pd.reset(
@@ -197,7 +198,7 @@ class MklReorderWithScalePrimitive : public MklPrimitive {
     context_.prim_args.insert({DNNL_ARG_TO, *context_.dst_mem});
 #ifdef ENABLE_ONEDNN_V3
     context_.prim_args.insert(
-        {DNNL_ARG_ATTR_SCALES | DNNL_ARG_DST, *context_.scale_mem});
+        {DNNL_ARG_ATTR_SCALES | DNNL_ARG_SRC, *context_.scale_mem});
 #endif  // ENABLE_ONEDNN_V3
   }
 
@@ -550,7 +551,7 @@ class MklQuantizeV2Op : public OpKernel {
     MklReorderWithScaleFwdParams fwdParams(src_dims, src_md, dst_md, scale_md);
     Tensor scale_tensor;
     OP_REQUIRES_OK(ctx, ctx->allocate_temp(DT_FLOAT, {1}, &scale_tensor));
-    scale_tensor.flat<float>()(0) = 1 / scale_factor;
+    scale_tensor.flat<float>()(0) = scale_factor;
     scale.SetUsrMem(scale_md, &scale_tensor);
 #else
     MklReorderWithScaleFwdParams fwdParams(src_dims, src_md, dst_md);
