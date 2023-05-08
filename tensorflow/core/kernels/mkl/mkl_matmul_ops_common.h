@@ -750,7 +750,9 @@ class MklDnnMatMulOpBase : public OpKernel {
     return false;
   }
 
-  void CacheBias(OpKernelContext* ctx, const Tensor& temp_scaled_bias_tensor) {
+  void CacheBias(OpKernelContext* ctx, const Tensor& temp_scaled_bias_tensor,
+                 float min_input, float max_input, float* saved_min_input,
+                 float* saved_max_input) {
     mutex_lock lock(bias_cache_mutex_);
     if (cached_bias_data_pt_.NumElements() > 0) {
       return;
@@ -759,6 +761,8 @@ class MklDnnMatMulOpBase : public OpKernel {
                                            temp_scaled_bias_tensor.shape(),
                                            &cached_bias_data_pt_));
     tensor::DeepCopy(temp_scaled_bias_tensor, &cached_bias_data_pt_);
+    *saved_min_input = min_input;
+    *saved_max_input = max_input;
   }
 
   void GetCachedBias(float min_input, float max_input, void** bias_data)

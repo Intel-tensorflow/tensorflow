@@ -640,7 +640,7 @@ class MklDnnQuantizedMatMulOp
         this->GetCachedBias(min_input, max_input, bias_data);
         is_cached_bias_valid = (*bias_data != nullptr);
       }
-      if (is_bias_cache_empty || !is_cached_bias_valid) {
+      if (!is_cached_bias_valid) {
         auto scaled_bias_md = mkldnn_matmul_fwd_pd->bias_desc();
         TensorShape scaled_bias_shape;
         scaled_bias_shape.AddDim(
@@ -725,16 +725,20 @@ class MklDnnQuantizedMatMulOp
 
         *bias_data = static_cast<void*>(
             temp_scaled_bias_tensor->flat<TSCALED_BIAS>().data());
-        this->CacheBias(context, *temp_scaled_bias_tensor);
-        {
-          mutex_lock lock(this->bias_cache_mutex_);
-          this->saved_min_input_ = min_input;
-          this->saved_max_input_ = max_input;
+        if (is_bias_cache_empty) {
+          // Only try to cache the bias in the first iteration.
+          this->CacheBias(context, *temp_scaled_bias_tensor, min_input,
+                          max_input, &saved_min_input_, &saved_max_input_);
         }
       }
     }
   }
 
+  // This method checks if cached bias is valid or not. Cached bias is valid
+  // when its scale has not changed. Bias's scale depends on min_input,
+  // max_input, min_weight and max_weight. If weight is const, we only need to
+  // check min_input and max_input. Note that becuase of offline calibration,
+  // usually these values don't chagne but it is still better to validate them.
   bool IsCachedBiasValid(float current_min_input,
                          float current_max_input) override {
     if (this->is_bias_const_ && this->is_weight_const_ &&
