@@ -1122,6 +1122,7 @@ class MklRemapperConv2dFusedBatchNormSwishTest : public GrapplerTest {
 
 TEST_F(MklRemapperConv2dFusedBatchNormSwishTest, F32) { RunTest<DT_FLOAT>(); }
 
+#ifdef ENABLE_ONEDNN_V2
 class MklFuseInstanceNormTest : public GrapplerTest {
  protected:
   template <DataType DTYPE>
@@ -1411,6 +1412,7 @@ TEST_F(MklFuseInstanceNormTest, FuseMklInstanceNormWithActivation4D_FP32_NHWC) {
 TEST_F(MklFuseInstanceNormTest, FuseMklInstanceNormWithActivation4D_FP32_NCHW) {
   FuseMklInstanceNorm4D<DT_FLOAT>("NCHW", true);
 }
+#endif  // ENABLE_ONEDNN_V2
 
 }  // namespace grappler
 }  // namespace tensorflow
