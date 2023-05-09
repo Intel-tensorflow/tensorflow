@@ -570,14 +570,15 @@ class MklConvFwdPrimitive : public MklPrimitive {
              {DNNL_ARG_WEIGHTS, *context_.filter_mem},
              {DNNL_ARG_BIAS, *context_.bias_mem},
              {DNNL_ARG_SCRATCHPAD, *context_.sp_mem},
-             {DNNL_ARG_DST, *context_.dst_mem},
+             {DNNL_ARG_DST, *context_.dst_mem}
 #ifndef ENABLE_ONEDNN_V2
+             ,
              {DNNL_ARG_ATTR_SCALES | DNNL_ARG_SRC, *context_.src_scale_mem},
              {DNNL_ARG_ATTR_SCALES | DNNL_ARG_WEIGHTS, *context_.wei_scale_mem},
              { DNNL_ARG_ATTR_SCALES | DNNL_ARG_DST,
-              *context_.dst_scale_mem }
+               *context_.dst_scale_mem }
 #endif  // ENABLE_ONEDNN_V2
-             });
+            });
       } else {
         context_.fwd_primitives_args.push_back(
             {{DNNL_ARG_SRC, *context_.src_mem},
@@ -615,14 +616,15 @@ class MklConvFwdPrimitive : public MklPrimitive {
             {{DNNL_ARG_SRC, *context_.src_mem},
              {DNNL_ARG_WEIGHTS, *context_.filter_mem},
              {DNNL_ARG_SCRATCHPAD, *context_.sp_mem},
-             {DNNL_ARG_DST, *context_.dst_mem},
-#ifdef ENABLE_ONEDNN_V2
+             {DNNL_ARG_DST, *context_.dst_mem}
+#ifndef ENABLE_ONEDNN_V2
+             ,
              {DNNL_ARG_ATTR_SCALES | DNNL_ARG_SRC, *context_.src_scale_mem},
              {DNNL_ARG_ATTR_SCALES | DNNL_ARG_WEIGHTS, *context_.wei_scale_mem},
              { DNNL_ARG_ATTR_SCALES | DNNL_ARG_DST,
-              *context_.dst_scale_mem }
+               *context_.dst_scale_mem }
 #endif  // ENABLE_ONEDNN_V2
-             });
+            });
       } else {
         context_.fwd_primitives_args.push_back(
             {{DNNL_ARG_SRC, *context_.src_mem},
@@ -1310,7 +1312,6 @@ class MklConvOp : public OpKernel {
                                     MklDnnShape* output_mkl_shape,
                                     Tensor** output_tensor) {
     DCHECK(output_tensor);
-#ifdef ENABLE_ONEDNN_V2
     auto dst_md = conv_prim_desc.dst_desc();
 
     if (!std::is_same<Ttemp_output, Toutput>::value) {
@@ -1325,14 +1326,6 @@ class MklConvOp : public OpKernel {
                        MklTensorFormatToMklDnnDataFormat(output_tf_format));
 #endif  // ENABLE_ONEDNN_V2
     }
-#else
-    auto dst_md =
-        std::is_same<Ttemp_output, Toutput>::value
-            ? conv_prim_desc.dst_desc()
-            : memory::desc(conv_prim_desc.dst_desc().get_dims(),
-                           MklDnnType<Toutput>(),
-                           MklTensorFormatToMklDnnDataFormat(output_tf_format));
-#endif  // ENABLE_ONEDNN_V2
 
     // Allocate shape of MKL tensor
     output_mkl_shape->SetMklTensor(true);
@@ -2362,8 +2355,9 @@ class MklQuantizedConvOp
         params.post_op_params[post_op_to_idx_["sum"]] = {"sum",
                                                          dnnl::algorithm::undef,
                                                          {1.0},
-                                                         "",
+                                                         ""
 #ifndef ENABLE_ONEDNN_V2
+                                                         ,
                                                          summand_dt
 #endif  // !ENABLE_ONEDNN_V2
         };
@@ -2448,20 +2442,11 @@ class MklQuantizedConvOp
              std::max(std::abs(max_filter[i]), std::abs(min_filter[i])));
       }
       dnnl::primitive_attr reorder_attr;
-#ifdef ENABLE_ONEDNN_V2
       if (depth == 1) {
         reorder_attr.set_output_scales(0, scales);
       } else {
         reorder_attr.set_output_scales(2, scales);
       }
-#else
-      // TODO(intel-tf): Enable this for int8 when using oneDNN v3.x
-      // and return a status instead of using DCHECK_EQ
-      DCHECK_EQ(depth, 1);
-      reorder_attr.set_scales_mask(DNNL_ARG_SRC, 0);
-      reorder_attr.set_scales_mask(DNNL_ARG_WEIGHTS, 0);
-      reorder_attr.set_scales_mask(DNNL_ARG_DST, 0);
-#endif  // ENABLE_ONEDNN_V2
       auto summand_md = memory::desc(output_dims_mkl_order, MklDnnType<Tbias>(),
                                      memory::format_tag::nhwc);
       void* summand_buf =
@@ -2539,20 +2524,11 @@ class MklQuantizedConvOp
     }
     if (!is_bias_const_ || IsBiasCacheEmpty(context) || !scales_are_valid) {
       dnnl::primitive_attr bias_attr;
-#ifdef ENABLE_ONEDNN_V2
       if (depth == 1) {
         bias_attr.set_output_scales(0, scales_);
       } else {
         bias_attr.set_output_scales(1, scales_);
       }
-#else
-      // TODO(intel-tf): Enable this for int8 when using oneDNN v3.x
-      // and return a status instead of using DCHECK_EQ
-      DCHECK_EQ(depth, 1);
-      bias_attr.set_scales_mask(DNNL_ARG_SRC, 0);
-      bias_attr.set_scales_mask(DNNL_ARG_WEIGHTS, 0);
-      bias_attr.set_scales_mask(DNNL_ARG_DST, 0);
-#endif  // ENABLE_ONEDNN_V2
 
       auto bias_md = memory::desc({static_cast<int>(bias_tensor.NumElements())},
                                   MklDnnType<Tbias>(), memory::format_tag::x);
