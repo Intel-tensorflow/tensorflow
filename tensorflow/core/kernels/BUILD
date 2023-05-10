@@ -96,6 +96,7 @@ cc_library(
     deps = [
         "//tensorflow/core:framework",
         "//third_party/eigen3",
+        "@com_google_absl//absl/status",
     ],
 )
 
@@ -329,6 +330,8 @@ cc_library(
         "//tensorflow/core:core_cpu_base",
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -625,6 +628,8 @@ cc_library(
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
         "//tensorflow/core:protos_all_cc",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -668,6 +673,7 @@ cc_library(
         "//tensorflow/core/kernels/batching_util:concat_split_util",
         "//tensorflow/core/kernels/batching_util:periodic_function_dynamic",
         "//tensorflow/core/platform:numbers",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:optional",
     ],
@@ -749,6 +755,7 @@ cc_library(
         ":variable_ops",
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
+        "@com_google_absl//absl/status",
     ],
 )
 
@@ -787,6 +794,7 @@ cc_library(
     deps = [
         "//tensorflow/core:framework",
         "//third_party/eigen3",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
     ],
 )
@@ -865,6 +873,7 @@ tf_kernel_library(
         "//third_party/eigen3",
         "@com_google_absl//absl/container:btree",
         "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -1116,6 +1125,7 @@ tf_kernel_library(
     deps = ARRAY_DEPS + [
         ":loose_headers",
         ":split_lib",
+        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -2380,6 +2390,7 @@ tf_kernel_library(
         "//tensorflow/core/framework:bounds_check",
         "//tensorflow/core/util/ctc:ctc_beam_search_lib",
         "//tensorflow/core/util/ctc:ctc_loss_calculator_lib",
+        "@com_google_absl//absl/strings",
     ] + if_cuda_or_rocm([
         ":gpu_utils",
         ":conv_ops_gpu_hdrs",
@@ -2691,6 +2702,7 @@ tf_kernel_library(
         "//tensorflow/core:lib_internal",
         "//tensorflow/core/util/tensor_bundle",
         "//third_party/eigen3",
+        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -2940,6 +2952,7 @@ tf_kernel_library(
         "//tensorflow/core:lib",
         "//tensorflow/core:lib_internal",
         "//tensorflow/core/profiler/lib:traceme",
+        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -3456,6 +3469,7 @@ tf_kernel_library(
         ":fused_eigen_output_kernels",
         ":loose_headers",
         "//tensorflow/tsl/framework/contraction:eigen_contraction_kernel",
+        "@com_google_absl//absl/strings",
     ] + mkl_deps() + if_cuda([
         ":matmul_util",
         "//tensorflow/compiler/xla/stream_executor/cuda:cublas_plugin",
@@ -3526,7 +3540,7 @@ tf_kernel_library(
 tf_kernel_library(
     name = "cross_op",
     prefix = "cross_op",
-    deps = MATH_DEPS,
+    deps = MATH_DEPS + ["@com_google_absl//absl/strings"],
 )
 
 tf_kernel_library(
@@ -3545,6 +3559,7 @@ tf_kernel_library(
     prefix = "cwise_op",
     deps = MATH_DEPS + [
         "//tensorflow/core/kernels/mlir_generated:cwise_op",
+        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -4150,6 +4165,7 @@ tf_kernel_library(
         ":redux_functor",
         "//tensorflow/core/profiler/lib:scoped_annotation",
         "//tensorflow/core/util:determinism_for_kernels",
+        "@com_google_absl//absl/strings",
     ] + if_cuda_or_rocm([
         ":reduction_ops",
     ]) + if_cuda([
@@ -4170,6 +4186,7 @@ tf_kernel_library(
         ":redux_functor",
         ":transpose_functor",
         "//tensorflow/core/util:determinism_for_kernels",
+        "@com_google_absl//absl/strings",
     ] + if_cuda([
         "//tensorflow/core/platform:stream_executor",
     ]),
@@ -4436,6 +4453,7 @@ tf_kernel_library(
         "//tensorflow/core/framework:bounds_check",
         "//tensorflow/core/platform:stream_executor",
         "//third_party/eigen3",
+        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -4948,7 +4966,7 @@ tf_kernel_library(
 tf_kernel_library(
     name = "sparse_reduce_op",
     prefix = "sparse_reduce_op",
-    deps = SPARSE_DEPS,
+    deps = SPARSE_DEPS + ["@com_google_absl//absl/strings"],
 )
 
 tf_kernel_library(
@@ -5241,7 +5259,10 @@ tf_kernel_library(
 tf_kernel_library(
     name = "dense_update_ops",
     prefix = "dense_update_ops",
-    deps = STATE_DEPS + [":dense_update_functor"],
+    deps = STATE_DEPS + [
+        ":dense_update_functor",
+        "@com_google_absl//absl/strings",
+    ],
 )
 
 tf_kernel_library(
@@ -5318,13 +5339,14 @@ tf_kernel_library(
         ":scatter_nd_util",
         ":training_op_helpers",
         ":variable_ops",
+        "@com_google_absl//absl/strings",
     ],
 )
 
 tf_kernel_library(
     name = "variable_ops",
     prefix = "variable_ops",
-    deps = STATE_DEPS,
+    deps = STATE_DEPS + ["@com_google_absl//absl/strings"],
 )
 
 tf_kernel_library(
@@ -5446,7 +5468,7 @@ tf_kernel_library(
 tf_kernel_library(
     name = "unsorted_segment_join_op",
     prefix = "unsorted_segment_join_op",
-    deps = STRING_DEPS,
+    deps = STRING_DEPS + ["@com_google_absl//absl/strings"],
 )
 
 tf_kernel_library(
@@ -6287,7 +6309,6 @@ filegroup(
         "variable_ops.h",
         "variant_ops_util.cc",
         "variant_ops_util.h",
-    ] + [
         "//tensorflow/c/kernels:portable_all_op_kernels",
         "//tensorflow/core/kernels/image:non_max_suppression_op.cc",
         "//tensorflow/core/kernels/image:non_max_suppression_op.h",
@@ -6401,7 +6422,6 @@ filegroup(
         "transpose_op.h",
         "where_op.h",
         "xent_op.h",
-    ] + [
         "//tensorflow/core/kernels/data:portable_all_op_kernels_headers",
         "//tensorflow/core/kernels/image:adjust_contrast_op.h",
         "//tensorflow/core/kernels/image:adjust_hue_op.h",
@@ -6549,9 +6569,6 @@ filegroup(
         "population_count_op.h",
         "winograd_transform.h",
         ":portable_extended_ops_headers",
-        "//tensorflow/tsl/framework/contraction:eigen_contraction_kernel.cc",
-        "//tensorflow/tsl/framework/contraction:eigen_contraction_kernel.h",
-    ] + [
         "//tensorflow/core/kernels/image:colorspace_op.cc",
         "//tensorflow/core/kernels/image:crop_and_resize_op.cc",
         "//tensorflow/core/kernels/image:crop_and_resize_op.h",
@@ -6569,6 +6586,8 @@ filegroup(
         "//tensorflow/core/kernels/linalg:einsum_op_impl_int32.cc",
         "//tensorflow/core/kernels/linalg:einsum_op_impl_int64.cc",
         "//tensorflow/core/kernels/uniform_quant_ops:portable_all_op_kernels",
+        "//tensorflow/tsl/framework/contraction:eigen_contraction_kernel.cc",
+        "//tensorflow/tsl/framework/contraction:eigen_contraction_kernel.h",
     ],
 )
 
@@ -6753,7 +6772,6 @@ filegroup(
         "whole_file_read_ops.cc",
         "xent_op.cc",
         ":portable_extended_ops_headers",
-    ] + [
         "//tensorflow/core/kernels/data:portable_all_op_kernels",
         "//tensorflow/core/kernels/image:adjust_contrast_op.cc",
         "//tensorflow/core/kernels/image:adjust_hue_op.cc",
@@ -6971,6 +6989,7 @@ cc_library(
         "//third_party/fft2d:fft2d_headers",
         "//third_party/icu/data:conversion_data",
         "@com_google_absl//absl/base",
+        "@com_google_absl//absl/status",
         "@com_google_protobuf//:protobuf",
         "@fft2d",
         "@gemmlowp",
@@ -7712,6 +7731,8 @@ cc_library(
         "//tensorflow/core:lib",
         "//tensorflow/core/framework:bounds_check",
         "//third_party/eigen3",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
         "@gemmlowp",
     ],
 )
@@ -7762,6 +7783,7 @@ cc_library(
         "//tensorflow/core/framework:graph_proto_cc",
         "//tensorflow/core/framework:node_def_proto_cc",
         "//tensorflow/core/framework:types_proto_cc",
+        "@com_google_absl//absl/status",
     ],
 )
 
@@ -7910,96 +7932,21 @@ test_suite(
     ],
 )
 
-exports_files([
-    "cwise_op_abs.cc",
-    "cwise_op_add_1.cc",
-    "cwise_op_add_2.cc",
-    "cwise_op_atan2.cc",
-    "cwise_op_ceil.cc",
-    "cwise_op_cos.cc",
-    "cwise_op_div.cc",
-    "cwise_op_equal_to_1.cc",
-    "cwise_op_equal_to_2.cc",
-    "cwise_op_exp.cc",
-    "cwise_op_erf.cc",
-    "cwise_op_floor.cc",
-    "cwise_op_floor_div.cc",
-    "cwise_op_floor_mod.cc",
-    "cwise_op_gpu_add.cu.cc",
-    "cwise_op_gpu_atan2.cu.cc",
-    "cwise_op_gpu_ceil.cu.cc",
-    "cwise_op_gpu_cos.cu.cc",
-    "cwise_op_gpu_div.cu.cc",
-    "cwise_op_gpu_equal_to.cu.cc",
-    "cwise_op_gpu_exp.cu.cc",
-    "cwise_op_gpu_floor.cu.cc",
-    "cwise_op_gpu_floor_div.cu.cc",
-    "cwise_op_gpu_greater.cu.cc",
-    "cwise_op_gpu_greater_equal.cu.cc",
-    "cwise_op_gpu_isinf.cu.cc",
-    "cwise_op_gpu_less.cu.cc",
-    "cwise_op_gpu_less_equal.cu.cc",
-    "cwise_op_gpu_log.cu.cc",
-    "cwise_op_gpu_logical_and.cu.cc",
-    "cwise_op_gpu_logical_not.cu.cc",
-    "cwise_op_gpu_logical_or.cu.cc",
-    "cwise_op_gpu_maximum.cu.cc",
-    "cwise_op_gpu_minimum.cu.cc",
-    "cwise_op_gpu_mod.cu.cc",
-    "cwise_op_gpu_mul.cu.cc",
-    "cwise_op_gpu_neg.cu.cc",
-    "cwise_op_gpu_not_equal_to.cu.cc",
-    "cwise_op_gpu_pow.cu.cc",
-    "cwise_op_gpu_round.cu.cc",
-    "cwise_op_gpu_rsqrt.cu.cc",
-    "cwise_op_gpu_select.cu.cc",
-    "cwise_op_gpu_sigmoid.cu.cc",
-    "cwise_op_gpu_sin.cu.cc",
-    "cwise_op_gpu_sqrt.cu.cc",
-    "cwise_op_gpu_square.cu.cc",
-    "cwise_op_gpu_squared_difference.cu.cc",
-    "cwise_op_gpu_sub.cu.cc",
-    "cwise_op_gpu_tanh.cu.cc",
-    "cwise_op_greater.cc",
-    "cwise_op_greater_equal.cc",
-    "cwise_op_isinf.cc",
-    "cwise_op_leakyrelu.cc",
-    "cwise_op_less.cc",
-    "cwise_op_less_equal.cc",
-    "cwise_op_log.cc",
-    "cwise_op_logical_and.cc",
-    "cwise_op_logical_not.cc",
-    "cwise_op_logical_or.cc",
-    "cwise_op_maximum.cc",
-    "cwise_op_minimum.cc",
-    "cwise_op_mod.cc",
-    "cwise_op_mul_1.cc",
-    "cwise_op_mul_2.cc",
-    "cwise_op_neg_1.cc",
-    "cwise_op_neg_2.cc",
-    "cwise_op_not_equal_to_1.cc",
-    "cwise_op_not_equal_to_2.cc",
-    "cwise_op_pow.cc",
-    "cwise_op_round.cc",
-    "cwise_op_rsqrt.cc",
-    "cwise_op_select.cc",
-    "cwise_op_sigmoid.cc",
-    "cwise_op_sin.cc",
-    "cwise_op_sign.cc",
-    "cwise_op_sqrt.cc",
-    "cwise_op_square.cc",
-    "cwise_op_squared_difference.cc",
-    "cwise_op_sub.cc",
-    "cwise_op_tanh.cc",
-    "dequantize_op.cc",
-    "ops_testutil.h",
-    "quantize_and_dequantize_op.cc",
-    "quantize_op.cc",
-    "sparse_cross_op.cc",
-    "sparse_fill_empty_rows_op.cc",
-    "sparse_reshape_op.cc",
-    "unary_ops_composition.cc",
-])
+exports_files(
+    glob([
+        "cwise_op*.cc",
+        "cwise_op_gpu*.cu.cc",
+    ]) + [
+        "dequantize_op.cc",
+        "ops_testutil.h",
+        "quantize_and_dequantize_op.cc",
+        "quantize_op.cc",
+        "sparse_cross_op.cc",
+        "sparse_fill_empty_rows_op.cc",
+        "sparse_reshape_op.cc",
+        "unary_ops_composition.cc",
+    ],
+)
 
 tf_kernel_library(
     name = "sobol_op",

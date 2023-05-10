@@ -56,6 +56,7 @@ py_library(
         "//tensorflow/python/compiler/xla:compiler_py",
         "//tensorflow/python/platform:flags",
         "//tensorflow/python/platform:tf_logging",
+        "//tensorflow/python/tpu:tpu_py",
         "//third_party/py/numpy",
     ],
 )
@@ -537,6 +538,25 @@ tf_xla_py_test(
         "//tensorflow/python:nn_ops_gen",
         "//tensorflow/python:platform_test",
         "@absl_py//absl/testing:parameterized",
+    ],
+)
+
+tf_xla_py_test(
+    name = "tensor_float_32_test",
+    size = "medium",
+    srcs = ["tensor_float_32_test.py"],
+    python_version = "PY3",
+    tags = [
+        "no_pip",  # TODO(b/149738646): fix pip install so these tests run on kokoro pip
+    ],
+    use_xla_device = False,  # Uses tf.function(jit_compile=True)
+    deps = [
+        ":xla_test",
+        "//tensorflow/python:array_ops",
+        "//tensorflow/python:framework",
+        "//tensorflow/python:nn",
+        "//tensorflow/python:nn_ops",
+        "//tensorflow/python:platform_test",
     ],
 )
 
@@ -2309,7 +2329,7 @@ tf_xla_py_test(
         "//tensorflow/python:errors",
         "//tensorflow/python:framework",
         "//tensorflow/python/compiler/xla:compiler_py",
-        "//tensorflow/python/tpu",
+        "//tensorflow/python/tpu:tpu_py",
     ],
 )
 
@@ -2341,7 +2361,7 @@ tf_xla_py_test(
         "//tensorflow/python:errors",
         "//tensorflow/python:framework",
         "//tensorflow/python/compiler/xla:compiler_py",
-        "//tensorflow/python/tpu",
+        "//tensorflow/python/tpu:tpu_py",
     ],
 )
 
