@@ -2219,11 +2219,13 @@ class MklReorderPrimitiveFactory : public MklPrimitiveFactory<T> {
     key_creator.AddAsKey(from_inner_idxs);
     key_creator.AddAsKey(static_cast<int>(from_desc.get_data_type()));
     key_creator.AddAsKey(from_dims);
+    key_creator.AddAsKey(from_strides);
     key_creator.AddAsKey(static_cast<int>(to_inner_nblks));
     key_creator.AddAsKey(to_inner_blks);
     key_creator.AddAsKey(to_inner_idxs);
     key_creator.AddAsKey(static_cast<int>(to_desc.get_data_type()));
     key_creator.AddAsKey(to_dims);
+    key_creator.AddAsKey(to_strides);
 #endif  // ENABLE_ONEDNN_V2
     return key_creator.GetKey();
   }
