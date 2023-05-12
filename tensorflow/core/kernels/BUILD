@@ -96,7 +96,6 @@ cc_library(
     deps = [
         "//tensorflow/core:framework",
         "//third_party/eigen3",
-        "@com_google_absl//absl/status",
     ],
 )
 
@@ -330,8 +329,6 @@ cc_library(
         "//tensorflow/core:core_cpu_base",
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -346,6 +343,7 @@ cc_library(
         "//tensorflow/core:lib",
         "//tensorflow/core:lib_internal",
         "//tensorflow/core/framework:op_requires",
+        "@com_google_absl//absl/status",
     ],
 )
 
@@ -628,8 +626,6 @@ cc_library(
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
         "//tensorflow/core:protos_all_cc",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -673,7 +669,6 @@ cc_library(
         "//tensorflow/core/kernels/batching_util:concat_split_util",
         "//tensorflow/core/kernels/batching_util:periodic_function_dynamic",
         "//tensorflow/core/platform:numbers",
-        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:optional",
     ],
@@ -755,7 +750,6 @@ cc_library(
         ":variable_ops",
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
-        "@com_google_absl//absl/status",
     ],
 )
 
@@ -794,7 +788,6 @@ cc_library(
     deps = [
         "//tensorflow/core:framework",
         "//third_party/eigen3",
-        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
     ],
 )
@@ -873,7 +866,6 @@ tf_kernel_library(
         "//third_party/eigen3",
         "@com_google_absl//absl/container:btree",
         "@com_google_absl//absl/container:flat_hash_set",
-        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -1125,7 +1117,6 @@ tf_kernel_library(
     deps = ARRAY_DEPS + [
         ":loose_headers",
         ":split_lib",
-        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -2339,6 +2330,7 @@ tf_cc_test(
         "//tensorflow/core:lib",
         "//tensorflow/core:test",
         "//tensorflow/core:test_main",
+        "@com_google_absl//absl/status",
     ],
 )
 
@@ -2390,7 +2382,6 @@ tf_kernel_library(
         "//tensorflow/core/framework:bounds_check",
         "//tensorflow/core/util/ctc:ctc_beam_search_lib",
         "//tensorflow/core/util/ctc:ctc_loss_calculator_lib",
-        "@com_google_absl//absl/strings",
     ] + if_cuda_or_rocm([
         ":gpu_utils",
         ":conv_ops_gpu_hdrs",
@@ -2702,7 +2693,6 @@ tf_kernel_library(
         "//tensorflow/core:lib_internal",
         "//tensorflow/core/util/tensor_bundle",
         "//third_party/eigen3",
-        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -2952,7 +2942,6 @@ tf_kernel_library(
         "//tensorflow/core:lib",
         "//tensorflow/core:lib_internal",
         "//tensorflow/core/profiler/lib:traceme",
-        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -3194,13 +3183,13 @@ tf_kernel_library(
 tf_kernel_library(
     name = "text_line_reader_op",
     prefix = "text_line_reader_op",
-    deps = IO_DEPS,
+    deps = IO_DEPS + ["@com_google_absl//absl/status"],
 )
 
 tf_kernel_library(
     name = "tf_record_reader_op",
     prefix = "tf_record_reader_op",
-    deps = IO_DEPS,
+    deps = IO_DEPS + ["@com_google_absl//absl/status"],
 )
 
 tf_kernel_library(
@@ -3469,7 +3458,6 @@ tf_kernel_library(
         ":fused_eigen_output_kernels",
         ":loose_headers",
         "//tensorflow/tsl/framework/contraction:eigen_contraction_kernel",
-        "@com_google_absl//absl/strings",
     ] + mkl_deps() + if_cuda([
         ":matmul_util",
         "//tensorflow/compiler/xla/stream_executor/cuda:cublas_plugin",
@@ -3540,7 +3528,7 @@ tf_kernel_library(
 tf_kernel_library(
     name = "cross_op",
     prefix = "cross_op",
-    deps = MATH_DEPS + ["@com_google_absl//absl/strings"],
+    deps = MATH_DEPS,
 )
 
 tf_kernel_library(
@@ -3559,7 +3547,6 @@ tf_kernel_library(
     prefix = "cwise_op",
     deps = MATH_DEPS + [
         "//tensorflow/core/kernels/mlir_generated:cwise_op",
-        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -3773,6 +3760,10 @@ tf_cuda_cc_test(
     name = "matmul_op_test",
     size = "small",
     srcs = ["matmul_op_test.cc"],
+    tags = [
+        "no_arm64",  # b/282068262
+        "no_armv7",  # b/280582913
+    ],
     deps = [
         ":matmul_op",
         ":ops_testutil",
@@ -4165,7 +4156,6 @@ tf_kernel_library(
         ":redux_functor",
         "//tensorflow/core/profiler/lib:scoped_annotation",
         "//tensorflow/core/util:determinism_for_kernels",
-        "@com_google_absl//absl/strings",
     ] + if_cuda_or_rocm([
         ":reduction_ops",
     ]) + if_cuda([
@@ -4186,7 +4176,6 @@ tf_kernel_library(
         ":redux_functor",
         ":transpose_functor",
         "//tensorflow/core/util:determinism_for_kernels",
-        "@com_google_absl//absl/strings",
     ] + if_cuda([
         "//tensorflow/core/platform:stream_executor",
     ]),
@@ -4453,7 +4442,6 @@ tf_kernel_library(
         "//tensorflow/core/framework:bounds_check",
         "//tensorflow/core/platform:stream_executor",
         "//third_party/eigen3",
-        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -4966,7 +4954,7 @@ tf_kernel_library(
 tf_kernel_library(
     name = "sparse_reduce_op",
     prefix = "sparse_reduce_op",
-    deps = SPARSE_DEPS + ["@com_google_absl//absl/strings"],
+    deps = SPARSE_DEPS,
 )
 
 tf_kernel_library(
@@ -5259,10 +5247,7 @@ tf_kernel_library(
 tf_kernel_library(
     name = "dense_update_ops",
     prefix = "dense_update_ops",
-    deps = STATE_DEPS + [
-        ":dense_update_functor",
-        "@com_google_absl//absl/strings",
-    ],
+    deps = STATE_DEPS + [":dense_update_functor"],
 )
 
 tf_kernel_library(
@@ -5339,14 +5324,13 @@ tf_kernel_library(
         ":scatter_nd_util",
         ":training_op_helpers",
         ":variable_ops",
-        "@com_google_absl//absl/strings",
     ],
 )
 
 tf_kernel_library(
     name = "variable_ops",
     prefix = "variable_ops",
-    deps = STATE_DEPS + ["@com_google_absl//absl/strings"],
+    deps = STATE_DEPS,
 )
 
 tf_kernel_library(
@@ -5468,7 +5452,7 @@ tf_kernel_library(
 tf_kernel_library(
     name = "unsorted_segment_join_op",
     prefix = "unsorted_segment_join_op",
-    deps = STRING_DEPS + ["@com_google_absl//absl/strings"],
+    deps = STRING_DEPS,
 )
 
 tf_kernel_library(
@@ -6309,6 +6293,7 @@ filegroup(
         "variable_ops.h",
         "variant_ops_util.cc",
         "variant_ops_util.h",
+    ] + [
         "//tensorflow/c/kernels:portable_all_op_kernels",
         "//tensorflow/core/kernels/image:non_max_suppression_op.cc",
         "//tensorflow/core/kernels/image:non_max_suppression_op.h",
@@ -6422,6 +6407,7 @@ filegroup(
         "transpose_op.h",
         "where_op.h",
         "xent_op.h",
+    ] + [
         "//tensorflow/core/kernels/data:portable_all_op_kernels_headers",
         "//tensorflow/core/kernels/image:adjust_contrast_op.h",
         "//tensorflow/core/kernels/image:adjust_hue_op.h",
@@ -6569,6 +6555,9 @@ filegroup(
         "population_count_op.h",
         "winograd_transform.h",
         ":portable_extended_ops_headers",
+        "//tensorflow/tsl/framework/contraction:eigen_contraction_kernel.cc",
+        "//tensorflow/tsl/framework/contraction:eigen_contraction_kernel.h",
+    ] + [
         "//tensorflow/core/kernels/image:colorspace_op.cc",
         "//tensorflow/core/kernels/image:crop_and_resize_op.cc",
         "//tensorflow/core/kernels/image:crop_and_resize_op.h",
@@ -6586,8 +6575,6 @@ filegroup(
         "//tensorflow/core/kernels/linalg:einsum_op_impl_int32.cc",
         "//tensorflow/core/kernels/linalg:einsum_op_impl_int64.cc",
         "//tensorflow/core/kernels/uniform_quant_ops:portable_all_op_kernels",
-        "//tensorflow/tsl/framework/contraction:eigen_contraction_kernel.cc",
-        "//tensorflow/tsl/framework/contraction:eigen_contraction_kernel.h",
     ],
 )
 
@@ -6772,6 +6759,7 @@ filegroup(
         "whole_file_read_ops.cc",
         "xent_op.cc",
         ":portable_extended_ops_headers",
+    ] + [
         "//tensorflow/core/kernels/data:portable_all_op_kernels",
         "//tensorflow/core/kernels/image:adjust_contrast_op.cc",
         "//tensorflow/core/kernels/image:adjust_hue_op.cc",
@@ -6989,7 +6977,6 @@ cc_library(
         "//third_party/fft2d:fft2d_headers",
         "//third_party/icu/data:conversion_data",
         "@com_google_absl//absl/base",
-        "@com_google_absl//absl/status",
         "@com_google_protobuf//:protobuf",
         "@fft2d",
         "@gemmlowp",
@@ -7731,8 +7718,6 @@ cc_library(
         "//tensorflow/core:lib",
         "//tensorflow/core/framework:bounds_check",
         "//third_party/eigen3",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/strings",
         "@gemmlowp",
     ],
 )
@@ -7783,7 +7768,6 @@ cc_library(
         "//tensorflow/core/framework:graph_proto_cc",
         "//tensorflow/core/framework:node_def_proto_cc",
         "//tensorflow/core/framework:types_proto_cc",
-        "@com_google_absl//absl/status",
     ],
 )
 

@@ -2,7 +2,7 @@
 # Public targets:
 #  ":platform" - Low-level and platform-specific Python code.
 
-load("//tensorflow:strict.default.bzl", "py_strict_library")
+load("//tensorflow:strict.default.bzl", "py_strict_library", "py_strict_test")
 load("//tensorflow:tensorflow.bzl", "VERSION", "cc_header_only_library", "clean_dep", "if_google", "if_mlir", "if_oss", "if_windows", "if_xla_available", "py_test", "tf_enable_mlir_bridge", "tf_python_pybind_static_deps", "tsl_async_value_deps")
 load("//tensorflow:tensorflow.default.bzl", "cuda_py_test", "get_compatible_with_portable", "pywrap_tensorflow_macro", "tf_external_workspace_visible", "tf_monitoring_python_deps", "tf_py_test", "tf_pybind_cc_library_wrapper", "tf_python_pybind_extension")
 load(
@@ -517,7 +517,11 @@ py_library(
 
 tf_gen_op_wrapper_private_py(
     name = "functional_ops_gen",
-    visibility = ["//learning/brain/python/ops:__pkg__"],
+    visibility = [
+        "//learning/brain/python/ops:__pkg__",
+        "//tensorflow/python/eager/polymorphic_function:__pkg__",
+        "//tensorflow/python/kernel_tests/control_flow:__pkg__",
+    ],
 )
 
 py_library(
@@ -873,7 +877,11 @@ tf_gen_op_wrapper_private_py(
 
 tf_gen_op_wrapper_private_py(
     name = "random_ops_gen",
-    visibility = ["//learning/brain/python/ops:__pkg__"],
+    visibility = [
+        "//learning/brain/python/ops:__pkg__",
+        "//tensorflow/python/eager/polymorphic_function:__pkg__",
+        "//tensorflow/python/kernel_tests/random:__pkg__",
+    ],
 )
 
 tf_gen_op_wrapper_private_py(
@@ -883,7 +891,10 @@ tf_gen_op_wrapper_private_py(
 
 tf_gen_op_wrapper_private_py(
     name = "stateful_random_ops_gen",
-    visibility = ["//learning/brain/python/ops:__pkg__"],
+    visibility = [
+        "//learning/brain/python/ops:__pkg__",
+        "//tensorflow/python/kernel_tests/random:__pkg__",
+    ],
 )
 
 tf_gen_op_wrapper_private_py(
@@ -910,6 +921,7 @@ tf_gen_op_wrapper_private_py(
 
 tf_gen_op_wrapper_private_py(
     name = "random_index_shuffle_ops_gen",
+    visibility = visibility + ["//tensorflow/python/kernel_tests/random:__pkg__"],
 )
 
 tf_gen_op_wrapper_private_py(
@@ -932,6 +944,7 @@ tf_gen_op_wrapper_private_py(
 
 tf_gen_op_wrapper_private_py(
     name = "set_ops_gen",
+    visibility = visibility + ["//tensorflow/python/kernel_tests/math_ops:__pkg__"],
 )
 
 tf_gen_op_wrapper_private_py(
@@ -1001,7 +1014,10 @@ tf_gen_op_wrapper_private_py(
     ],
 )
 
-tf_gen_op_wrapper_private_py(name = "rnn_ops_gen")
+tf_gen_op_wrapper_private_py(
+    name = "rnn_ops_gen",
+    visibility = ["//tensorflow/python/kernel_tests/nn_ops:__pkg__"],
+)
 
 tf_gen_op_wrapper_private_py(
     name = "sendrecv_ops_gen",
@@ -2809,7 +2825,6 @@ py_library(
         ":control_flow_ops",
         ":math_ops",
         ":sparse_ops_gen",
-        ":special_math_ops",
         "//tensorflow/python/framework:constant_op",
         "//tensorflow/python/framework:dtypes",
         "//tensorflow/python/framework:fast_tensor_util",
@@ -4510,6 +4525,20 @@ py_test(
         "//tensorflow/python/framework:ops",
         "//tensorflow/python/framework:tensor_spec",
         "//tensorflow/python/framework:test_lib",
+    ],
+)
+
+py_strict_test(
+    name = "ops/array_ops_shape_test",
+    srcs = ["ops/array_ops_shape_test.py"],
+    env = {"TF_FLAG_TF_SHAPE_DEFAULT_INT64": "true"},
+    python_version = "PY3",
+    srcs_version = "PY3",
+    deps = [
+        ":array_ops",
+        ":client_testlib",
+        "//tensorflow/core/config:flags_py",
+        "//tensorflow/python/framework:dtypes",
     ],
 )
 
