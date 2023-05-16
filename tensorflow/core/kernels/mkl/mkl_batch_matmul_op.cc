@@ -382,7 +382,6 @@ TF_CALL_half(REGISTER_FUSED_BATCH_MATMUL_MKL);
 TF_CALL_float(REGISTER_MATMUL_MKL);
 TF_CALL_bfloat16(REGISTER_MATMUL_MKL);
 #endif  // DNNL_AARCH64_USE_ACL
-#endif  // INTEL_MKL
 
 }  // end namespace tensorflow
 #endif  // INTEL_MKL
