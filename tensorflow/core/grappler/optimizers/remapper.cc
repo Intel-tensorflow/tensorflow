@@ -4528,6 +4528,7 @@ Status Remapper::Optimize(Cluster* cluster, const GrapplerItem& item,
         continue;
       }
 
+#if defined(ENABLE_ONEDNN_V2)
       // Remap ops that make up instancenorm followed by Relu or LeakyRelu
       // into _MklFusedInstanceNorm
       matched_nodes_map.clear();
@@ -4549,6 +4550,7 @@ Status Remapper::Optimize(Cluster* cluster, const GrapplerItem& item,
             &nodes_to_delete, false));
         continue;
       }
+#endif
     }
 
     // Remap MatMul + BiasAdd + gelu-subgraph
