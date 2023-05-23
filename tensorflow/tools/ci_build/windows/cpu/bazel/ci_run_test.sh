@@ -177,7 +177,7 @@ bazel --windows_enable_symlinks test \
   --build_tag_filters=-no_pip,-no_windows,-no_oss,-gpu,-tpu --build_tests_only --config=monolithic \
   --config=opt \
   -k --test_output=errors \
-  --test_tag_filters=-no_windows,-no_oss,-gpu,-tpu,-v1only \
+  --test_tag_filters=-no_windows,-no_oss,-gpu,-tpu \
   --discard_analysis_cache \
   --test_size_filters=small,medium --jobs=16 --test_timeout=300,450,1200,3600 --verbose_failures \
   --flaky_test_attempts=3 \
