@@ -146,7 +146,7 @@ bazel build ${EXTRA_BUILD_FLAGS}  \
 bazel build \
   --experimental_cc_shared_library \
   --config=release_cpu_windows ${EXTRA_BUILD_FLAGS} \
-  --jobs=16
+  --jobs=16 \
   --output_filter=^$ \
   tensorflow/tools/pip_package:build_pip_package || exit $?
 
