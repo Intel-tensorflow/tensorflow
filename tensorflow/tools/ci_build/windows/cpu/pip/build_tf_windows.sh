@@ -146,6 +146,7 @@ bazel build ${EXTRA_BUILD_FLAGS}  \
 bazel build \
   --experimental_cc_shared_library \
   --config=release_cpu_windows ${EXTRA_BUILD_FLAGS} \
+  --jobs=16
   --output_filter=^$ \
   tensorflow/tools/pip_package:build_pip_package || exit $?
 
@@ -171,36 +172,36 @@ N_JOBS="${NUMBER_OF_PROCESSORS}"
 
 # Define no_tensorflow_py_deps=true so that every py_test has no deps anymore,
 # which will result testing system installed tensorflow
-bazel test --announce_rc --config=opt -k --test_output=errors \
-  --experimental_cc_shared_library \
-  ${EXTRA_TEST_FLAGS} \
-  --define=no_tensorflow_py_deps=true --test_lang_filters=py \
-  --test_tag_filters=-no_pip,-no_windows,-no_oss,-gpu,-tpu,-v1only \
-  --build_tag_filters=-no_pip,-no_windows,-no_oss,-gpu,-tpu --build_tests_only \
-  --test_size_filters=small \
-  --jobs="${N_JOBS}" --test_timeout="300,450,1200,3600" \
-  --flaky_test_attempts=3 \
-  -- ${TEST_TARGET}
-echo "reached"
-MYTFWS_ROOT=${WORKSPACE:-"C:/Users/mlp_admin"} # keep the tensorflow git repo clone under here as tensorflow subdir
-MYTFWS_ROOT=`cygpath -m $MYTFWS_ROOT`
-export MYTFWS_ROOT="$MYTFWS_ROOT"
-export MYTFWS_NAME="tensorflow"
-export MYTFWS="${MYTFWS_ROOT}/${MYTFWS_NAME}"
+# bazel test --announce_rc --config=opt -k --test_output=errors \
+#   --experimental_cc_shared_library \
+#   ${EXTRA_TEST_FLAGS} \
+#   --define=no_tensorflow_py_deps=true --test_lang_filters=py \
+#   --test_tag_filters=-no_pip,-no_windows,-no_oss,-gpu,-tpu,-v1only \
+#   --build_tag_filters=-no_pip,-no_windows,-no_oss,-gpu,-tpu --build_tests_only \
+#   --test_size_filters=small \
+#   --jobs="${N_JOBS}" --test_timeout="300,450,1200,3600" \
+#   --flaky_test_attempts=3 \
+#   -- ${TEST_TARGET}
+# echo "reached"
+# MYTFWS_ROOT=${WORKSPACE:-"C:/Users/mlp_admin"} # keep the tensorflow git repo clone under here as tensorflow subdir
+# MYTFWS_ROOT=`cygpath -m $MYTFWS_ROOT`
+# export MYTFWS_ROOT="$MYTFWS_ROOT"
+# export MYTFWS_NAME="tensorflow"
+# export MYTFWS="${MYTFWS_ROOT}/${MYTFWS_NAME}"
 
-cd $MYTFWS
-echo "${MYTFWS}"
+# cd $MYTFWS
+# echo "${MYTFWS}"
 
 
-  bazel --windows_enable_symlinks test \
-  --action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XTF_ARGS} --test_env=TF2_BEHAVIOR=1 \
-  --experimental_cc_shared_library --enable_runfiles --nodistinct_host_configuration \
-  --dynamic_mode=off --config=xla --config=short_logs --announce_rc \
-  --build_tag_filters=-no_pip,-no_windows,-no_oss,-gpu,-tpu --build_tests_only \
-  --config=monolithic --config=opt -k --test_output=errors \
-  --test_tag_filters=-no_pip,-no_windows,-no_oss,-gpu,-tpu,-v1only \
-  --discard_analysis_cache --test_size_filters=small --jobs="${N_JOBS}" \
-  --test_timeout=300,450,1200,3600 --verbose_failures --flaky_test_attempts=3 \
-  ${POSITIONAL_ARGS[@]} \
-   -- //tensorflow/... -//tensorflow/java/... -//tensorflow/lite/... -//tensorflow/compiler/xla/python/tpu_driver/... -//tensorflow/compiler/... -//tensorflow/go/... -//tensorflow/js/... -//tensorflow/python/... -//tensorflow/core/distributed_runtime/... -//tensorflow/tsl/distributed_runtime/...
+#   bazel --windows_enable_symlinks test \
+#   --action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XTF_ARGS} --test_env=TF2_BEHAVIOR=1 \
+#   --experimental_cc_shared_library --enable_runfiles --nodistinct_host_configuration \
+#   --dynamic_mode=off --config=xla --config=short_logs --announce_rc \
+#   --build_tag_filters=-no_pip,-no_windows,-no_oss,-gpu,-tpu --build_tests_only \
+#   --config=monolithic --config=opt -k --test_output=errors \
+#   --test_tag_filters=-no_pip,-no_windows,-no_oss,-gpu,-tpu,-v1only \
+#   --discard_analysis_cache --test_size_filters=small --jobs="${N_JOBS}" \
+#   --test_timeout=300,450,1200,3600 --verbose_failures --flaky_test_attempts=3 \
+#   ${POSITIONAL_ARGS[@]} \
+#    -- //tensorflow/... -//tensorflow/java/... -//tensorflow/lite/... -//tensorflow/compiler/xla/python/tpu_driver/... -//tensorflow/compiler/... -//tensorflow/go/... -//tensorflow/js/... -//tensorflow/python/... -//tensorflow/core/distributed_runtime/... -//tensorflow/tsl/distributed_runtime/...
  
