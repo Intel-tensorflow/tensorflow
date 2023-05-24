@@ -3161,9 +3161,9 @@ TF_CALL_bfloat16(REGISTER_MKL_CPU_2D);
           .Label(mkl_op_registry::kMklNameChangeOpLabel),                     \
       MklConvOp<CPUDevice, T, T, T, T, T, int32, false, true, false, true>);
 
-#ifdef ENABLE_ONEDNN_V3
+#ifndef ENABLE_ONEDNN_V2
 TF_CALL_half(REGISTER_MKL_CPU_2D_half)
-#endif  // ENABLE_ONEDNN_V3
+#endif  // !ENABLE_ONEDNN_V2
 
 #define REGISTER_MKL_CPU_2D_DEPTHWISE(T)                                      \
   REGISTER_KERNEL_BUILDER(                                                    \
@@ -3249,9 +3249,9 @@ TF_CALL_bfloat16(REGISTER_MKL_CPU_2D_DEPTHWISE);
 
 TF_CALL_float(REGISTER_MKL_CPU_2D_FUSED);
 TF_CALL_bfloat16(REGISTER_MKL_CPU_2D_FUSED);
-#ifdef ENABLE_ONEDNN_V3
+#ifndef ENABLE_ONEDNN_V2
 TF_CALL_half(REGISTER_MKL_CPU_2D_FUSED);
-#endif  // ENABLE_ONEDNN_V3
+#endif  // !ENABLE_ONEDNN_V2
 
 // Register 3D operations
 #define REGISTER_MKL_CPU_3D(T)                                                 \

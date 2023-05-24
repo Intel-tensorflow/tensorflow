@@ -46,9 +46,9 @@ class RaiseIncompatibleDTypeError : public OpKernel {
       RaiseIncompatibleDTypeError);
 
 TF_CALL_bfloat16(REGISTER_CPU);
-#ifdef ENABLE_ONEDNN_V3
+#ifndef ENABLE_ONEDNN_V2
 TF_CALL_half(REGISTER_CPU);
-#endif  // ENABLE_ONEDNN_V3
+#endif  // !ENABLE_ONEDNN_V2
 #undef REGISTER_CPU
 
 }  // namespace tensorflow

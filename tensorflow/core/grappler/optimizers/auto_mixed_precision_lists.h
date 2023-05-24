@@ -178,9 +178,9 @@ class AutoMixedPrecisionListsCuda : public AutoMixedPrecisionLists {
     // Eigen fused-conv2d does not support float16. Eigen's contraction
     // output kernels (defined in conv_ops_fused_impl.h) are enabled only
     // for float and double types.
-#ifdef ENABLE_ONEDNN_V3
+#ifndef ENABLE_ONEDNN_V2
       list.insert("Conv2D");
-#endif  // ENABLE_ONEDNN_V3
+#endif  // !ENABLE_ONEDNN_V2
     } else {
       list.insert("Conv2D");
     }

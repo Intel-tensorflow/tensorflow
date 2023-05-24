@@ -225,9 +225,9 @@ class MklMatMulOp : public OpKernel {
 // additional types
 TF_CALL_float(REGISTER_CPU);
 TF_CALL_bfloat16(REGISTER_CPU);
-#ifdef ENABLE_ONEDNN_V3
+#ifndef ENABLE_ONEDNN_V2
 TF_CALL_half(REGISTER_CPU);
-#endif  // ENABLE_ONEDNN_V3
+#endif  // !ENABLE_ONEDNN_V2
 #endif  // !DNNL_AARCH64_USE_ACL
 
 }  // namespace tensorflow

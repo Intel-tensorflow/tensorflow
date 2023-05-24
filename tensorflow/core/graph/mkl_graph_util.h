@@ -224,13 +224,13 @@ static inline bool IsMklOp(const string& op_name, DataType T,
     if (registered_kernels.find(search_string) != string::npos) {
       kernel_registered =
           is_native_op ? (T == DT_COMPLEX128 || T == DT_COMPLEX64 ||
-#ifdef ENABLE_ONEDNN_V3
+#ifndef ENABLE_ONEDNN_V2
                           T == DT_DOUBLE || T == DT_FLOAT || T == DT_HALF)
                        : (T == DT_FLOAT || T == DT_HALF);
 #else
                           T == DT_DOUBLE || T == DT_FLOAT)
                        : (T == DT_FLOAT);
-#endif  // ENABLE_ONEDNN_V3
+#endif  // !ENABLE_ONEDNN_V2
       if (!kernel_registered) {
         if (T == DT_BFLOAT16) {
           if (IsBF16SupportedByOneDNNOnThisCPU()) {

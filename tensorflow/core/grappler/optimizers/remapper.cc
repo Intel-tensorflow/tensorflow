@@ -340,11 +340,11 @@ bool IsCpuCompatibleDataType(const NodeDef* contraction,
             (dtype == DT_FLOAT || dtype == DT_BFLOAT16 || dtype == DT_HALF)) ||
            ((IsMatMul(*contraction) || IsAnyBatchMatMul(*contraction) ||
              is_supported_matmul)
-#ifdef ENABLE_ONEDNN_V3
+#ifndef ENABLE_ONEDNN_V2
             && (dtype == DT_FLOAT || dtype == DT_BFLOAT16 || dtype == DT_HALF));
 #else
             && (dtype == DT_FLOAT || dtype == DT_BFLOAT16));
-#endif  // ENABLE_ONEDNN_V3
+#endif  // !ENABLE_ONEDNN_V2
   }
   if (IsConv2D(*contraction)) {
     return dtype == DT_FLOAT || dtype == DT_DOUBLE;
@@ -1977,10 +1977,10 @@ bool FindMklLayerNorm(RemapperContext* ctx, int node_index,
 
     if (!NodeIsOnCpu(fused_batch_norm_node)) return false;
 
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
     if (GetDataTypeFromAttr(*fused_batch_norm_node, "T") == DT_HALF)
       return false;
-#endif  // ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
 
     // FusedBatchNorm node should have mean/variance as empty constant
     NodeDef* empty_const_node =
