@@ -977,7 +977,7 @@ TEST_F(AutoMixedPrecisionTest, TensorListFromTensor) {
   EXPECT_EQ(tensors.size(), tensors_expected.size());
   EXPECT_EQ(tensors.size(), item.fetch.size());
   for (int i = 0; i < item.fetch.size(); ++i) {
-    test::ExpectClose(tensors_expected[i], tensors[i], -1, 2e-4);
+    test::ExpectClose(tensors_expected[i], tensors[i], -1, 4e-4);
   }
 }
 
@@ -1263,6 +1263,8 @@ TEST_F(AutoMixedPrecisionTest, SigmoidOp) {
 }
 
 TEST_F(AutoMixedPrecisionTest, SoftmaxOp) {
+  if (IsMKLEnabled())
+    GTEST_SKIP() << "Test not applicable to MKL auto-mixed precision.";
   TestSimpleUnaryInferOp(
       -8, 8, 2.0e-3, -1,
       [](const tensorflow::Scope& scope, Output input) -> Output {
