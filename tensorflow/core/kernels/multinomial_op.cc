@@ -251,6 +251,7 @@ class StatefulMultinomialOp : public MultinomialOp<Device, T, OutputType> {
 TF_CALL_half(REGISTER);
 TF_CALL_float(REGISTER);
 TF_CALL_double(REGISTER);
+TF_CALL_bfloat16(REGISTER);
 #undef REGISTER
 
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
@@ -319,6 +320,7 @@ class StatelessMultinomialOp : public MultinomialOp<Device, T, OutputType> {
 TF_CALL_half(REGISTER);
 TF_CALL_float(REGISTER);
 TF_CALL_double(REGISTER);
+TF_CALL_bfloat16(REGISTER);
 #undef REGISTER
 
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
