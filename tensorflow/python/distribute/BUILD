@@ -1004,7 +1004,6 @@ py_strict_library(
         "//tensorflow/python/saved_model:save_context",
         "//tensorflow/python/trackable:base",
         "//tensorflow/python/types:core",
-        "//tensorflow/python/util:lazy_loader",
         "//third_party/py/numpy",
     ],
 )
@@ -2105,6 +2104,7 @@ cuda_py_strict_test(
     python_version = "PY3",
     tags = [
         "multi_and_single_gpu",
+        "no_oss",  # TODO(b/283098184)
         "notsan",  # TODO(b/220133218)
     ],
     # b/155301154 broken with XLA:GPU
@@ -2336,7 +2336,10 @@ distribute_py_strict_test(
     disable_mlir_bridge = False,
     python_version = "PY3",
     shard_count = 2,
-    tags = ["multi_and_single_gpu"],
+    tags = [
+        "multi_and_single_gpu",
+        "no_oss",  # TODO(b/283033375)
+    ],
     xla_enable_strict_auto_jit = True,
     deps = [
         ":collective_all_reduce_strategy",
@@ -2371,6 +2374,7 @@ distribute_py_strict_test(
     tags = [
         "multi_and_single_gpu",
         "no_cuda_asan",  # times out
+        "no_oss",  # TODO(b/283016506)
         "notsan",  # TODO(b/160006974)
     ],
     xla_enable_strict_auto_jit = True,
@@ -2586,7 +2590,6 @@ distribute_py_strict_test(
         "//tensorflow/python/eager:test",
         "//tensorflow/python/framework:constant_op",
         "//tensorflow/python/framework:tensor_spec",
-        "//tensorflow/python/keras/saving",
         "//tensorflow/python/module",
         "//tensorflow/python/saved_model:load",
         "//tensorflow/python/saved_model:save",

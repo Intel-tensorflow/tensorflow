@@ -1,6 +1,6 @@
 load("//tensorflow:strict.default.bzl", "py_strict_library")
 load("//tensorflow:tensorflow.default.bzl", "cuda_py_strict_test", "tf_py_strict_test")
-load("//tensorflow/compiler/tests:build_defs.bzl", "tf_xla_py_test")
+load("//tensorflow/compiler/tests:build_defs.bzl", "tf_xla_py_strict_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["//tensorflow:license"],
@@ -40,9 +40,9 @@ py_strict_library(
     visibility = ["//tensorflow/python:__subpackages__"],
     deps = [
         ":attributes",
+        ":function_type_utils",
         "//tensorflow/core:protos_all_py",
         "//tensorflow/core/function/polymorphism:function_type",
-        "//tensorflow/core/function/trace_type",
         "//tensorflow/python:handle_data_util",
         "//tensorflow/python/client:pywrap_tf_session",
         "//tensorflow/python/eager:context",
@@ -60,7 +60,7 @@ py_strict_library(
 
 cuda_py_strict_test(
     name = "atomic_function_test",
-    size = "small",
+    size = "medium",
     srcs = ["atomic_function_test.py"],
     python_version = "PY3",
     deps = [
@@ -77,14 +77,14 @@ cuda_py_strict_test(
 )
 
 py_strict_library(
-    name = "monomorphic_function",
-    srcs = ["monomorphic_function.py"],
+    name = "concrete_function",
+    srcs = ["concrete_function.py"],
     srcs_version = "PY3",
     visibility = ["//tensorflow/python:__subpackages__"],
     deps = [
         ":atomic_function",
         ":attributes",
-        ":function_spec",
+        ":function_type_utils",
         ":saved_model_exported_concrete",
         "//tensorflow/core:protos_all_py",
         "//tensorflow/core/function/polymorphism:function_type",
@@ -126,9 +126,9 @@ py_strict_library(
     visibility = ["//tensorflow/python:__subpackages__"],
     deps = [
         ":attributes",
+        ":concrete_function",
         ":function_context",
-        ":function_spec",
-        ":monomorphic_function",
+        ":function_type_utils",
         ":tf_method_target",
         ":transform",
         "//tensorflow/core/function/capture:capture_container",
@@ -169,7 +169,8 @@ py_strict_library(
         ":autograph_util",
         ":compiler_ir",
         ":eager_function_run",
-        ":function_spec",
+        ":function_type_utils",
+        ":tf_method_target",
         ":tracing_compiler",
         "//tensorflow/core:protos_all_py",
         "//tensorflow/core/function/trace_type",
@@ -214,14 +215,13 @@ cuda_py_strict_test(
     deps = [
         ":attributes",
         ":polymorphic_function",
-        ":tracing_compiler",
         "//tensorflow/core/function/capture:capture_container",
+        "//tensorflow/core/function/trace_type",
         "//tensorflow/python:array_ops",
         "//tensorflow/python:array_ops_stack",
         "//tensorflow/python:check_ops",
         "//tensorflow/python:client_testlib",
         "//tensorflow/python:clip_ops",
-        "//tensorflow/python:cond",
         "//tensorflow/python:cond_v2",
         "//tensorflow/python:constant_op",
         "//tensorflow/python:control_flow_assert",
@@ -300,7 +300,7 @@ tf_py_strict_test(
     ],
 )
 
-tf_xla_py_test(
+tf_xla_py_strict_test(
     name = "polymorphic_function_xla_jit_test",
     srcs = ["polymorphic_function_xla_jit_test.py"],
     disabled_backends = [
@@ -344,7 +344,7 @@ tf_xla_py_test(
     ],
 )
 
-tf_xla_py_test(
+tf_xla_py_strict_test(
     name = "polymorphic_function_xla_test",
     srcs = ["polymorphic_function_xla_test.py"],
     enable_mlir_bridge = False,
@@ -541,13 +541,14 @@ py_strict_library(
     srcs_version = "PY3",
     visibility = ["//tensorflow:internal"],
     deps = [
+        ":function_type_utils",
         "//tensorflow/python/trackable:base",
     ],
 )
 
 py_strict_library(
-    name = "function_spec",
-    srcs = ["function_spec.py"],
+    name = "function_type_utils",
+    srcs = ["function_type_utils.py"],
     srcs_version = "PY3",
     visibility = ["//tensorflow:internal"],
     deps = [
@@ -572,7 +573,7 @@ tf_py_strict_test(
     srcs = ["function_spec_test.py"],
     python_version = "PY3",
     deps = [
-        ":function_spec",
+        ":function_type_utils",
         "//tensorflow/core/function/polymorphism:function_type",
         "//tensorflow/core/function/trace_type",
         "//tensorflow/python:client_testlib",
@@ -597,7 +598,7 @@ py_strict_library(
     ],
 )
 
-tf_xla_py_test(
+tf_xla_py_strict_test(
     name = "compiler_ir_test",
     srcs = ["compiler_ir_test.py"],
     disabled_backends = [

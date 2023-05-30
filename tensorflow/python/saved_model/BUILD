@@ -477,7 +477,7 @@ tf_py_strict_test(
     ]),
 )
 
-py_library(
+py_strict_library(
     name = "load",
     srcs = ["load.py"],
     srcs_version = "PY3",
@@ -575,6 +575,7 @@ cuda_py_strict_test(
         ":save",
         ":save_options",
         ":tag_constants",
+        "//tensorflow/core/function/trace_type",
         "//tensorflow/python:array_ops",
         "//tensorflow/python:cond_v2",
         "//tensorflow/python:constant_op",
@@ -589,7 +590,6 @@ cuda_py_strict_test(
         "//tensorflow/python:variable_scope",
         "//tensorflow/python:variables",
         "//tensorflow/python:while_loop",
-        "//tensorflow/python:while_v2",  # b/118513001
         "//tensorflow/python/checkpoint",
         "//tensorflow/python/checkpoint:saveable_compat",
         "//tensorflow/python/client:session",
@@ -708,8 +708,10 @@ py_strict_library(
     deps = [
         ":nested_structure_coder",
         "//tensorflow/core:protos_all_py",
+        "//tensorflow/core/function/polymorphism:function_type",
         "//tensorflow/python:func_graph",
         "//tensorflow/python/eager:function",
+        "//tensorflow/python/eager/polymorphic_function:function_type_utils",
         "//tensorflow/python/util:nest",
     ],
 )
@@ -721,6 +723,8 @@ py_strict_library(
     deps = [
         ":nested_structure_coder",
         "//tensorflow/core:protos_all_py",
+        "//tensorflow/core/function/polymorphism:function_type",
+        "//tensorflow/core/function/trace_type",
         "//tensorflow/python:array_ops",
         "//tensorflow/python:default_gradient",
         "//tensorflow/python:framework_ops",
@@ -733,7 +737,7 @@ py_strict_library(
         "//tensorflow/python:type_spec",
         "//tensorflow/python/eager:def_function",
         "//tensorflow/python/eager:function",
-        "//tensorflow/python/eager/polymorphic_function:function_spec",
+        "//tensorflow/python/eager/polymorphic_function:function_type_utils",
         "//tensorflow/python/util:compat",
         "//tensorflow/python/util:nest",
         "//tensorflow/python/util:tf_decorator",

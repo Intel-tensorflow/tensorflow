@@ -385,6 +385,33 @@ class AbstractStackTrace {
   virtual std::string ToString(const TracePrintingOptions& opts) const = 0;
 };
 
+// A frozen sequence of StackFrames; an adapter for a span of StackFrames that
+// conforms to the AbstractStackTrace contract. Unlike other AbstractStackTrace
+// subclasses that could return different results from ToFrames() and
+// GetUserFrames(), this class returns the same sequence of stack frames for
+// both calls.
+class FrozenStackTrace : public AbstractStackTrace {
+ public:
+  // Constructs a FrozenStackTrace from a span of StackFrames by making a copy
+  // of each stack frame.
+  explicit FrozenStackTrace(absl::Span<StackFrame const> frames);
+
+  ~FrozenStackTrace() override = default;
+
+  absl::Span<StackFrame const> ToFrames() const override;
+
+  std::vector<StackFrame> ToUncachedFrames() const override;
+
+  StackFrame LastUserFrame() const override;
+
+  std::vector<StackFrame> GetUserFrames(int limit) const override;
+
+  std::string ToString(const TracePrintingOptions& opts) const override;
+
+ private:
+  std::vector<StackFrame> frames_;
+};
+
 using StackTracesMap =
     std::unordered_map<std::string,
                        std::shared_ptr<tensorflow::AbstractStackTrace>>;
@@ -863,6 +890,11 @@ class FunctionLibraryRuntime {
     // Instantiates the function for XLA compilation on device_type. If empty,
     // function is not compiled.
     std::string xla_compile_device_type;
+
+    // This interface is EXPERIMENTAL and subject to change.
+    //
+    // Instantiates the function enabling soft placement or outside compilation.
+    bool allow_soft_placement = false;
   };
   typedef uint64 Handle;
   virtual Status Instantiate(const std::string& function_name, AttrSlice attrs,

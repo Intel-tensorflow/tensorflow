@@ -70,6 +70,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/mlir/utils/error_util.h"
 #include "tensorflow/compiler/xla/mlir_hlo/mhlo/IR/hlo_ops.h"
 #include "tensorflow/compiler/xla/mlir_hlo/mhlo/transforms/passes.h"
+#include "tensorflow/compiler/xla/primitive_util.h"
 #include "tensorflow/compiler/xla/service/gpu/backend_configs.pb.h"
 #include "tensorflow/compiler/xla/service/hlo_parser.h"
 #include "tensorflow/compiler/xla/shape_util.h"
@@ -158,38 +159,22 @@ StatusOr<xla::Literal> CreateArrayLiteralFromAttr(mlir::ElementsAttr attr,
 
   xla::Shape shape = xla::TypeToShape(dense_attr.getType());
 
-#define ELEMENTS_ATTR_TO_LITERAL(xla_type, cpp_type)                         \
-  case xla_type: {                                                           \
-    xla::Array<cpp_type> source_data(shape.dimensions());                    \
-    source_data.SetValues(dense_attr.getValues<cpp_type>());                 \
-    return xla::LiteralUtil::CreateFromArrayWithLayout(source_data, layout); \
-  }
-
-  switch (shape.element_type()) {
-    ELEMENTS_ATTR_TO_LITERAL(xla::PrimitiveType::PRED, bool)
-    ELEMENTS_ATTR_TO_LITERAL(xla::PrimitiveType::F32, float)
-    ELEMENTS_ATTR_TO_LITERAL(xla::PrimitiveType::F64, double)
-    ELEMENTS_ATTR_TO_LITERAL(xla::PrimitiveType::S8, int8)
-    ELEMENTS_ATTR_TO_LITERAL(xla::PrimitiveType::S16, int16)
-    ELEMENTS_ATTR_TO_LITERAL(xla::PrimitiveType::S32, int32)
-    ELEMENTS_ATTR_TO_LITERAL(xla::PrimitiveType::S64, int64_t)
-    ELEMENTS_ATTR_TO_LITERAL(xla::PrimitiveType::U8, uint8)
-    ELEMENTS_ATTR_TO_LITERAL(xla::PrimitiveType::U16, uint16)
-    ELEMENTS_ATTR_TO_LITERAL(xla::PrimitiveType::U32, uint32)
-    ELEMENTS_ATTR_TO_LITERAL(xla::PrimitiveType::U64, uint64)
-    ELEMENTS_ATTR_TO_LITERAL(xla::PrimitiveType::C64, std::complex<float>)
-    ELEMENTS_ATTR_TO_LITERAL(xla::PrimitiveType::C128, std::complex<double>)
-    ELEMENTS_ATTR_TO_LITERAL(xla::PrimitiveType::F16, Eigen::half)
-    ELEMENTS_ATTR_TO_LITERAL(xla::PrimitiveType::BF16, Eigen::bfloat16)
-    ELEMENTS_ATTR_TO_LITERAL(xla::PrimitiveType::F8E5M2, tsl::float8_e5m2)
-    ELEMENTS_ATTR_TO_LITERAL(xla::PrimitiveType::F8E4M3FN, tsl::float8_e4m3fn)
-    ELEMENTS_ATTR_TO_LITERAL(xla::PrimitiveType::F8E4M3B11FNUZ,
-                             tsl::float8_e4m3b11)
-    default:
-      return tsl::errors::Internal(absl::StrCat(  // NOLINT
-          "Unsupported type: ", xla::PrimitiveType_Name(shape.element_type())));
-  }
-#undef ELEMENTS_ATTR_TO_LITERAL
+  return xla::primitive_util::PrimitiveTypeSwitch<StatusOr<xla::Literal>>(
+      [&](auto primitive_type_constant) -> StatusOr<xla::Literal> {
+        if constexpr (xla::primitive_util::IsArrayType(
+                          primitive_type_constant)) {
+          using cpp_type =
+              xla::primitive_util::NativeTypeOf<primitive_type_constant>;
+          xla::Array<cpp_type> source_data(shape.dimensions());
+          source_data.SetValues(dense_attr.getValues<cpp_type>());
+          return xla::LiteralUtil::CreateFromArrayWithLayout(source_data,
+                                                             layout);
+        }
+        return tsl::errors::Internal(absl::StrCat(  // NOLINT
+            "Unsupported type: ",
+            xla::PrimitiveType_Name(shape.element_type())));
+      },
+      shape.element_type());
 }
 
 // Convert APInt into an int.
@@ -549,24 +534,14 @@ static xla::ScatterDimensionNumbers Convert_scatter_dimension_numbers(
   return output;
 }
 
-// Extracts sharding from attribute string.
-static std::optional<xla::OpSharding> CreateOpShardingFromStringRef(
-    llvm::StringRef sharding_str) {
-  xla::OpSharding sharding_proto;
-  if (sharding_proto.ParseFromString(sharding_str.str())) return sharding_proto;
-  StatusOr<xla::HloSharding> sharding = xla::ParseSharding(sharding_str.str());
-  if (sharding.ok()) return sharding->ToProto();
-  return std::nullopt;
-}
-
 // Returns an OpSharding proto from the "sharding" attribute of the op. If the
 // op doesn't have a sharding attribute or the sharding attribute is invalid,
 // returns std::nullopt.
 static std::optional<xla::OpSharding> CreateOpShardingFromAttribute(
     mlir::Operation* op) {
-  auto sharding = op->getAttrOfType<mlir::StringAttr>(kShardingAttr);
-  if (!sharding) return std::nullopt;
-  return CreateOpShardingFromStringRef(sharding.getValue());
+  auto shardingAttr = op->getAttrOfType<mlir::StringAttr>(kShardingAttr);
+  if (!shardingAttr) return std::nullopt;
+  return xla::ConvertSharding(shardingAttr.getValue());
 }
 
 // Returns a FrontendAttributes proto from the "frontend_attributes" attribute
@@ -632,14 +607,14 @@ static void ExtractShardingsFromFunction(
   for (int i = 0, end = function.getNumArguments(); i < end; ++i)
     if (auto sharding =
             function.getArgAttrOfType<mlir::StringAttr>(i, kShardingAttr))
-      (*arg_shardings)[i] = CreateOpShardingFromStringRef(sharding.getValue());
+      (*arg_shardings)[i] = xla::ConvertSharding(sharding.getValue());
 
   ret_shardings->resize(function.getNumResults(),
                         std::optional<xla::OpSharding>());
   for (int i = 0, end = function.getNumResults(); i < end; ++i)
     if (auto sharding =
             function.getResultAttrOfType<mlir::StringAttr>(i, kShardingAttr))
-      (*ret_shardings)[i] = CreateOpShardingFromStringRef(sharding.getValue());
+      (*ret_shardings)[i] = xla::ConvertSharding(sharding.getValue());
 }
 
 namespace mlir {
@@ -1449,9 +1424,9 @@ LogicalResult ExportXlaOp(DomainOp op, OpLoweringContext ctx) {
   if (failed(GetXlaOp(op.getOperand(), valueMap, &operand, op)))
     return failure();
 
-  auto entry = CreateOpShardingFromStringRef(op.getEntryMetadata());
+  auto entry = xla::ConvertSharding(op.getEntryMetadata());
   if (!entry) return failure();
-  auto exit = CreateOpShardingFromStringRef(op.getExitMetadata());
+  auto exit = xla::ConvertSharding(op.getExitMetadata());
   if (!exit) return failure();
 
   valueMap[op] = xla::internal::XlaBuilderFriend::BuildDomain(
@@ -3496,8 +3471,7 @@ xla::Status ConvertMlirHloToHlo(mlir::ModuleOp module, xla::HloProto* hlo_proto,
   xla::XlaBuilder module_builder("main");
   ConvertToHloModule converter(module, module_builder, use_tuple_args,
                                return_tuple, options);
-  if (failed(converter.Run()))
-    return ::tsl::FromAbslStatus(diag_handler.ConsumeStatus());
+  if (failed(converter.Run())) return diag_handler.ConsumeStatus();
   auto hlo_module = converter.ConsumeMainProto();
   StringRef module_name = module.getName() ? *module.getName() : "main";
   hlo_module.set_name(module_name.str());
@@ -3527,14 +3501,13 @@ xla::Status ConvertMlirHloToHlo(mlir::ModuleOp module, xla::HloProto* hlo_proto,
   if (auto spmd_output_sharding = module->getAttrOfType<mlir::StringAttr>(
           "mhlo.spmd_output_sharding")) {
     *hlo_module.mutable_spmd_output_sharding() =
-        *CreateOpShardingFromStringRef(spmd_output_sharding.getValue());
+        *xla::ConvertSharding(spmd_output_sharding.getValue());
   }
   if (auto spmd_parameters_sharding = module->getAttrOfType<mlir::ArrayAttr>(
           "mhlo.spmd_parameters_shardings")) {
     for (const auto& sharding : spmd_parameters_sharding.getValue()) {
       *hlo_module.add_spmd_parameters_shardings() =
-          *CreateOpShardingFromStringRef(
-              sharding.cast<mlir::StringAttr>().getValue());
+          *xla::ConvertSharding(sharding.cast<mlir::StringAttr>().getValue());
     }
   }
   hlo_proto->mutable_hlo_module()->Swap(&hlo_module);
@@ -3571,7 +3544,7 @@ xla::Status BuildHloFromMlirHlo(mlir::Block& block, xla::XlaBuilder& builder,
         unsigned index = ret.getOperandNumber();
         xla::XlaOp operand;
         if (failed(GetXlaOp(ret.get(), lowering, &operand, &inst)))
-          return ::tsl::FromAbslStatus(diag_handler.ConsumeStatus());
+          return diag_handler.ConsumeStatus();
         returns[index] = operand;
       }
     } else {
@@ -3579,7 +3552,7 @@ xla::Status BuildHloFromMlirHlo(mlir::Block& block, xla::XlaBuilder& builder,
       if (failed(converter.Lower(&inst, /*is_entry_function=*/true,
                                  /*ret_shardings=*/{}, &builder, &lowering,
                                  &return_value)))
-        return ::tsl::FromAbslStatus(diag_handler.ConsumeStatus());
+        return diag_handler.ConsumeStatus();
     }
   }
 

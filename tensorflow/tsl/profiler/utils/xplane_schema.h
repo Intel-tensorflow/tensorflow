@@ -291,7 +291,16 @@ enum StatType {
   kDuration,
   kBufferSize,
   kTransfers,
-  kLastStatType = kTransfers,
+  // Dcn message Stats
+  kDcnLabel,
+  kDcnSourceSliceId,
+  kDcnSourcePerSliceDeviceId,
+  kDcnDestinationSliceId,
+  kDcnDestinationPerSliceDeviceId,
+  kDcnChunk,
+  kDcnLoopIndex,
+  kModelInfo,
+  kLastStatType = kModelInfo,
 };
 
 inline std::string TpuPlaneName(int32_t device_ordinal) {
