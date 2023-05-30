@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#if defined(INTEL_MKL) && defined(ENABLE_ONEDNN_V2)
+#ifdef INTEL_MKL
 
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 #include "dnnl.hpp"
@@ -102,11 +102,11 @@ class MklFusedInstanceNormOp : public OpKernel {
       void* src_buf =
           static_cast<void*>(const_cast<T*>(src_tensor.flat<T>().data()));
 
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
 #define NUM_DUPLICATE 2
 #else
 #define NUM_DUPLICATE 1
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
       memory::dims scale_shift_dims = {
           static_cast<dnnl_dim_t>(NUM_DUPLICATE * num_elements_scale)};
       auto scale_shift_md = memory::desc(scale_shift_dims, MklDnnType<float>(),
@@ -114,7 +114,7 @@ class MklFusedInstanceNormOp : public OpKernel {
       int64_t tensor_shape = scale_shift_md.get_size() / sizeof(float);
 #undef NUM_DUPLICATE
 
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
       Tensor scale_shift_tensor;
       OP_REQUIRES_OK(
           ctx, ctx->allocate_temp(DataTypeToEnum<float>::v(), {tensor_shape},
@@ -148,12 +148,12 @@ class MklFusedInstanceNormOp : public OpKernel {
                             num_elements_scale, scale_fp32_buf, shift_fp32_buf);
       auto scale_mem = memory(scale_shift_md, cpu_engine_, scale_fp32_buf);
       auto shift_mem = memory(scale_shift_md, cpu_engine_, shift_fp32_buf);
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
       batch_normalization_forward::primitive_desc bnorm_pd;
       if (fuse_activation_) {
         dnnl::post_ops post_ops;
         dnnl::primitive_attr post_ops_attr;
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
         post_ops.append_eltwise(1.0, dnnl::algorithm::eltwise_relu,
                                 leakyrelu_alpha_, 0.0);
         post_ops_attr.set_post_ops(post_ops);
@@ -167,16 +167,16 @@ class MklFusedInstanceNormOp : public OpKernel {
             cpu_engine_, prop_kind::forward_inference, src_md, src_md, epsilon_,
             normalization_flags::use_scale | normalization_flags::use_shift,
             post_ops_attr);
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
       } else {
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
         bnorm_pd = batch_normalization_forward::primitive_desc(bnorm_desc,
                                                                cpu_engine_);
 #else
         bnorm_pd = batch_normalization_forward::primitive_desc(
             cpu_engine_, prop_kind::forward_inference, src_md, src_md, epsilon_,
             normalization_flags::use_scale | normalization_flags::use_shift);
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
       }
       auto bnorm_prim = batch_normalization_forward(bnorm_pd);
 
@@ -198,12 +198,12 @@ class MklFusedInstanceNormOp : public OpKernel {
       std::unordered_map<int, memory> bnorm_args;
       bnorm_args.insert({DNNL_ARG_SRC, *src_mem_ptr});
       bnorm_args.insert({DNNL_ARG_DST, *dst_mem_ptr});
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
       bnorm_args.insert({DNNL_ARG_SCALE_SHIFT, scale_shift_mem});
 #else
       bnorm_args.insert({DNNL_ARG_SCALE, scale_mem});
       bnorm_args.insert({DNNL_ARG_SHIFT, shift_mem});
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
 
       // Perform batchnorm computation for each batch in input
       for (int i = 0; i < batch_size; i++) {
@@ -286,14 +286,14 @@ class MklFusedInstanceNormOp : public OpKernel {
     auto data_size = sizeof(float) * num_elements;
     void* scale_buf_dst = fp32_scale_or_combine_buf;
     void* shift_buf_dst = nullptr;
-#ifndef ENABLE_ONEDNN_V3
+#ifdef ENABLE_ONEDNN_V2
     shift_buf_dst = static_cast<char*>(fp32_scale_or_combine_buf) + data_size;
     (void)fp32_shift_buf;
 #else
     OP_REQUIRES(ctx, (fp32_shift_buf != nullptr),
                 errors::InvalidArgument("Invalid shift buffer"));
     shift_buf_dst = fp32_shift_buf;
-#endif  // !ENABLE_ONEDNN_V3
+#endif  // ENABLE_ONEDNN_V2
 
     if (std::is_same<T, float>::value) {
       memcpy(scale_buf_dst, scale_buf_src, data_size);
@@ -338,4 +338,4 @@ REGISTER_KERNEL_BUILDER(Name("_MklFusedInstanceNorm")
                         MklFusedInstanceNormOp<CPUDevice, bfloat16>);
 }  // namespace tensorflow
 
-#endif  // INTEL_MKL && ENABLE_ONEDNN_V2
+#endif  // INTEL_MKL
