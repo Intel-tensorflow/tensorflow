@@ -174,6 +174,7 @@ bazel --windows_enable_symlinks test \
   --action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XTF_ARGS} \
   --experimental_cc_shared_library --enable_runfiles --nodistinct_host_configuration \
   --dynamic_mode=off --config=xla --config=short_logs --announce_rc \
+  --test_lang_filters=cc,py \
   --build_tag_filters=-no_oss,-oss_excluded,-no_windows,-excluded_windows,-oss_serial,-gpu,-tpu,-benchmark-test,-v1only,-no_oss_py38,-no_oss_py39,-no_oss_py310 \ --build_tests_only --config=monolithic \
   --config=opt \
   -k --test_output=errors \
@@ -181,7 +182,6 @@ bazel --windows_enable_symlinks test \
   --test_tag_filters=-no_oss,-oss_excluded,-no_windows,-excluded_windows,-oss_serial,-gpu,-tpu,-benchmark-test,-v1only,-no_oss_py38,-no_oss_py39,-no_oss_py310 \
   --discard_analysis_cache \
   --test_size_filters=small,medium --jobs=16 --test_timeout=300,450,1200,3600 --verbose_failures \
-  --flaky_test_attempts=3 \
   ${POSITIONAL_ARGS[@]} \
   -- ${TEST_TARGET} \
   > run.log 2>&1
