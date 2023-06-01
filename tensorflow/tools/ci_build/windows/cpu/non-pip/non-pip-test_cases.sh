@@ -178,7 +178,6 @@ bazel --windows_enable_symlinks test \
   --build_tag_filters=-no_oss,-oss_excluded,-no_windows,-excluded_windows,-oss_serial,-gpu,-tpu,-benchmark-test,-v1only,-no_oss_py38,-no_oss_py39,-no_oss_py310 \ --build_tests_only --config=monolithic \
   --config=opt \
   -k --test_output=errors \
-  --test_lang_filters=py \
   --test_tag_filters=-no_oss,-oss_excluded,-no_windows,-excluded_windows,-oss_serial,-gpu,-tpu,-benchmark-test,-v1only,-no_oss_py38,-no_oss_py39,-no_oss_py310 \
   --discard_analysis_cache \
   --test_size_filters=small,medium --jobs=16 --test_timeout=300,450,1200,3600 --verbose_failures \
