@@ -119,6 +119,21 @@ py_strict_library(
     ],
 )
 
+cuda_py_strict_test(
+    name = "concrete_function_test",
+    size = "small",
+    srcs = ["concrete_function_test.py"],
+    python_version = "PY3",
+    deps = [
+        ":concrete_function",
+        "//tensorflow/core:protos_all_py",
+        "//tensorflow/python/framework:func_graph",
+        "//tensorflow/python/platform:client_testlib",
+        "//tensorflow/python/util:compat",
+        "@absl_py//absl/testing:parameterized",
+    ],
+)
+
 py_strict_library(
     name = "tracing_compiler",
     srcs = ["tracing_compiler.py"],
@@ -135,13 +150,13 @@ py_strict_library(
         "//tensorflow/core/function/polymorphism:function_cache",
         "//tensorflow/core/function/polymorphism:function_type",
         "//tensorflow/core/function/trace_type",
+        "//tensorflow/python/autograph/core:ag_ctx",
         "//tensorflow/python/eager:monitoring",
         "//tensorflow/python/framework:func_graph",
         "//tensorflow/python/framework:ops",
         "//tensorflow/python/platform:tf_logging",
         "//tensorflow/python/profiler:trace",
         "//tensorflow/python/util:compat",
-        "//tensorflow/python/util:lazy_loader",
         "//tensorflow/python/util:tf_decorator",
     ],
 )
