@@ -487,7 +487,7 @@ class MklDnnQuantizedMatMulOp
         dst_scale = scale_eightbit / 127.0;
       } else {
         // Output type is float.
-        dst_scale = src_scale * wei_scale;
+        dst_scale = 1.0;
       }
     } else {
       if (!std::is_same<Toutput, qint32>::value)
