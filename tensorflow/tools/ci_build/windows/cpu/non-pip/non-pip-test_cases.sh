@@ -175,10 +175,11 @@ bazel --windows_enable_symlinks test \
   --experimental_cc_shared_library --enable_runfiles --nodistinct_host_configuration \
   --dynamic_mode=off --config=xla --config=short_logs --announce_rc \
   --test_lang_filters=cc,py \
-  --build_tag_filters=-no_oss,-oss_excluded,-no_windows,-excluded_windows,-oss_serial,-gpu,-tpu,-benchmark-test,-v1only,-no_oss_py38,-no_oss_py39,-no_oss_py310 \ --build_tests_only --config=monolithic \
+  --build_tag_filters=-no_pip,-no_windows,-excluded_windows,-oss_serial,-gpu,-tpu \ 
+  --build_tests_only --config=monolithic \
   --config=opt \
   -k --test_output=errors \
-  --test_tag_filters=-no_oss,-oss_excluded,-no_windows,-excluded_windows,-oss_serial,-gpu,-tpu,-benchmark-test,-v1only,-no_oss_py38,-no_oss_py39,-no_oss_py310 \
+  --test_tag_filters=-no_pip,-no_windows,-excluded_windows,-oss_serial,-gpu,-tpu \
   --discard_analysis_cache \
   --test_size_filters=small,medium --jobs=16 --test_timeout=300,450,1200,3600 --verbose_failures \
   ${POSITIONAL_ARGS[@]} \
