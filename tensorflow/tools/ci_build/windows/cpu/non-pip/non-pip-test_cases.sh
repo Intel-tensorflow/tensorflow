@@ -175,8 +175,7 @@ bazel --windows_enable_symlinks test \
   --experimental_cc_shared_library --enable_runfiles --nodistinct_host_configuration \
   --dynamic_mode=off --config=xla --config=short_logs --announce_rc \
   --test_lang_filters=cc,py \
-  --build_tag_filters=-no_pip,-no_windows,-excluded_windows,-oss_serial,-gpu,-tpu \ 
-  --build_tests_only --config=monolithic \
+  --build_tag_filters=-no_pip,-no_windows,-excluded_windows,-oss_serial,-gpu,-tpu --build_tests_only --config=monolithic \
   --config=opt \
   -k --test_output=errors \
   --test_tag_filters=-no_pip,-no_windows,-excluded_windows,-oss_serial,-gpu,-tpu \
