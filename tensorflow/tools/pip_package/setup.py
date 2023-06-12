@@ -47,7 +47,7 @@ from setuptools.dist import Distribution
 # result for pip.
 # Also update tensorflow/tensorflow.bzl and
 # tensorflow/core/public/version.h
-_VERSION = '2.13.0-rc0'
+_VERSION = '2.13.0'
 
 
 # We use the same setup.py for all tensorflow_* packages and for the nightly
@@ -97,10 +97,8 @@ REQUIRED_PACKAGES = [
     'setuptools',
     'six >= 1.12.0',
     'termcolor >= 1.1.0',
-    'typing_extensions >= 3.6.6',
-    # TODO(b/266362323): wrapt==1.15.0rc0 incompatible with TF 2.12.0 RC0 (and
-    # nightly, but works with TF 2.11)
-    'wrapt >= 1.11.0, <1.15',
+    'typing_extensions>=3.6.6,<4.6.0',
+    'wrapt >= 1.11.0',
     'tensorflow-io-gcs-filesystem >= 0.23.1;platform_machine!="arm64" or ' +
     'platform_system!="Darwin"',
     # grpcio does not build correctly on big-endian machines due to lack of
