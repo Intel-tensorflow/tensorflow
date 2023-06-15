@@ -360,6 +360,39 @@ class FunctionType(inspect.Signature):
 
     return self._cached_flat_inputs
 
+  def unpack_inputs(self, args, kwargs):
+    """Unpacks python arguments to flat tensor inputs accepted by this type."""
+    # Sort keyword-only parameters by name.
+    sorted_parameters = []
+    kwonly_parameters = []
+    for p in self.parameters.values():
+      if p.kind is Parameter.KEYWORD_ONLY:
+        kwonly_parameters.append(p)
+      else:
+        sorted_parameters.append(p)
+    sorted_parameters = sorted_parameters + sorted(
+        kwonly_parameters, key=lambda p: p.name
+    )
+
+    flat = []
+    bound_parameters = self.bind(*args, **kwargs)
+    for p in sorted_parameters:
+      flat.extend(
+          p.type_constraint._to_tensors(bound_parameters.arguments[p.name])  # pylint: disable=protected-access
+      )
+
+    dealiased_inputs = []
+    ids_used = set()
+    for tensor, input_type in zip(flat, self.flat_inputs):
+      alias_id = input_type._alias_id()  # pylint: disable=protected-access
+      if alias_id is None or alias_id not in ids_used:
+        dealiased_inputs.append(tensor)
+
+      if alias_id is not None:
+        ids_used.add(alias_id)
+
+    return dealiased_inputs
+
   @property
   def flat_outputs(self):
     """Flat tensor outputs returned by this FunctionType."""
@@ -368,6 +401,16 @@ class FunctionType(inspect.Signature):
         self._cached_flat_outputs = self.output._flatten()   # pylint: disable=protected-access
 
     return self._cached_flat_outputs
+
+  def pack_output(self, flat_values):
+    """Packs flat tensors to generate a value of the output type."""
+    if flat_values is None:
+      flat_values = []
+
+    if self.output is None:
+      raise ValueError("Can not pack outputs for undefined output type.")
+    else:
+      return self.output._from_tensors(iter(flat_values))   # pylint: disable=protected-access
 
   def __eq__(self, other: Any) -> bool:
     if not isinstance(other, FunctionType):
@@ -436,7 +479,7 @@ def _make_validated_mono_param(
 def canonicalize_to_monomorphic(
     args: Tuple[Any, ...], kwargs: Dict[Any, Any], default_values: Dict[Any,
                                                                         Any],
-    captures: Dict[Any, Any], polymorphic_type: FunctionType
+    capture_types: collections.OrderedDict, polymorphic_type: FunctionType
 ) -> Tuple[inspect.BoundArguments, FunctionType,
            trace_type.InternalTracingContext]:
   """Converts polymorphic parameters to monomorphic and associated type."""
@@ -487,10 +530,6 @@ def canonicalize_to_monomorphic(
           _make_validated_mono_param(name, arg, poly_parameter.kind,
                                      type_context,
                                      poly_parameter.type_constraint))
-
-  capture_types = collections.OrderedDict()
-  for name, value in captures.items():
-    capture_types[name] = trace_type.from_value(value, type_context)
 
   monomorphic_function_type = FunctionType(parameters, capture_types)
   mono_bound_arguments = monomorphic_function_type.bind(
@@ -562,9 +601,12 @@ def add_type_constraints(function_type: FunctionType, input_signature: Any,
 
 
 def from_structured_signature(
-    input_signature, output_signature=None, capture_types=None
+    input_signature=None, output_signature=None, capture_types=None
 ) -> FunctionType:
   """Generates a FunctionType from legacy signature representation."""
+  if input_signature is None:
+    input_signature = ((), {})
+
   args, kwargs = input_signature
   parameters = []
 
@@ -593,13 +635,10 @@ def from_structured_signature(
         )
     )
 
-  if output_signature is None:
-    return_type = None
-  else:
-    return_type = trace_type.from_value(
-        output_signature,
-        trace_type.InternalTracingContext(is_legacy_signature=True),
-    )
+  return_type = trace_type.from_value(
+      output_signature,
+      trace_type.InternalTracingContext(is_legacy_signature=True),
+  )
 
   return FunctionType(
       parameters, capture_types or {}, return_annotation=return_type

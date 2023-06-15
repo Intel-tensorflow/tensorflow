@@ -99,7 +99,7 @@ pybind_extension(
     ],
     deps = [
         ":tac_wrapper_lib",
-        "//tensorflow/python:pybind11_lib",
+        "//tensorflow/python/lib/core:pybind11_lib",
         "//third_party/python_runtime:headers",
         "@pybind11",
     ],

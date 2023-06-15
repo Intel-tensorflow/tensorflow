@@ -154,8 +154,15 @@ def _create_forward_backward_with_graph(attrs, forward_graph, backwards_graph):
   backward_function_attr = _parse_func_attrs(
       {attributes_lib.FORWARD_FUNCTION: forward_function_name})
   backward_function_attr.update(common_attributes)
+  # TODO(fmuham): Include inputs as well.
+  function_type = function_type_lib.from_structured_signature(
+      ((), {}),
+      backwards_graph.structured_outputs,
+      backwards_graph.function_captures.capture_types,
+  )
   backward_function = ConcreteFunction(
-      backwards_graph, attrs=backward_function_attr)
+      backwards_graph, attrs=backward_function_attr, function_type=function_type
+  )
   forward_function_attr = _parse_func_attrs({
       attributes_lib.BACKWARD_FUNCTION:
       backward_function.name})
@@ -287,7 +294,9 @@ class _DelayedRewriteGradientFunctions(object):
       output_type = forward_function.function_type.flat_outputs[i]
       handle_data = output_type.dtype._handle_data
       if handle_data:
-        handle_data_util.set_handle_data(op.outputs[i], handle_data)
+        handle_data_util.set_handle_data(
+            op.outputs[i], handle_data.shape_inference
+        )
     # pylint: enable=protected-access
 
     capture_mapping = dict(
@@ -1050,6 +1059,10 @@ class ConcreteFunction(core.ConcreteFunction, trackable.Trackable):
         + self._func_graph.deferred_external_captures
     )
     self._function_type = function_type
+    if func_graph.structured_outputs is not None and self.function_type is None:
+      raise ValueError(
+          "Must specify FunctionType if structured outputs are expected"
+      )
 
     if attrs and attributes_lib.IMPLEMENTS in attrs:
       # The alternative is to silently drop "implements" tag
@@ -1196,8 +1209,12 @@ class ConcreteFunction(core.ConcreteFunction, trackable.Trackable):
         except TypeError as structured_err:
           try:
             return self._call_with_flat_signature(args, kwargs)
-          except TypeError:
-            raise structured_err
+          except (TypeError, ValueError) as flat_err:
+            raise TypeError(  # pylint: disable=raise-missing-from
+                str(structured_err)
+                + "\nFallback to flat signature also failed due to: "
+                + str(flat_err)
+            )
 
       return self._call_with_flat_signature(args, kwargs)
 
@@ -1267,23 +1284,20 @@ class ConcreteFunction(core.ConcreteFunction, trackable.Trackable):
       TypeError: if `args` and `kwargs` do not match the structured signature
         of this `ConcreteFunction`.
     """
-    args, kwargs, filtered_flat_args = (
+    args, kwargs = (
         function_type_utils.canonicalize_function_inputs(
             args, kwargs, self.function_type)
     )
+    filtered_flat_args = self.function_type.unpack_inputs(args, kwargs)
     return self._call_flat(
         filtered_flat_args,
         captured_inputs=self.captured_inputs)
 
-  def _call_flat(self, args, captured_inputs):
+  def _call_flat(self, tensor_inputs, captured_inputs):
     """Executes the wrapped function.
 
     Args:
-      args: a list of Tensors or Variables. Arguments from the Python function
-        should be filtered before calling this method: objects aside from
-        Tensors, CompositeTensors, and Variables are ignored. Any
-        CompositeTensors other than ResourceVariables should be expanded before
-        calling this method.
+      tensor_inputs: a list of only Tensors generated from args, kwargs.
       captured_inputs: the captured inputs that are also part of the input args
         to the actual execution. By default, it should be self._captured_inputs.
     Returns:
@@ -1305,23 +1319,7 @@ class ConcreteFunction(core.ConcreteFunction, trackable.Trackable):
       for v in self._func_graph.variables:
         resource_variable_ops.variable_accessed(v)
 
-    tensor_inputs = []
-    variables_used = set([])
-    for i, arg in enumerate(args):
-      if isinstance(arg, resource_variable_ops.BaseResourceVariable):
-        # We can pass a variable more than once, and in this case we need to
-        # pass its handle only once.
-        if id(arg.handle) in variables_used:
-          continue
-        resource_variable_ops.variable_accessed(arg)
-        tensor_inputs.append(arg.handle)
-        variables_used.add(id(arg.handle))
-      elif isinstance(arg, ops.Tensor):
-        tensor_inputs.append(arg)
-      else:
-        raise ValueError(f"{i:d}-th input {arg} must be a Tensor, got "
-                         f"{type(arg)} when calling {self._func_graph.name}.")
-
+    # TODO(fmuham): check in eager mode too.
     if not executing_eagerly:
       for i, tensor_input in enumerate(tensor_inputs):
         # Can not compare shapes in these cases
@@ -1686,22 +1684,10 @@ class ConcreteFunction(core.ConcreteFunction, trackable.Trackable):
     Returns:
       The actual call output.
     """
-    # TODO(jlchu): call C++ version in function.cc when speed is improved
-    if self._func_graph.structured_outputs is None:
+    if self.function_type is None:
       return result
 
-    # Replace outputs with results, skipping over any 'None' values.
-    outputs_list = nest.flatten(
-        self._func_graph.structured_outputs, expand_composites=True)
-    j = 0
-    for i, o in enumerate(outputs_list):
-      if o is not None:
-        handle_data_util.copy_handle_data(self.outputs[j], result[j])
-        outputs_list[i] = result[j]
-        j += 1
-    ret = nest.pack_sequence_as(self._func_graph.structured_outputs,
-                                outputs_list, expand_composites=True)
-    return ret
+    return self.function_type.pack_output(result)
 
   @property
   def _as_name_attr_list(self):

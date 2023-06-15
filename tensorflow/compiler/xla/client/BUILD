@@ -125,7 +125,6 @@ cc_library(
         ":xla_computation",
         "//tensorflow/compiler/xla:executable_run_options",
         "//tensorflow/compiler/xla:shape_tree",
-        "//tensorflow/compiler/xla:status_macros",
         "//tensorflow/compiler/xla:statusor",
         "//tensorflow/compiler/xla:xla_data_proto_cc",
         "//tensorflow/compiler/xla/service:backend",
@@ -140,9 +139,8 @@ cc_library(
         "//tensorflow/compiler/xla/service:stream_pool",
         "//tensorflow/compiler/xla/stream_executor",
         "//tensorflow/compiler/xla/stream_executor:device_memory_allocator",
-        "//tensorflow/compiler/xla/stream_executor/host:host_platform",
+        "//tensorflow/compiler/xla/stream_executor:stream_executor_pimpl",  # fixdeps: keep
         "@com_google_absl//absl/types:span",
-        "@llvm-project//llvm:TargetParser",
     ],
 )
 

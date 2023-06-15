@@ -44,7 +44,12 @@ limitations under the License.
 #include "tensorflow/compiler/xla/hlo/ir/hlo_instruction.h"
 #include "tensorflow/compiler/xla/hlo/ir/hlo_module.h"
 #include "tensorflow/compiler/xla/hlo/ir/hlo_opcode.h"
+#include "tensorflow/compiler/xla/permutation_util.h"
+#include "tensorflow/compiler/xla/service/backend.h"
+#include "tensorflow/compiler/xla/service/call_inliner.h"
+#include "tensorflow/compiler/xla/service/executable.h"
 #include "tensorflow/compiler/xla/service/float_normalization.h"
+#include "tensorflow/compiler/xla/service/gpu/bitcast_remover.h"
 #include "tensorflow/compiler/xla/service/gpu/buffer_comparator.h"
 #include "tensorflow/compiler/xla/service/gpu/compile_module_to_llvm_ir.h"
 #include "tensorflow/compiler/xla/service/gpu/gemm_rewriter_triton.h"
@@ -62,7 +67,11 @@ limitations under the License.
 #include "tensorflow/compiler/xla/service/gpu/target_constants.h"
 #include "tensorflow/compiler/xla/service/gpu/thunk.h"
 #include "tensorflow/compiler/xla/service/hlo_module_config.h"
+#include "tensorflow/compiler/xla/service/hlo_module_util.h"
 #include "tensorflow/compiler/xla/service/hlo_verifier.h"
+#include "tensorflow/compiler/xla/service/platform_util.h"
+#include "tensorflow/compiler/xla/service/shaped_buffer.h"
+#include "tensorflow/compiler/xla/status_macros.h"
 #include "tensorflow/compiler/xla/stream_executor/device_description.h"
 #include "tensorflow/compiler/xla/stream_executor/device_memory.h"
 #include "tensorflow/compiler/xla/stream_executor/gpu/asm_compiler.h"
@@ -74,6 +83,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/xla.pb.h"
 #include "tensorflow/tsl/platform/blocking_counter.h"
 #include "tensorflow/tsl/platform/env.h"
+#include "tensorflow/tsl/platform/errors.h"
 #include "tensorflow/tsl/platform/status.h"
 #include "tensorflow/tsl/platform/statusor.h"
 #include "tensorflow/tsl/platform/threadpool.h"
@@ -161,11 +171,26 @@ struct CompilationResult {
   std::vector<LaunchDimensions> launch_dimensions;
 };
 
-using CompilationKey = std::pair<std::string, TritonTilingWrapper>;
+// Using the "standard" AutotuneCacheKey in CompilationKey, which encompasses
+// both the device type and the code of the HLO. We need this because
+// TritonAutotuner may be called with different device types, and a binary
+// compiled for one device type may not run on another.
+using CompilationKey = std::pair<AutotuneCacheKey, TritonTilingWrapper>;
 static absl::Mutex compilation_cache_mutex(absl::kConstInit);
 static auto& compilation_cache ABSL_GUARDED_BY(compilation_cache_mutex) =
     *new absl::node_hash_map<CompilationKey,
                              std::optional<CompilationResult>>();
+
+// Here we have a cache for the executables that we use to generate the
+// reference values for the GEMM fusions. We only compile the same HLO once.
+static absl::Mutex non_triton_executable_cache_mutex(absl::kConstInit);
+// The key is the "standard" AutotuneCacheKey, which encompasses both the device
+// type and the code of the HLO. We need this because TritonAutotuner may be
+// called with different device types, and an executable compiled for one device
+// type may not run on another.
+static auto& ABSL_GUARDED_BY(
+    non_triton_executable_cache_mutex) non_triton_executable_cache =
+    *new absl::node_hash_map<AutotuneCacheKey, std::unique_ptr<Executable>>();
 
 // TODO(b/266210099): Do not duplicate this functionality with
 // gemm_algorithm_picker.
@@ -188,6 +213,89 @@ static StatusOr<se::DeviceMemoryBase> CreateBuffer(
     InitializeBuffer(allocator.stream(), element_type, &rng_state, buffer);
   }
   return buffer;
+}
+
+// This is like HloRunner, but allows using a custom stream and allocator for
+// all operations.
+class CustomHloRunner {
+ public:
+  // Create a CustomHloRunner.
+  static StatusOr<std::unique_ptr<CustomHloRunner>> Create(
+      se::Stream& stream, se::DeviceMemoryAllocator& allocator);
+
+  // Compile the module, running the HLO passes as well.
+  StatusOr<std::unique_ptr<Executable>> CompileRunningHloPasses(
+      std::unique_ptr<HloModule> module);
+
+  // Execute the executable using the arguments.
+  StatusOr<ExecutionOutput> Execute(Executable& executable,
+                                    std::vector<ExecutionInput> arguments);
+
+ private:
+  CustomHloRunner(std::unique_ptr<Backend> backend,
+                  se::StreamExecutor& stream_executor, se::Stream& stream,
+                  se::DeviceMemoryAllocator& allocator);
+
+  std::unique_ptr<Backend> backend_;
+  se::StreamExecutor& stream_executor_;
+  se::Stream& stream_;
+  se::DeviceMemoryAllocator& allocator_;
+};
+
+CustomHloRunner::CustomHloRunner(std::unique_ptr<Backend> backend,
+                                 se::StreamExecutor& stream_executor,
+                                 se::Stream& stream,
+                                 se::DeviceMemoryAllocator& allocator)
+    : backend_(std::move(backend)),
+      stream_executor_(stream_executor),
+      stream_(stream),
+      allocator_(allocator) {}
+
+StatusOr<std::unique_ptr<CustomHloRunner>> CustomHloRunner::Create(
+    se::Stream& stream, se::DeviceMemoryAllocator& allocator) {
+  se::StreamExecutor& stream_executor = *stream.parent();
+
+  TF_ASSIGN_OR_RETURN(
+      se::Platform * platform,
+      PlatformUtil::GetPlatform(stream_executor.platform()->Name()));
+
+  BackendOptions backend_options;
+  backend_options.set_platform(platform);
+  TF_ASSIGN_OR_RETURN(std::unique_ptr<Backend> backend,
+                      Backend::CreateBackend(backend_options));
+
+  return absl::WrapUnique(new CustomHloRunner(
+      std::move(backend), stream_executor, stream, allocator));
+}
+
+StatusOr<std::unique_ptr<Executable>> CustomHloRunner::CompileRunningHloPasses(
+    std::unique_ptr<HloModule> module) {
+  auto module_group = std::make_unique<HloModuleGroup>(std::move(module));
+  TF_ASSIGN_OR_RETURN(
+      auto executables,
+      backend_->compiler()->Compile(std::move(module_group),
+                                    {{&stream_executor_}}, &allocator_));
+  return std::move(executables[0]);
+}
+
+StatusOr<ExecutionOutput> CustomHloRunner::Execute(
+    Executable& executable, std::vector<ExecutionInput> arguments) {
+  ExecutableRunOptions run_options;
+  run_options.set_device_ordinal(stream_executor_.device_ordinal());
+  run_options.set_stream(&stream_);
+  run_options.set_allocator(&allocator_);
+  run_options.set_intra_op_thread_pool(
+      backend_->eigen_intra_op_thread_pool_device());
+  run_options.set_run_id(RunId());
+
+  ServiceExecutableRunOptions service_run_options(
+      run_options, backend_->StreamBorrowerWithPriority());
+
+  TF_ASSIGN_OR_RETURN(ExecutionOutput output,
+                      executable.ExecuteOnStreamWrapper(&service_run_options,
+                                                        std::move(arguments)));
+
+  return std::move(output);
 }
 
 class TritonAutotunerVisitor : public DfsHloRewriteVisitor {
@@ -246,7 +354,7 @@ class TritonAutotunerVisitor : public DfsHloRewriteVisitor {
     }
 
     TF_ASSIGN_OR_RETURN(AutotuneResult autotune_result,
-                        AutotuneMatmulNoCache(fusion, device_config));
+                        AutotuneMatmulNoCache(fusion, device_config, key));
 
     absl::MutexLock lock(&autotune_cache_mu);
     auto [it, inserted] = autotune_cache.emplace(key, autotune_result);
@@ -263,30 +371,37 @@ class TritonAutotunerVisitor : public DfsHloRewriteVisitor {
     return nullptr;
   }
 
+  // Autotunes a matmul without using the autotuning cache.
+  //
+  // `cache_key`: The cache key corresponding to the code of the fusion and the
+  // device type. Passing it to avoid recalculating it everywhere it's needed.
   StatusOr<AutotuneResult> AutotuneMatmulNoCache(
-      const HloComputation& fusion, const DeviceConfig& device_config) {
+      const HloComputation& fusion, const DeviceConfig& device_config,
+      const AutotuneCacheKey& cache_key) {
     se::StreamExecutor* stream_exec = device_config.stream_exec;
     if (!stream_exec->SynchronizeAllActivity()) {
       return InternalError("Failed to synchronize GPU for autotuning.");
     }
+    se::DeviceMemoryAllocator* allocator = device_config.allocator;
+    if (allocator == nullptr) {
+      allocator = stream_exec->GetAllocator();
+    }
 
     HloInstruction* root = fusion.root_instruction();
-    TF_ASSIGN_OR_RETURN(
-        se::Stream* const stream,
-        device_config.allocator->GetStream(stream_exec->device_ordinal()));
+    TF_ASSIGN_OR_RETURN(se::Stream* const stream,
+                        allocator->GetStream(stream_exec->device_ordinal()));
 
     const DebugOptions debug_opts = fusion.parent()->config().debug_options();
     const AutotuneConfig autotune_cfg = GetConfig(debug_opts);
 
     std::vector<AutotuneResult> results;
     se::RedzoneAllocator rz_allocator(
-        stream, device_config.allocator, PtxOptsFromDebugOptions(debug_opts),
+        stream, allocator, PtxOptsFromDebugOptions(debug_opts),
         /*memory_limit=*/std::numeric_limits<int64_t>::max(),
         /*redzone_size=*/autotune_cfg.should_check_correctness()
             ? se::RedzoneAllocator::kDefaultRedzoneSize
             : 0);
 
-    std::optional<AutotuneResult::TritonGemmKey> reference_tiling;
     se::DeviceMemoryBase reference_buffer;
     if (autotune_cfg.should_check_correctness()) {
       TF_ASSIGN_OR_RETURN(
@@ -307,7 +422,7 @@ class TritonAutotunerVisitor : public DfsHloRewriteVisitor {
       for (const AutotuneResult::TritonGemmKey& conf : configurations) {
         thread_pool_->Schedule([&] {
           StatusOr<CompilationResult*> res =
-              Compile(fusion, device_config, conf);
+              Compile(fusion, device_config, conf, cache_key);
           if (!res.ok()) {
             LOG(ERROR) << "Failure: " << res.status();
           }
@@ -337,6 +452,11 @@ class TritonAutotunerVisitor : public DfsHloRewriteVisitor {
         CreateBuffer(rz_allocator, ShapeUtil::ByteSizeOf(root->shape()),
                      root->shape().element_type(), autotune_cfg, rng_state));
 
+    if (autotune_cfg.should_check_correctness()) {
+      TF_RETURN_IF_ERROR(RunMatmulWithCublas(fusion, stream, allocator, inputs,
+                                             reference_buffer, cache_key));
+    }
+
     for (const AutotuneResult::TritonGemmKey& conf : configurations) {
       VLOG(1) << "Trying triton tiling: " << conf.DebugString();
 
@@ -346,7 +466,7 @@ class TritonAutotunerVisitor : public DfsHloRewriteVisitor {
       TF_ASSIGN_OR_RETURN(
           std::optional<absl::Duration> duration,
           RunMatmulWithConfig(fusion, conf, device_config, stream, inputs,
-                              intermediate_buffer, output_buffer));
+                              intermediate_buffer, output_buffer, cache_key));
 
       if (!duration) {
         VLOG(1) << "Skipping this tiling.";
@@ -369,22 +489,16 @@ class TritonAutotunerVisitor : public DfsHloRewriteVisitor {
           continue;
         }
 
-        if (!reference_tiling) {
-          stream->ThenMemcpy(&reference_buffer, output_buffer,
-                             output_buffer.size());
-          reference_tiling = res.triton();
-        } else {
-          TF_ASSIGN_OR_RETURN(
-              bool outputs_match,
-              comparator.CompareEqual(stream, output_buffer, reference_buffer));
-          if (!outputs_match) {
-            LOG(ERROR) << "Results mismatch between different tilings. "
-                       << "This is likely a bug/unexpected loss of precision.";
-            CHECK(!autotune_cfg.should_crash_on_check_failure);
-            // WRONG_RESULT is not taken seriously by PickBestResult(), so
-            // use DISQUALIFIED.
-            res.mutable_failure()->set_kind(AutotuneResult::DISQUALIFIED);
-          }
+        TF_ASSIGN_OR_RETURN(
+            bool outputs_match,
+            comparator.CompareEqual(stream, output_buffer, reference_buffer));
+        if (!outputs_match) {
+          LOG(ERROR) << "Results mismatch between different tilings. "
+                     << "This is likely a bug/unexpected loss of precision.";
+          CHECK(!autotune_cfg.should_crash_on_check_failure);
+          // WRONG_RESULT is not taken seriously by PickBestResult(), so
+          // use DISQUALIFIED.
+          res.mutable_failure()->set_kind(AutotuneResult::DISQUALIFIED);
         }
       }
       results.push_back(res);
@@ -404,16 +518,19 @@ class TritonAutotunerVisitor : public DfsHloRewriteVisitor {
   // Run a fusion with a given tiling on given buffers.
   // Returns `true` if run successfully, `false` if the tiling has to be
   // skipped.
+  //
+  // `cache_key`: The cache key corresponding to the code of the fusion and the
+  // device type. Passing it to avoid recalculating it everywhere it's needed.
   StatusOr<std::optional<absl::Duration>> RunMatmulWithConfig(
       const HloComputation& hlo_computation,
       const AutotuneResult::TritonGemmKey& autotune_config,
       const DeviceConfig& device_config, se::Stream* stream,
       absl::Span<se::DeviceMemoryBase const> input_buffers,
       se::DeviceMemoryBase intermediate_buffer,
-      se::DeviceMemoryBase output_buffer) {
+      se::DeviceMemoryBase output_buffer, const AutotuneCacheKey& cache_key) {
     TF_ASSIGN_OR_RETURN(
         CompilationResult * res,
-        Compile(hlo_computation, device_config, autotune_config));
+        Compile(hlo_computation, device_config, autotune_config, cache_key));
     if (!res) {
       // Out of shared memory budget.
       return {std::nullopt};
@@ -471,14 +588,107 @@ class TritonAutotunerVisitor : public DfsHloRewriteVisitor {
     return std::make_optional(absl::Nanoseconds(timer->Nanoseconds()));
   }
 
+  StatusOr<std::unique_ptr<Executable>> CompileMatmulWithCublas(
+      const HloComputation& original_computation,
+      CustomHloRunner& custom_hlo_runner) {
+    // Create an unoptimized HLO module which does the same as
+    // `original_computation`, but with CuBLAS.
+    std::unique_ptr<HloModule> module =
+        ExtractComputationIntoNewModule(original_computation);
+    VLOG(3) << "Extracted module: " << module->ToString();
+    BitcastRemover bitcast_remover;
+    TF_RETURN_IF_ERROR(bitcast_remover.Run(module.get()).status());
+    VLOG(3) << "Deoptimized module: " << module->ToString();
+
+    DebugOptions options =
+        original_computation.parent()->config().debug_options();
+    // Use cuBLAS gemm.
+    options.set_xla_gpu_enable_triton_gemm(false);
+    // Avoid dumping compilation steps.
+    options.set_xla_dump_to("");
+    options.set_xla_gpu_dump_llvmir(false);
+    // Avoid using another thread pool.
+    options.set_xla_gpu_force_compilation_parallelism(1);
+    module->config().set_debug_options(options);
+
+    return custom_hlo_runner.CompileRunningHloPasses(std::move(module));
+  }
+
+  // Runs a matmul fusion without Triton - with cuBLAS, to generate a reference
+  // output.
+  //
+  // `cache_key`: The cache key corresponding to the code of the fusion and the
+  // device type. Passing it to avoid recalculating it everywhere it's needed.
+  Status RunMatmulWithCublas(
+      const HloComputation& original_computation, se::Stream* stream,
+      se::DeviceMemoryAllocator* allocator,
+      absl::Span<se::DeviceMemoryBase const> input_buffers,
+      se::DeviceMemoryBase output_buffer, const AutotuneCacheKey& cache_key) {
+    TF_ASSIGN_OR_RETURN(std::unique_ptr<CustomHloRunner> custom_hlo_runner,
+                        CustomHloRunner::Create(*stream, *allocator));
+
+    Executable* executable = nullptr;
+    {
+      absl::MutexLock lock(&non_triton_executable_cache_mutex);
+
+      auto it = non_triton_executable_cache.find(cache_key);
+      if (it != non_triton_executable_cache.end()) {
+        VLOG(4) << "Non-Triton executable cache hit";
+        executable = it->second.get();
+      }
+    }
+    if (executable == nullptr) {
+      TF_ASSIGN_OR_RETURN(
+          std::unique_ptr<Executable> new_executable,
+          CompileMatmulWithCublas(original_computation, *custom_hlo_runner));
+
+      absl::MutexLock lock(&non_triton_executable_cache_mutex);
+      auto [it, inserted] = non_triton_executable_cache.emplace(
+          cache_key, std::move(new_executable));
+      executable = it->second.get();
+    }
+    TF_RET_CHECK(executable != nullptr);
+
+    // Construct the parameters from the existing input buffers.
+    std::vector<ExecutionInput> execution_inputs;
+    const HloInstruction::InstructionVector& params =
+        original_computation.parameter_instructions();
+    TF_RET_CHECK(input_buffers.size() == params.size());
+    execution_inputs.reserve(params.size());
+    for (int i = 0; i < params.size(); ++i) {
+      execution_inputs.emplace_back(params.at(i)->shape());
+      // Our executable doesn't have input-output aliasing, so we can pass
+      // unowned input buffers.
+      execution_inputs.back().SetUnownedBuffer(
+          /*index=*/{},
+          MaybeOwningDeviceMemory(/*unowned=*/input_buffers.at(i)));
+    }
+
+    // Not locking a GPU mutex here, because
+    // `GpuExecutable::ExecuteAsyncOnStreamImpl` will do that.
+    TF_ASSIGN_OR_RETURN(
+        ExecutionOutput execution_output,
+        custom_hlo_runner->Execute(*executable, std::move(execution_inputs)));
+    ScopedShapedBuffer result = execution_output.ConsumeResult();
+    // Copy back the output.
+    TF_RET_CHECK(output_buffer.size() == result.root_buffer().size());
+    stream->ThenMemcpy(&output_buffer, result.root_buffer(),
+                       result.root_buffer().size());
+    return OkStatus();
+  }
+
   // Compile a given computation with a given autotuning config, utilizing
   // computation cache. Returns a raw pointer into the map to avoid copying the
   // values. Returning `nullptr` means that the kernel could not be generated.
+  //
+  // `cache_key`: The cache key corresponding to the code of the fusion and the
+  // device type. Passing it to avoid recalculating it everywhere it's needed.
   StatusOr<CompilationResult*> Compile(
       const HloComputation& hlo_computation, const DeviceConfig& device_config,
-      const AutotuneResult::TritonGemmKey& autotune_config) {
-    CompilationKey key = std::make_pair(ToCanonicalString(&hlo_computation),
-                                        TritonTilingWrapper{autotune_config});
+      const AutotuneResult::TritonGemmKey& autotune_config,
+      const AutotuneCacheKey& cache_key) {
+    CompilationKey key =
+        std::make_pair(cache_key, TritonTilingWrapper{autotune_config});
 
     // TODO(b/266210099): Avoid duplication.
     {
@@ -674,6 +884,16 @@ std::vector<AutotuneResult::TritonGemmKey> GetPossibleMatmulAutotuneConfigs(
             GemmKey(16, 64, 256, 8, 1, 4),   GemmKey(256, 256, 128, 1, 3, 8)},
         std::back_inserter(configs));
   }
+  if (compute_capability.IsAtLeast(se::CudaComputeCapability::HOPPER)) {
+    configs.erase(
+        std::remove_if(configs.begin(), configs.end(),
+                       [](const AutotuneResult::TritonGemmKey& config) {
+                         return (config.block_m() * config.block_n() / 256) %
+                                    config.num_warps() !=
+                                0;
+                       }),
+        configs.end());
+  }
   return configs;
 }
 
@@ -700,9 +920,24 @@ std::unique_ptr<HloModule> ExtractInstructionIntoNewModule(
   return new_hlo_module;
 }
 
+std::unique_ptr<HloModule> ExtractComputationIntoNewModule(
+    const HloComputation& computation) {
+  auto new_hlo_module =
+      std::make_unique<HloModule>("extracted", HloModuleConfig{},
+                                  std::make_unique<CompilationEnvironments>(
+                                      computation.parent()->comp_envs()));
+  HloCloneContext clone_context(new_hlo_module.get());
+  new_hlo_module->AddEntryComputationWithLayouts(
+      computation.CloneInContext(clone_context));
+  return new_hlo_module;
+}
+
 StatusOr<bool> TritonAutotuner::Run(
     HloModule* module,
     const absl::flat_hash_set<absl::string_view>& execution_threads) {
+  if (module->config().debug_options().xla_gpu_autotune_level() == 0) {
+    return false;
+  }
   return TritonAutotunerVisitor{config_, thread_pool_}.RunOnModule(
       module, execution_threads);
 }

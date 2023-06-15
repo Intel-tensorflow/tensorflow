@@ -27,6 +27,7 @@ limitations under the License.
 #include "llvm/IR/IntrinsicsNVPTX.h"
 #include "llvm/IR/Verifier.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"  // from @llvm-project
+#include "tensorflow/compiler/xla/hlo/ir/hlo_computation.h"
 #include "tensorflow/compiler/xla/hlo/ir/hlo_instruction.h"
 #include "tensorflow/compiler/xla/hlo/ir/hlo_opcode.h"
 #include "tensorflow/compiler/xla/mlir_hlo/mhlo/IR/hlo_ops.h"
@@ -576,6 +577,72 @@ StatusOr<BufferAllocation::Slice> GetAllocationSlice(
       "StaticMemRefCastOp(ViewOp(arg)) or arg");
 }
 
+std::vector<HloInstruction*> GetOutputDefiningDynamicUpdateSlices(
+    const HloComputation* fusion) {
+  // Same as GetOutputDefiningDynamicUpdateSliceOps but on a HLO fusion
+  // computation instead of a LMHLO FusionOp.
+  HloInstruction* root = fusion->root_instruction();
+
+  if (root->opcode() == HloOpcode::kDynamicUpdateSlice) {
+    return {root};
+  }
+
+  if (root->opcode() == HloOpcode::kBitcast) {
+    HloInstruction* current = root->mutable_operand(0);
+    while (current->opcode() == HloOpcode::kBitcast) {
+      current = current->mutable_operand(0);
+    }
+
+    if (current->opcode() == HloOpcode::kDynamicUpdateSlice) {
+      return {current};
+    }
+
+    return {};
+  }
+
+  std::vector<HloInstruction*> dus_ops;
+
+  if (root->opcode() == HloOpcode::kTuple) {
+    for (HloInstruction* operand : root->operands()) {
+      while (operand->opcode() == HloOpcode::kBitcast) {
+        operand = operand->mutable_operand(0);
+      }
+
+      if (operand->opcode() == HloOpcode::kDynamicUpdateSlice) {
+        dus_ops.push_back(operand);
+      }
+    }
+  }
+
+  return dus_ops;
+}
+
+std::vector<mlir::mhlo::DynamicUpdateSliceOp>
+GetOutputDefiningDynamicUpdateSliceOps(mlir::lmhlo::FusionOp fusion) {
+  std::vector<mlir::mhlo::DynamicUpdateSliceOp> dus_ops;
+
+  auto fusion_results = fusion.getFusionResults();
+  for (const auto& fusion_result : fusion_results) {
+    // A dynamic slice update is said to be "defining" of a result if that
+    // result is the output of a dynamic slice update, or if that result is
+    // the output of a bitcast of a dynamic slice update---since a bitcast may
+    // be handled here as a no-op.
+    if (auto dus = mlir::dyn_cast<mlir::mhlo::DynamicUpdateSliceOp>(
+            fusion_result.getDefiningOp())) {
+      dus_ops.push_back(dus);
+    }
+
+    if (auto bitcast = mlir::dyn_cast<mlir::mhlo::BitcastOp>(
+            fusion_result.getDefiningOp())) {
+      if (auto dus = mlir::dyn_cast<mlir::mhlo::DynamicUpdateSliceOp>(
+              bitcast.getOperand().getDefiningOp())) {
+        dus_ops.push_back(dus);
+      }
+    }
+  }
+  return dus_ops;
+}
+
 bool CanEmitFusedDynamicUpdateSliceInPlaceForGpu(
     mlir::lmhlo::FusionOp fusion,
     absl::Span<const BufferAllocation> allocations) {
@@ -653,8 +720,8 @@ std::vector<HloInstruction*> GetFusionRoots(HloComputation* computation) {
   return out;
 }
 
-std::optional<Vector3> FindTiledTranspose(const HloInstruction& instr,
-                                          Vector3& permutation) {
+std::optional<TransposeDescription> FindTiledTranspose(
+    const HloInstruction& instr) {
   if (instr.opcode() != HloOpcode::kCopy) {
     return std::nullopt;
   }
@@ -666,8 +733,7 @@ std::optional<Vector3> FindTiledTranspose(const HloInstruction& instr,
         (tr->at(1) >= kMinDimensionToTransposeTiled2 &&
          tr->at(2) >= kMinDimensionToTransposeTiled2 &&
          tr->at(1) * tr->at(2) >= kMinTotalDimensionsToTransposeTiled)) {
-      permutation = Vector3{0, 2, 1};
-      return tr;
+      return TransposeDescription{*tr, /*permutation=*/Vector3{0, 2, 1}};
     }
   }
   if (std::optional<Vector3> tr = ShapeUtil::GetNormalizedTransposeShape(
@@ -677,16 +743,15 @@ std::optional<Vector3> FindTiledTranspose(const HloInstruction& instr,
         (tr->at(0) >= kMinDimensionToTransposeTiled2 &&
          tr->at(2) >= kMinDimensionToTransposeTiled2 &&
          tr->at(0) * tr->at(2) >= kMinTotalDimensionsToTransposeTiled)) {
-      permutation = Vector3{2, 1, 0};
-      return tr;
+      return TransposeDescription{*tr, /*permutation=*/Vector3{2, 1, 0}};
     }
   }
   return std::nullopt;
 }
 
 // Find 021 or 210 transpose in logical + physical transposition.
-std::optional<Vector3> FindTiledLogicalTranspose(const HloInstruction& instr,
-                                                 Vector3& permutation) {
+std::optional<TransposeDescription> FindTiledLogicalTranspose(
+    const HloInstruction& instr) {
   if (instr.opcode() != HloOpcode::kTranspose) {
     return std::nullopt;
   }
@@ -700,8 +765,7 @@ std::optional<Vector3> FindTiledLogicalTranspose(const HloInstruction& instr,
         (tr->at(1) >= kMinDimensionToTransposeTiled2 &&
          tr->at(2) >= kMinDimensionToTransposeTiled2 &&
          tr->at(1) * tr->at(2) >= kMinTotalDimensionsToTransposeTiled)) {
-      permutation = Vector3{0, 2, 1};
-      return tr;
+      return TransposeDescription{*tr, /*permutation=*/Vector3{0, 2, 1}};
     }
   }
   if (std::optional<Vector3> tr = ShapeUtil::GetNormalizedLogicalTransposeShape(
@@ -712,14 +776,13 @@ std::optional<Vector3> FindTiledLogicalTranspose(const HloInstruction& instr,
         (tr->at(0) >= kMinDimensionToTransposeTiled2 &&
          tr->at(2) >= kMinDimensionToTransposeTiled2 &&
          tr->at(0) * tr->at(2) >= kMinTotalDimensionsToTransposeTiled)) {
-      permutation = Vector3{2, 1, 0};
-      return tr;
+      return TransposeDescription{*tr, /*permutation=*/Vector3{2, 1, 0}};
     }
   }
   return std::nullopt;
 }
 
-std::optional<std::pair<Vector3, Vector3>> FindAnyTiledTranspose(
+std::optional<TransposeDescription> FindAnyTiledTranspose(
     const HloInstruction& instr) {
   const HloInstruction& hero = FindNonTrivialHero(instr);
   // TODO(b/284431534): Figure out how to make the shared memory transpose
@@ -729,13 +792,11 @@ std::optional<std::pair<Vector3, Vector3>> FindAnyTiledTranspose(
     return std::nullopt;
   }
 
-  Vector3 permutation;
-  if (std::optional<Vector3> d1 = FindTiledTranspose(hero, permutation)) {
-    return std::make_pair(d1.value(), permutation);
+  if (auto d1 = FindTiledTranspose(hero)) {
+    return d1;
   }
-  if (std::optional<Vector3> d2 =
-          FindTiledLogicalTranspose(hero, permutation)) {
-    return std::make_pair(d2.value(), permutation);
+  if (auto d2 = FindTiledLogicalTranspose(hero)) {
+    return d2;
   }
   return std::nullopt;
 }
@@ -746,7 +807,9 @@ static bool IsIntermediate(const HloInstruction* instr,
       instr->operand_count() > 0 &&
       instr->operand_count() <= allowed_operand_count &&
       instr->user_count() <= 1 &&
-      ((instr->IsElementwise() && instr->opcode() != HloOpcode::kCopy) ||
+      ((instr->IsElementwise() &&
+        (instr->opcode() != HloOpcode::kCopy ||
+         instr->shape() == instr->operand(0)->shape())) ||
        instr->opcode() == HloOpcode::kBitcast ||
        (instr->opcode() == HloOpcode::kReshape &&
         ShapeUtil::ReshapeIsBitcast(instr->operand(0)->shape(),
@@ -787,8 +850,7 @@ const HloInstruction& FindNonTrivialHero(const HloInstruction& instr) {
   while (!q.empty()) {
     const HloInstruction* hlo = q.front();
     q.pop();
-    Vector3 permutation;
-    if (FindTiledLogicalTranspose(*hlo, permutation)) {
+    if (FindTiledLogicalTranspose(*hlo)) {
       // If we do not find a unique transpose op, use the original non-trivial
       // hero.
       if (non_trivial_hero != nullptr) {

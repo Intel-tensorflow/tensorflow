@@ -22,10 +22,11 @@ from absl import flags
 from matmul_lib import benchmark_matmul
 from matmul_lib import MatmulSize
 from matmul_lib import MatmulTiling
+from matmul_lib import MatrixLayout
+from matmul_lib import QuantizedInputType
 import pandas as pd
 import torch
 import tqdm
-import triton
 
 _DATA = flags.DEFINE_string('data', '', 'Data to check')
 _OUTPUT_FILE = flags.DEFINE_string(
@@ -37,13 +38,28 @@ _NUM_SAMPLES = flags.DEFINE_integer(
 _M = flags.DEFINE_integer('m', 64, 'Size of first matrix')
 _K = flags.DEFINE_integer('k', 64, 'Size of contracting dimension')
 _N = flags.DEFINE_integer('n', 64, 'Size of second matrix')
-_QUANTIZED_LHS = flags.DEFINE_integer(
-    'quantized_lhs', 0, 'Whether LHS is in int8'
+_QUANTIZED_LHS = flags.DEFINE_enum_class(
+    'quantized_lhs',
+    QuantizedInputType.FULL,
+    QuantizedInputType,
+    'Type to use for LHS quantization',
+)
+_QUANTIZED_RHS = flags.DEFINE_enum_class(
+    'quantized_rhs',
+    QuantizedInputType.FULL,
+    QuantizedInputType,
+    'Type to use for RHS quantization',
 )
 
 
 def get_actual_time(r, s, pbar):
-  dims = MatmulSize(_M.value, _N.value, _K.value, _QUANTIZED_LHS.value)
+  dims = MatmulSize(
+      M=_M.value,
+      N=_N.value,
+      K=_K.value,
+      quantized_lhs=_QUANTIZED_LHS.value,
+      quantized_rhs=_QUANTIZED_RHS.value,
+  )
   return benchmark_matmul(
       dims=dims,
       pbar=pbar,
@@ -54,11 +70,14 @@ def get_actual_time(r, s, pbar):
               r.block_n,
               r.block_k,
               r.split_k,
+              MatrixLayout(r.lhs_layout),
+              MatrixLayout(r.rhs_layout),
+              MatrixLayout(r.result_layout),
               r.num_stages,
               r.num_warps,
           )
       ],
-      repetitions=20,
+      repetitions_ms=300,
   )[0].min_time_ms
 
 
@@ -66,7 +85,7 @@ def main():
   df = pd.read_csv(_DATA.value).sample(_NUM_SAMPLES.value)
   shared_stream = torch.cuda.Stream()
   measured_times = []
-  pbar = tqdm.tqdm(total=_NUM_SAMPLES.value)
+  pbar = tqdm.tqdm(total=_NUM_SAMPLES.value, ncols=0)
   with torch.cuda.stream(shared_stream):
     for _, r in df.iterrows():
       measured_times.append(get_actual_time(r, shared_stream, pbar))
@@ -89,5 +108,4 @@ def main():
 
 if __name__ == '__main__':
   app.parse_flags_with_usage(sys.argv)
-  triton.compiler.init_cuda_utils()
   main()
