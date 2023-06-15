@@ -18,12 +18,13 @@ import argparse
 import os
 import subprocess
 
-BASIC_BUILD_OPTS = ["--cxxopt=-D_GLIBCXX_USE_CXX11_ABI=1", "--copt=-O3"]
+#BASIC_BUILD_OPTS = ["--cxxopt=-D_GLIBCXX_USE_CXX11_ABI=1", "--copt=-O3"]
+BASIC_BUILD_OPTS = ["--copt=-O3", "--copt=-Wno-gnu-offsetof-extensions"]
 
 SECURE_BUILD_OPTS = [
     "--copt=-Wformat", "--copt=-Wformat-security", "--copt=-fstack-protector",
-    "--copt=-fPIC", "--copt=-fpic", "--linkopt=-znoexecstack",
-    "--linkopt=-zrelro", "--linkopt=-znow", "--linkopt=-fstack-protector"
+    "--copt=-fPIC", "--copt=-fpic", "--linkopt=-Wl,-z,noexecstack",
+    "--linkopt=-Wl,-z,relro", "--linkopt=-Wl,-z,now", "--linkopt=-fstack-protector"
 ]
 
 

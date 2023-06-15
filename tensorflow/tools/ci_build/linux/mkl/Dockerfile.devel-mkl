@@ -27,6 +27,13 @@ ARG RELEASE_CONTAINER=""
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+RUN ln -s /usr/bin/clang-16 /usr/bin/clang && ln -s /usr/bin/clang++-16 /usr/bin/clang++
+ENV CC=clang
+ENV CXX=clang++
+ENV BAZEL_COMPILER=/usr/bin/
+
+RUN clang --version
+
 # Upgrade Bazel version if argument is passed
 RUN if [ "${BAZEL_VERSION}" != "" ]; then \
         curl -fSsL -O https://github.com/bazelbuild/bazel/releases/download/$BAZEL_VERSION/bazel-$BAZEL_VERSION-installer-linux-x86_64.sh && \
@@ -67,6 +74,8 @@ RUN echo "import /root/.mkl.bazelrc" >>/root/.bazelrc
 
 # Install futures>=0.17.1 for Python2.7 compatibility mode
 RUN ${PIP} install future>=0.17.1 keras-nightly opt-einsum tf-estimator-nightly
+
+RUN cp $(find / -name omp.h -print -quit) /usr/local/include/
 
 RUN bazel --bazelrc=/root/.bazelrc build -c opt \
     tensorflow/tools/pip_package:build_pip_package && \
