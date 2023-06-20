@@ -18,12 +18,11 @@ limitations under the License.
 #include <string>
 
 #include "tensorflow/compiler/xla/hlo/ir/hlo_instruction.h"
-#include "tensorflow/compiler/xla/hlo/ir/hlo_module.h"
 #include "tensorflow/compiler/xla/hlo/ir/hlo_opcode.h"
 #include "tensorflow/compiler/xla/service/pattern_matcher_gmock.h"
+#include "tensorflow/compiler/xla/shape_util.h"
 #include "tensorflow/compiler/xla/stream_executor/device_description.h"
 #include "tensorflow/compiler/xla/tests/hlo_test_base.h"
-#include "tensorflow/compiler/xla/tests/test_utils.h"
 #include "tensorflow/tsl/lib/core/status_test_util.h"
 #include "tensorflow/tsl/platform/errors.h"
 #include "tensorflow/tsl/platform/status_matchers.h"
@@ -37,7 +36,12 @@ using ::testing::FieldsAre;
 
 namespace m = ::xla::match;
 
-using GemmRewriterTritonTest = HloTestBase;
+class GemmRewriterTritonTest : public HloTestBase {
+ public:
+  GemmRewriterTritonTest()
+      : HloTestBase(/*verifier_layout_sensitive=*/true,
+                    /*allow_mixed_precision_in_hlo_verifier=*/false) {}
+};
 
 TEST_F(GemmRewriterTritonTest, TransposeSubdimensionGroup) {
   // This HLO is artificial because unnecessary reshapes get optimized
@@ -113,29 +117,30 @@ ENTRY e {
     called_computations={triton_dot}
   ROOT bitcast.2 = bf16[1,8,6,3]{3,2,1,0} bitcast(custom-call)
 })";
-  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> module,
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<VerifiedHloModule> module,
                           ParseAndReturnVerifiedModule(hlo_text));
   const HloComputation* dot_computation = module->entry_computation()
                                               ->root_instruction()
                                               ->operand(0)
                                               ->called_computations()[0];
-  const HloInstruction* dot = dot_computation->root_instruction();
-  const DotFusionAnalysis analysis(dot);
-  EXPECT_EQ(analysis.OperandToParameter(0),
-            dot_computation->parameter_instruction(0));
-  EXPECT_EQ(analysis.OperandToParameter(1),
-            dot_computation->parameter_instruction(1));
+  const HloInstruction* p0 = dot_computation->parameter_instruction(0);
+  const HloInstruction* p1 = dot_computation->parameter_instruction(1);
+  const DotFusionAnalysis analysis(dot_computation);
+  EXPECT_EQ(*analysis.ScopeParameters(DotFusionAnalysis::Scope::LHS).begin(),
+            p0);
+  EXPECT_EQ(*analysis.ScopeParameters(DotFusionAnalysis::Scope::RHS).begin(),
+            p1);
   EXPECT_THAT(
-      analysis.IterSpec(0, 0),
+      *analysis.IterSpec(DotFusionAnalysis::Scope::LHS, p0, 0),
       ElementsAre(FieldsAre(/*stride=*/4, /*count=*/48, ElementsAre(48))));
   EXPECT_THAT(
-      analysis.IterSpec(0, 1),
+      *analysis.IterSpec(DotFusionAnalysis::Scope::LHS, p0, 1),
       ElementsAre(FieldsAre(/*stride=*/1, /*count=*/4, ElementsAre(4))));
   EXPECT_THAT(
-      analysis.IterSpec(1, 0),
+      *analysis.IterSpec(DotFusionAnalysis::Scope::RHS, p1, 0),
       ElementsAre(FieldsAre(/*stride=*/3, /*count=*/4, ElementsAre(4))));
   EXPECT_THAT(
-      analysis.IterSpec(1, 1),
+      *analysis.IterSpec(DotFusionAnalysis::Scope::RHS, p1, 1),
       ElementsAre(FieldsAre(/*stride=*/1, /*count=*/3, ElementsAre(3))));
 }
 
@@ -160,28 +165,29 @@ ENTRY e {
     called_computations={triton_dot}
   ROOT bitcast.2 = bf16[1,8,6,3]{3,2,1,0} bitcast(custom-call)
 })";
-  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> module,
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<VerifiedHloModule> module,
                           ParseAndReturnVerifiedModule(hlo_text));
   const HloComputation* dot_computation = module->entry_computation()
                                               ->root_instruction()
                                               ->operand(0)
                                               ->called_computations()[0];
-  const HloInstruction* dot = dot_computation->root_instruction();
-  const DotFusionAnalysis analysis(dot);
-  EXPECT_EQ(analysis.OperandToParameter(0),
-            dot_computation->parameter_instruction(0));
-  EXPECT_EQ(analysis.OperandToParameter(1),
-            dot_computation->parameter_instruction(1));
-  EXPECT_THAT(analysis.IterSpec(0, 0),
+  const HloInstruction* p0 = dot_computation->parameter_instruction(0);
+  const HloInstruction* p1 = dot_computation->parameter_instruction(1);
+  const DotFusionAnalysis analysis(dot_computation);
+  EXPECT_EQ(*analysis.ScopeParameters(DotFusionAnalysis::Scope::LHS).begin(),
+            p0);
+  EXPECT_EQ(*analysis.ScopeParameters(DotFusionAnalysis::Scope::RHS).begin(),
+            p1);
+  EXPECT_THAT(*analysis.IterSpec(DotFusionAnalysis::Scope::LHS, p0, 0),
               ElementsAre(FieldsAre(/*stride=*/4, /*count=*/6 * 8,
                                     /*subfragments=*/ElementsAre(6, 8))));
-  EXPECT_THAT(analysis.IterSpec(0, 1),
+  EXPECT_THAT(*analysis.IterSpec(DotFusionAnalysis::Scope::LHS, p0, 1),
               ElementsAre(FieldsAre(/*stride=*/1, /*count=*/4,
                                     /*subfragments=*/ElementsAre(4))));
-  EXPECT_THAT(analysis.IterSpec(1, 0),
+  EXPECT_THAT(*analysis.IterSpec(DotFusionAnalysis::Scope::RHS, p1, 0),
               ElementsAre(FieldsAre(/*stride=*/3, /*count=*/4,
                                     /*subfragments=*/ElementsAre(4))));
-  EXPECT_THAT(analysis.IterSpec(1, 1),
+  EXPECT_THAT(*analysis.IterSpec(DotFusionAnalysis::Scope::RHS, p1, 1),
               ElementsAre(FieldsAre(/*stride=*/1, /*count=*/3,
                                     /*subfragments=*/ElementsAre(3))));
 }
@@ -206,26 +212,27 @@ ENTRY e {
     custom_call_target="__triton",
     called_computations={triton_dot}
 })";
-  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> module,
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<VerifiedHloModule> module,
                           ParseAndReturnVerifiedModule(hlo_text));
   const HloComputation* dot_computation =
       module->entry_computation()->root_instruction()->called_computations()[0];
-  const HloInstruction* dot = dot_computation->root_instruction();
-  const DotFusionAnalysis analysis(dot);
-  EXPECT_EQ(analysis.OperandToParameter(0),
-            dot_computation->parameter_instruction(1));
-  EXPECT_EQ(analysis.OperandToParameter(1),
-            dot_computation->parameter_instruction(0));
-  EXPECT_THAT(analysis.IterSpec(0, 0),
+  const HloInstruction* p0 = dot_computation->parameter_instruction(0);
+  const HloInstruction* p1 = dot_computation->parameter_instruction(1);
+  const DotFusionAnalysis analysis(dot_computation);
+  EXPECT_EQ(*analysis.ScopeParameters(DotFusionAnalysis::Scope::LHS).begin(),
+            p1);
+  EXPECT_EQ(*analysis.ScopeParameters(DotFusionAnalysis::Scope::RHS).begin(),
+            p0);
+  EXPECT_THAT(*analysis.IterSpec(DotFusionAnalysis::Scope::LHS, p1, 0),
               ElementsAre(FieldsAre(/*stride=*/2, /*count=*/24000,
                                     /*subfragments=*/ElementsAre(24000))));
-  EXPECT_THAT(analysis.IterSpec(0, 1),
+  EXPECT_THAT(*analysis.IterSpec(DotFusionAnalysis::Scope::LHS, p1, 1),
               ElementsAre(FieldsAre(/*stride=*/1, /*count=*/2,
                                     /*subfragments=*/ElementsAre(2))));
-  EXPECT_THAT(analysis.IterSpec(1, 0),
+  EXPECT_THAT(*analysis.IterSpec(DotFusionAnalysis::Scope::RHS, p0, 0),
               ElementsAre(FieldsAre(/*stride=*/2, /*count=*/2,
                                     /*subfragments=*/ElementsAre(2))));
-  EXPECT_THAT(analysis.IterSpec(1, 1),
+  EXPECT_THAT(*analysis.IterSpec(DotFusionAnalysis::Scope::RHS, p0, 1),
               ElementsAre(FieldsAre(/*stride=*/1, /*count=*/2,
                                     /*subfragments=*/ElementsAre(2))));
 }
@@ -252,28 +259,29 @@ ENTRY e {
     called_computations={triton_dot}
   ROOT bitcast.2 = bf16[1,8,6,3]{3,2,1,0} bitcast(custom-call)
 })";
-  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> module,
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<VerifiedHloModule> module,
                           ParseAndReturnVerifiedModule(hlo_text));
   const HloComputation* dot_computation = module->entry_computation()
                                               ->root_instruction()
                                               ->operand(0)
                                               ->called_computations()[0];
-  const HloInstruction* dot = dot_computation->root_instruction();
-  const DotFusionAnalysis analysis(dot);
-  EXPECT_EQ(analysis.OperandToParameter(0),
-            dot_computation->parameter_instruction(0));
-  EXPECT_EQ(analysis.OperandToParameter(1),
-            dot_computation->parameter_instruction(1));
-  EXPECT_THAT(analysis.IterSpec(0, 0),
+  const HloInstruction* p0 = dot_computation->parameter_instruction(0);
+  const HloInstruction* p1 = dot_computation->parameter_instruction(1);
+  const DotFusionAnalysis analysis(dot_computation);
+  EXPECT_EQ(*analysis.ScopeParameters(DotFusionAnalysis::Scope::LHS).begin(),
+            p0);
+  EXPECT_EQ(*analysis.ScopeParameters(DotFusionAnalysis::Scope::RHS).begin(),
+            p1);
+  EXPECT_THAT(*analysis.IterSpec(DotFusionAnalysis::Scope::LHS, p0, 0),
               ElementsAre(FieldsAre(/*stride=*/1, /*count=*/8 * 6,
                                     /*subfragments=*/ElementsAre(6, 8))));
-  EXPECT_THAT(analysis.IterSpec(0, 1),
+  EXPECT_THAT(*analysis.IterSpec(DotFusionAnalysis::Scope::LHS, p0, 1),
               ElementsAre(FieldsAre(/*stride=*/8 * 6, /*count=*/4,
                                     /*subfragments=*/ElementsAre(4))));
-  EXPECT_THAT(analysis.IterSpec(1, 0),
+  EXPECT_THAT(*analysis.IterSpec(DotFusionAnalysis::Scope::RHS, p1, 0),
               ElementsAre(FieldsAre(/*stride=*/3, /*count=*/4,
                                     /*subfragments=*/ElementsAre(4))));
-  EXPECT_THAT(analysis.IterSpec(1, 1),
+  EXPECT_THAT(*analysis.IterSpec(DotFusionAnalysis::Scope::RHS, p1, 1),
               ElementsAre(FieldsAre(/*stride=*/1, /*count=*/3,
                                     /*subfragments=*/ElementsAre(3))));
 }
@@ -301,28 +309,29 @@ ENTRY e {
     called_computations={triton_dot}
   ROOT bitcast.2 = bf16[1,8,6,3]{3,2,1,0} bitcast(custom-call)
 })";
-  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> module,
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<VerifiedHloModule> module,
                           ParseAndReturnVerifiedModule(hlo_text));
   const HloComputation* dot_computation = module->entry_computation()
                                               ->root_instruction()
                                               ->operand(0)
                                               ->called_computations()[0];
-  const HloInstruction* dot = dot_computation->root_instruction();
-  const DotFusionAnalysis analysis(dot);
-  EXPECT_EQ(analysis.OperandToParameter(0),
-            dot_computation->parameter_instruction(0));
-  EXPECT_EQ(analysis.OperandToParameter(1),
-            dot_computation->parameter_instruction(1));
-  EXPECT_THAT(analysis.IterSpec(0, 0),
+  const HloInstruction* p0 = dot_computation->parameter_instruction(0);
+  const HloInstruction* p1 = dot_computation->parameter_instruction(1);
+  const DotFusionAnalysis analysis(dot_computation);
+  EXPECT_EQ(*analysis.ScopeParameters(DotFusionAnalysis::Scope::LHS).begin(),
+            p0);
+  EXPECT_EQ(*analysis.ScopeParameters(DotFusionAnalysis::Scope::RHS).begin(),
+            p1);
+  EXPECT_THAT(*analysis.IterSpec(DotFusionAnalysis::Scope::LHS, p0, 0),
               ElementsAre(FieldsAre(/*stride=*/1, /*count=*/8 * 6,
                                     /*subfragments=*/ElementsAre(6, 8))));
-  EXPECT_THAT(analysis.IterSpec(0, 1),
+  EXPECT_THAT(*analysis.IterSpec(DotFusionAnalysis::Scope::LHS, p0, 1),
               ElementsAre(FieldsAre(/*stride=*/8 * 6, /*count=*/4,
                                     /*subfragments=*/ElementsAre(4))));
-  EXPECT_THAT(analysis.IterSpec(1, 0),
+  EXPECT_THAT(*analysis.IterSpec(DotFusionAnalysis::Scope::RHS, p1, 0),
               ElementsAre(FieldsAre(/*stride=*/3, /*count=*/4,
                                     /*subfragments=*/ElementsAre(4))));
-  EXPECT_THAT(analysis.IterSpec(1, 1),
+  EXPECT_THAT(*analysis.IterSpec(DotFusionAnalysis::Scope::RHS, p1, 1),
               ElementsAre(FieldsAre(/*stride=*/1, /*count=*/3,
                                     /*subfragments=*/ElementsAre(3))));
 }
@@ -347,30 +356,31 @@ ENTRY e {
     custom_call_target="__triton", called_computations={triton_dot}
   ROOT bitcast.2 = bf16[3,8,1,3]{3,2,1,0} bitcast(custom-call)
 })";
-  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> module,
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<VerifiedHloModule> module,
                           ParseAndReturnVerifiedModule(hlo_text));
   const HloComputation* dot_computation = module->entry_computation()
                                               ->root_instruction()
                                               ->operand(0)
                                               ->called_computations()[0];
-  const HloInstruction* dot = dot_computation->root_instruction();
-  const DotFusionAnalysis analysis(dot);
-  EXPECT_EQ(analysis.OperandToParameter(0),
-            dot_computation->parameter_instruction(0));
-  EXPECT_EQ(analysis.OperandToParameter(1),
-            dot_computation->parameter_instruction(1));
-  EXPECT_THAT(analysis.IterSpec(0, 0),
+  const HloInstruction* p0 = dot_computation->parameter_instruction(0);
+  const HloInstruction* p1 = dot_computation->parameter_instruction(1);
+  const DotFusionAnalysis analysis(dot_computation);
+  EXPECT_EQ(*analysis.ScopeParameters(DotFusionAnalysis::Scope::LHS).begin(),
+            p0);
+  EXPECT_EQ(*analysis.ScopeParameters(DotFusionAnalysis::Scope::RHS).begin(),
+            p1);
+  EXPECT_THAT(*analysis.IterSpec(DotFusionAnalysis::Scope::LHS, p0, 0),
               ElementsAre(FieldsAre(/*stride=*/1, /*count=*/8,
                                     /*subfragments=*/ElementsAre(8)),
                           FieldsAre(/*stride=*/4 * 8, /*count=*/3,
                                     /*subfragments=*/ElementsAre(3))));
-  EXPECT_THAT(analysis.IterSpec(0, 1),
+  EXPECT_THAT(*analysis.IterSpec(DotFusionAnalysis::Scope::LHS, p0, 1),
               ElementsAre(FieldsAre(/*stride=*/8, /*count=*/4,
                                     /*subfragments=*/ElementsAre(4))));
-  EXPECT_THAT(analysis.IterSpec(1, 0),
+  EXPECT_THAT(*analysis.IterSpec(DotFusionAnalysis::Scope::RHS, p1, 0),
               ElementsAre(FieldsAre(/*stride=*/3, /*count=*/4,
                                     /*subfragments=*/ElementsAre(4))));
-  EXPECT_THAT(analysis.IterSpec(1, 1),
+  EXPECT_THAT(*analysis.IterSpec(DotFusionAnalysis::Scope::RHS, p1, 1),
               ElementsAre(FieldsAre(/*stride=*/1, /*count=*/3,
                                     /*subfragments=*/ElementsAre(3))));
 }
@@ -398,7 +408,7 @@ ENTRY e {
   ROOT fusion = bf16[480,16]{1,0} fusion(p0, p1),
     kind=kCustom, calls=triton_gemm_dot, backend_config="__triton_gemm"
 })";
-  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> module,
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<VerifiedHloModule> module,
                           ParseAndReturnVerifiedModule(hlo_text));
   tensorflow::AutotuneResult::TritonGemmKey key;
   key.set_block_m(16);
@@ -409,11 +419,48 @@ ENTRY e {
   key.set_num_warps(4);
   TF_EXPECT_OK(
       MakeDotSplitKBatch(module->entry_computation()->root_instruction(), key));
-  EXPECT_TRUE(VerifyHloModule(module.get(), /*layout_sensitive=*/true,
-                              /*allow_mixed_precision=*/false)
-                  .ok());
   EXPECT_EQ(module->entry_computation()->root_instruction()->opcode(),
             HloOpcode::kReduce);
+}
+
+TEST_F(SplitKTest, MakeSplitKWithNonStandardOutputLayout) {
+  const std::string kHloText = R"(
+HloModule t
+
+triton_gemm_dot {
+  parameter_0 = s8[3,128,5,32]{3,2,1,0} parameter(0)
+  bitcast.1 = s8[3,5,32,128]{2,1,3,0} bitcast(parameter_0)
+  copy.1 = s8[3,5,32,128]{3,2,1,0} copy(bitcast.1)
+  reshape.5 = s8[480,128]{1,0} reshape(copy.1)
+  convert.8 = bf16[480,128]{1,0} convert(reshape.5)
+  parameter_1 = bf16[16,128]{1,0} parameter(1)
+  ROOT dot.0 = bf16[480,16]{0,1} dot(convert.8, parameter_1),
+    lhs_contracting_dims={1}, rhs_contracting_dims={1}
+}
+
+ENTRY e {
+  p0 = s8[3,128,5,32]{3,2,1,0} parameter(0)
+  p1 = bf16[16,128]{1,0} parameter(1)
+  ROOT fusion = bf16[480,16]{0,1} fusion(p0, p1),
+    kind=kCustom, calls=triton_gemm_dot, backend_config="__triton_gemm"
+})";
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<VerifiedHloModule> module,
+                          ParseAndReturnVerifiedModule(kHloText));
+  tensorflow::AutotuneResult::TritonGemmKey key;
+  key.set_block_m(16);
+  key.set_block_n(16);
+  key.set_block_k(16);
+  key.set_split_k(4);
+  key.set_num_stages(1);
+  key.set_num_warps(4);
+
+  TF_EXPECT_OK(
+      MakeDotSplitKBatch(module->entry_computation()->root_instruction(), key));
+
+  EXPECT_EQ(module->entry_computation()->root_instruction()->opcode(),
+            HloOpcode::kReduce);
+  EXPECT_EQ(module->entry_computation()->root_instruction()->shape().layout(),
+            Layout({0, 1}));
 }
 
 TEST_F(SplitKTest, MakeSplitKWithExistingBatchDim) {
@@ -438,7 +485,7 @@ ENTRY e {
     kind=kCustom, calls=triton_gemm_dot.24,
     backend_config="__triton_gemm"
 })";
-  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> module,
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<VerifiedHloModule> module,
                           ParseAndReturnVerifiedModule(hlo_text));
   tensorflow::AutotuneResult::TritonGemmKey key;
   key.set_block_m(32);
@@ -449,9 +496,6 @@ ENTRY e {
   key.set_num_warps(4);
   TF_EXPECT_OK(
       MakeDotSplitKBatch(module->entry_computation()->root_instruction(), key));
-  EXPECT_TRUE(VerifyHloModule(module.get(), /*layout_sensitive=*/true,
-                              /*allow_mixed_precision=*/false)
-                  .ok());
   EXPECT_EQ(module->entry_computation()->root_instruction()->opcode(),
             HloOpcode::kReduce);
 }
@@ -477,7 +521,7 @@ ENTRY e {
   ROOT fusion = bf16[480,16]{1,0} fusion(p0, p1),
     kind=kCustom, calls=triton_gemm_dot, backend_config="__triton_gemm"
 })";
-  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> module,
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<VerifiedHloModule> module,
                           ParseAndReturnVerifiedModule(hlo_text));
   tensorflow::AutotuneResult::TritonGemmKey key;
   key.set_block_m(16);
@@ -513,7 +557,7 @@ ENTRY e {
   ROOT fusion = bf16[480,16]{1,0} fusion(p0, p1),
     kind=kCustom, calls=triton_gemm_dot, backend_config="__triton_gemm"
 })";
-  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> module,
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<VerifiedHloModule> module,
                           ParseAndReturnVerifiedModule(hlo_text));
   tensorflow::AutotuneResult::TritonGemmKey key;
   key.set_block_m(16);
@@ -548,7 +592,7 @@ ENTRY e {
   ROOT fusion = f16[7,5] fusion(p0, p1),
     kind=kCustom, calls=triton_gemm_dot, backend_config="__triton_gemm"
 })";
-  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> module,
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<VerifiedHloModule> module,
                           ParseAndReturnVerifiedModule(hlo_text));
 
   tensorflow::AutotuneResult::TritonGemmKey key;
@@ -569,16 +613,20 @@ ENTRY e {
   key.set_split_k(8);
   TF_EXPECT_OK(
       MakeDotSplitKBatch(module->entry_computation()->root_instruction(), key));
-  TF_EXPECT_OK(VerifyHloModule(module.get(), /*layout_sensitive=*/true,
-                               /*allow_mixed_precision=*/false));
   const HloInstruction* root = module->entry_computation()->root_instruction();
   EXPECT_EQ(root->opcode(), HloOpcode::kReduce);
-  DotFusionAnalysis analysis(root->operand(0)->fused_expression_root(),
-                             key.split_k());
-  EXPECT_THAT(analysis.IterSpec(0, 0),
+  const HloComputation* dot_computation = module->entry_computation()
+                                              ->root_instruction()
+                                              ->operand(0)
+                                              ->called_computations()[0];
+  const HloInstruction* p0 = dot_computation->parameter_instruction(0);
+  DotFusionAnalysis analysis(dot_computation, key.split_k());
+  EXPECT_EQ(dot_computation->root_instruction()->shape(),
+            ShapeUtil::MakeShapeWithDescendingLayout(F16, {8, 7, 5}));
+  EXPECT_THAT(*analysis.IterSpec(DotFusionAnalysis::Scope::LHS, p0, 0),
               ElementsAre(FieldsAre(/*stride=*/320, /*count=*/8,
                                     /*subfragments=*/ElementsAre(4, 2))));
-  EXPECT_THAT(analysis.IterSpec(0, 1),
+  EXPECT_THAT(*analysis.IterSpec(DotFusionAnalysis::Scope::LHS, p0, 1),
               ElementsAre(FieldsAre(/*stride=*/1, /*count=*/320,
                                     /*subfragments=*/ElementsAre(20, 4, 4))));
 }
@@ -601,7 +649,7 @@ ENTRY e {
   ROOT fusion = f32[77,25] fusion(p0, p1),
     kind=kCustom, calls=triton_gemm_dot, backend_config="__triton_gemm"
 })";
-  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> module,
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<VerifiedHloModule> module,
                           ParseAndReturnVerifiedModule(hlo_text));
 
   tensorflow::AutotuneResult::TritonGemmKey key;

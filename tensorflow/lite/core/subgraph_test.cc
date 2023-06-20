@@ -27,6 +27,7 @@ limitations under the License.
 #include <gtest/gtest.h>
 #include "tensorflow/lite/core/interpreter.h"
 #include "tensorflow/lite/stderr_reporter.h"
+#include "tensorflow/lite/testing/util.h"
 #include "tensorflow/lite/util.h"
 
 namespace tflite {
@@ -85,34 +86,17 @@ TEST(RemoveUnusedInputs, BypassInputsWithoutOp) {
 TEST(GetSubgraphContext, NonConstGetSubgraphContext) {
   Interpreter interpreter;
   auto& subgraph = interpreter.primary_subgraph();
-  TfLiteContext* context;
+  TfLiteContext* context = nullptr;
 
-  context = subgraph.GetSubgraphContext(0);
+  EXPECT_EQ(kTfLiteError, subgraph.AcquireSubgraphContext(-1, &context));
+  ASSERT_EQ(context, nullptr);
+
+  EXPECT_EQ(kTfLiteError, subgraph.AcquireSubgraphContext(1, &context));
+  ASSERT_EQ(context, nullptr);
+
+  EXPECT_EQ(kTfLiteOk, subgraph.AcquireSubgraphContext(0, &context));
   ASSERT_NE(context, nullptr);
-
-  context = subgraph.GetSubgraphContext(-1);
-  ASSERT_EQ(context, nullptr);
-
-  context = subgraph.GetSubgraphContext(1);
-  ASSERT_EQ(context, nullptr);
-
-  const auto& const_subgraph = interpreter.primary_subgraph();
-  const_subgraph.GetSubgraphContext(1);
-}
-
-TEST(GetSubgraphContext, ConstGetSubgraphContext) {
-  Interpreter interpreter;
-  const auto& subgraph = interpreter.primary_subgraph();
-  const TfLiteContext* context;
-
-  context = subgraph.GetSubgraphContext(0);
-  ASSERT_NE(context, nullptr);
-
-  context = subgraph.GetSubgraphContext(-1);
-  ASSERT_EQ(context, nullptr);
-
-  context = subgraph.GetSubgraphContext(1);
-  ASSERT_EQ(context, nullptr);
+  EXPECT_EQ(kTfLiteOk, subgraph.ReleaseSubgraphContext(0));
 }
 
 TEST(MarkSubgraphAsDelegationSkippable, MarkSubgraphAsDelegationSkippable) {
@@ -145,7 +129,7 @@ TEST(MarkSubgraphAsDelegationSkippable, MarkSubgraphAsDelegationSkippable) {
 size_t BytesFor(const TfLiteType type, const int* const data,
                 const size_t size) {
   size_t type_size;
-  CHECK(GetSizeOfType(nullptr, type, &type_size) == kTfLiteOk)
+  CHECK_EQ(GetSizeOfType(nullptr, type, &type_size), kTfLiteOk)
       << "Type is not supported by GetSizeOfType";
   return std::accumulate(data, data + size, type_size, std::multiplies<int>());
 }

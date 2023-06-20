@@ -18,7 +18,7 @@
 from tensorflow.core.framework import attr_value_pb2
 from tensorflow.python.eager import context
 from tensorflow.python.eager.polymorphic_function import atomic_function
-from tensorflow.python.eager.polymorphic_function import monomorphic_function
+from tensorflow.python.eager.polymorphic_function import concrete_function
 from tensorflow.python.eager.polymorphic_function import tracing_compiler
 from tensorflow.python.eager.polymorphic_function import transform
 from tensorflow.python.framework import function_def_to_graph
@@ -68,8 +68,7 @@ def create_new_tf_function(func_graph):
     The name of the new TF_Function.
   """
   transform.apply_func_graph_transforms(func_graph)
-  func = atomic_function.from_func_graph(
-      func_graph.name, func_graph, func_graph.inputs, func_graph.outputs, {})
+  func = atomic_function.from_func_graph(func_graph.name, func_graph, {})
 
   func_graph.outer_graph._add_function_recursive(func)  # pylint: disable=protected-access
   return func_graph.name
@@ -333,8 +332,10 @@ def get_func_graph(op, input_shapes, func_name):
     if operation.type in ["PartitionedCall", "StatefulPartitionedCall"]:
       f = graph._get_function(operation.get_attr("f").name)  # pylint: disable=protected-access
       try:
-        cf = monomorphic_function.ConcreteFunction(
-            f.graph, attrs=f.cached_definition.attr
+        cf = concrete_function.ConcreteFunction.from_func_graph(
+            f.graph,
+            f.function_type,
+            attrs=f.cached_definition.attr,
         )
       except AttributeError:
         # f is not found or f is a _DefinedFunction that doesn't have a graph.

@@ -345,9 +345,7 @@ cc_library(
     srcs = ["kernel_fallback_execute_compat.cc"],
     hdrs = ["kernel_fallback_execute_compat.h"],
     visibility = [
-        "//tensorflow/compiler/mlir/tfrt:__pkg__",
         "//tensorflow/core/runtime_fallback:internal",
-        "//tensorflow/core/tfrt/eager:__pkg__",
         "//tensorflow/core/tfrt/graph_executor:__pkg__",
         "//tensorflow/core/tfrt/saved_model:__pkg__",
     ],
@@ -361,8 +359,10 @@ cc_library(
         "//tensorflow/core/runtime_fallback/util:attr_util",
         "//tensorflow/core/runtime_fallback/util:type_util",
         "//tensorflow/core/tfrt/fallback:cost_recorder",
+        "//tensorflow/core/tfrt/fallback:device_with_custom_allocator",
         "//tensorflow/core/tfrt/fallback:op_kernel_runner",
         "//tensorflow/core/tfrt/fallback:op_kernel_runner_cache",
+        "//tensorflow/core/tfrt/utils",
         "//tensorflow/core/tfrt/utils:error_util",
         "//tensorflow/core/tfrt/utils:fallback_tensor",
         "//tensorflow/core/tfrt/utils:tensor_util",
@@ -392,9 +392,6 @@ cc_library(
     visibility = [
         "//tensorflow/compiler/mlir/tfrt:__pkg__",
         "//tensorflow/core/runtime_fallback:internal",
-        "//tensorflow/core/tfrt/eager:__pkg__",
-        "//tensorflow/core/tfrt/graph_executor:__pkg__",
-        "//tensorflow/core/tfrt/saved_model:__pkg__",
     ],
     deps = [
         ":kernel_fallback_compat_request_state",
@@ -406,6 +403,7 @@ cc_library(
         "//tensorflow/core/runtime_fallback/runtime:op_logger",
         "//tensorflow/core/runtime_fallback/util:attr_util",
         "//tensorflow/core/tfrt/fallback:cost_recorder",
+        "//tensorflow/core/tfrt/fallback:device_with_custom_allocator",
         "//tensorflow/core/tfrt/fallback:op_kernel_runner",
         "//tensorflow/core/tfrt/fallback:op_kernel_runner_cache",
         "//tensorflow/core/tfrt/utils:error_util",
@@ -448,6 +446,7 @@ cc_library(
         "//learning/brain/experimental/tfrt/native_lowering/kernels:__subpackages__",
         "//tensorflow/core/tfrt/graph_executor:__subpackages__",
         "//tensorflow/core/tfrt/saved_model:__subpackages__",
+        "//tensorflow/core/tfrt/mlrt/kernel:__subpackages__",
     ],
     deps = [
         "//tensorflow/core/tfrt/fallback:cost_recorder",
