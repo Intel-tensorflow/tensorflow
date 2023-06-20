@@ -45,15 +45,26 @@ namespace tensorflow {
   append_eltwise(scale, alg, alpha, beta)
 #define APPEND_ELTWISE_RELU6(scale, alpha, beta) \
   append_eltwise(scale, dnnl::algorithm::eltwise_bounded_relu, alpha, beta)
+#define OUTPUT_SCALE_DCHECK (post_op_param.name == "output_scale")
 #define SET_MKL_LAYOUT(md) SetMklLayout(&md)
 #define TSCALED_BIAS Tbias
 #else
 #define APPEND_ELTWISE(scale, alg, alpha, beta) append_eltwise(alg, alpha, beta)
 #define APPEND_ELTWISE_RELU6(scale, alpha, beta) \
   append_eltwise(dnnl::algorithm::eltwise_clip, 0.0, alpha)
+#define OUTPUT_SCALE_DCHECK                  \
+  (post_op_param.name == "src_scale") ||     \
+      (post_op_param.name == "wei_scale") || \
+      (post_op_param.name == "dst_scale")
 #define SET_MKL_LAYOUT(md) SetMklLayout(md)
 #define TSCALED_BIAS float
 #endif  // ENABLE_ONEDNN_V2
+
+#if !defined(ENABLE_ONEDNN_OPENMP) && defined(ENABLE_ONEDNN_V2)
+#define FWD_STREAM , *fwd_stream
+#else
+#define FWD_STREAM
+#endif  // !ENABLE_ONEDNN_OPENMP && ENABLE_ONEDNN_V2
 
 static Eigen::internal::CacheSizes cache_sizes = Eigen::internal::CacheSizes();
 
@@ -145,60 +156,28 @@ class MklDnnMatMulFwdPrimitive : public MklPrimitive {
 #ifdef DNNL_AARCH64_USE_ACL
     mutex_lock lock(primitive_execution_mu_);
 #endif
-#if !defined(ENABLE_ONEDNN_OPENMP) && defined(ENABLE_ONEDNN_V2)
     context_.src_mem->set_data_handle(
-        static_cast<void*>(const_cast<Tinput*>(src_data)), *fwd_stream);
+        static_cast<void*>(const_cast<Tinput*>(src_data)) FWD_STREAM);
     context_.weight_mem->set_data_handle(
-        static_cast<void*>(const_cast<Tweight*>(weight_data)), *fwd_stream);
-    context_.bias_mem->set_data_handle(const_cast<void*>(bias_data));
-    context_.dst_mem->set_data_handle(static_cast<void*>(dst_data),
-                                      *fwd_stream);
-    context_.sp_mem->set_data_handle(sp_data, *fwd_stream);
-    auto const& post_op_params = matmul_fwd_params.post_op_params;
-    if (!post_op_params.empty()) {
-      for (auto const& post_op_param : post_op_params) {
-        if (post_op_param.name == "src_scale") {
-          context_.src_scale_mem->set_data_handle(
-              static_cast<void*>(
-                  const_cast<float*>(post_op_param.param.data())),
-              *fwd_stream);
-        } else if (post_op_param.name == "wei_scale") {
-          context_.wei_scale_mem->set_data_handle(
-              static_cast<void*>(
-                  const_cast<float*>(post_op_param.param.data())),
-              *fwd_stream);
-        } else if (post_op_param.name == "dst_scale") {
-          context_.dst_scale_mem->set_data_handle(
-              static_cast<void*>(
-                  const_cast<float*>(post_op_param.param.data())),
-              *fwd_stream);
-        }
-      }
-    }
-#else
-    context_.src_mem->set_data_handle(
-        static_cast<void*>(const_cast<Tinput*>(src_data)));
-    context_.weight_mem->set_data_handle(
-        static_cast<void*>(const_cast<Tweight*>(weight_data)));
-    context_.bias_mem->set_data_handle(const_cast<void*>(bias_data));
-    context_.dst_mem->set_data_handle(static_cast<void*>(dst_data));
-    context_.sp_mem->set_data_handle(sp_data);
+        static_cast<void*>(const_cast<Tweight*>(weight_data)) FWD_STREAM);
+    context_.bias_mem->set_data_handle(const_cast<void*>(bias_data) FWD_STREAM);
+    context_.dst_mem->set_data_handle(static_cast<void*>(dst_data) FWD_STREAM);
+    context_.sp_mem->set_data_handle(sp_data FWD_STREAM);
     auto const& post_op_params = matmul_fwd_params.post_op_params;
     if (!post_op_params.empty()) {
       for (auto const& post_op_param : post_op_params) {
         if (post_op_param.name == "src_scale") {
           context_.src_scale_mem->set_data_handle(static_cast<void*>(
-              const_cast<float*>(post_op_param.param.data())));
+              const_cast<float*>(post_op_param.param.data())) FWD_STREAM);
         } else if (post_op_param.name == "wei_scale") {
           context_.wei_scale_mem->set_data_handle(static_cast<void*>(
-              const_cast<float*>(post_op_param.param.data())));
+              const_cast<float*>(post_op_param.param.data())) FWD_STREAM);
         } else if (post_op_param.name == "dst_scale") {
           context_.dst_scale_mem->set_data_handle(static_cast<void*>(
-              const_cast<float*>(post_op_param.param.data())));
+              const_cast<float*>(post_op_param.param.data())) FWD_STREAM);
         }
       }
     }
-#endif  // !ENABLE_ONEDNN_OPENMP && ENABLE_ONEDNN_V2
 
     execute_primitives(context_.fwd_primitives, fwd_stream, context_.net_args);
 
@@ -406,15 +385,7 @@ class MklDnnMatMulFwdPrimitive : public MklPrimitive {
                  (post_op_param.name == "tanh") ||
                  (post_op_param.name == "logistic") ||
                  (post_op_param.name == "sum") ||
-                 (post_op_param.name == "leakyrelu") ||
-#ifdef ENABLE_ONEDNN_V2
-                 (post_op_param.name == "output_scale")
-#else
-                 (post_op_param.name == "src_scale") ||
-                 (post_op_param.name == "wei_scale") ||
-                 (post_op_param.name == "dst_scale")
-#endif  // ENABLE_ONEDNN_V2
-          );
+                 (post_op_param.name == "leakyrelu") || OUTPUT_SCALE_DCHECK);
         }
       }
       post_ops_attr.set_post_ops(post_ops);
@@ -447,31 +418,23 @@ class MklDnnMatMulFwdPrimitive : public MklPrimitive {
 
     // Create inner-product primitive.
     context_.matmul_fwd.reset(new inner_product_forward(*context_.fwd_pd));
+    std::unordered_map<int, memory> net_args = {
+        {DNNL_ARG_SRC, *context_.src_mem},
+        {DNNL_ARG_WEIGHTS, *context_.weight_mem},
+        {DNNL_ARG_BIAS, *context_.bias_mem},
+        {DNNL_ARG_SCRATCHPAD, *context_.sp_mem},
+        {DNNL_ARG_DST, *context_.dst_mem}};
+#ifndef ENABLE_ONEDNN_V2
     if (is_scale_set["src"] && is_scale_set["wei"] && is_scale_set["dst"]) {
-      context_.net_args.push_back({{DNNL_ARG_SRC, *context_.src_mem},
-                                   {DNNL_ARG_WEIGHTS, *context_.weight_mem},
-                                   {DNNL_ARG_BIAS, *context_.bias_mem},
-                                   {DNNL_ARG_SCRATCHPAD, *context_.sp_mem},
-                                   {DNNL_ARG_DST, *context_.dst_mem}
-#ifdef ENABLE_ONEDNN_V2
-      });
-#else
-                                   ,
-                                   {DNNL_ARG_ATTR_SCALES | DNNL_ARG_SRC,
-                                    *context_.src_scale_mem},
-                                   {DNNL_ARG_ATTR_SCALES | DNNL_ARG_WEIGHTS,
-                                    *context_.wei_scale_mem},
-                                   {DNNL_ARG_ATTR_SCALES | DNNL_ARG_DST,
-                                    *context_.dst_scale_mem}});
-#endif  // ENABLE_ONEDNN_V2
-    } else {
-      context_.net_args.push_back({{DNNL_ARG_SRC, *context_.src_mem},
-                                   {DNNL_ARG_WEIGHTS, *context_.weight_mem},
-                                   {DNNL_ARG_BIAS, *context_.bias_mem},
-                                   {DNNL_ARG_SCRATCHPAD, *context_.sp_mem},
-                                   {DNNL_ARG_DST, *context_.dst_mem}});
+      net_args.insert(
+          {DNNL_ARG_ATTR_SCALES | DNNL_ARG_SRC, *context_.src_scale_mem});
+      net_args.insert(
+          {DNNL_ARG_ATTR_SCALES | DNNL_ARG_WEIGHTS, *context_.wei_scale_mem});
+      net_args.insert(
+          {DNNL_ARG_ATTR_SCALES | DNNL_ARG_DST, *context_.dst_scale_mem});
     }
-
+#endif  // !ENABLE_ONEDNN_V2
+    context_.net_args.push_back(net_args);
     context_.fwd_primitives.push_back(*context_.matmul_fwd);
     return;
   }
@@ -556,23 +519,14 @@ class MklDnnMatMulFwdPrimitiveFactory : public MklPrimitiveFactory<T> {
         key_creator.AddAsKey(post_op_param.param[0]);
 #ifdef ENABLE_ONEDNN_V2
       } else if (post_op_param.name == "output_scale") {
-        DCHECK_EQ(post_op_param.param.size(), 1);
-        key_creator.AddAsKey(post_op_param.name);
-        key_creator.AddAsKey(post_op_param.param[0]);
 #else
-      } else if (post_op_param.name == "src_scale") {
-        DCHECK_EQ(post_op_param.param.size(), 1);
-        key_creator.AddAsKey(post_op_param.name);
-        key_creator.AddAsKey(post_op_param.param[0]);
-      } else if (post_op_param.name == "wei_scale") {
-        DCHECK_EQ(post_op_param.param.size(), 1);
-        key_creator.AddAsKey(post_op_param.name);
-        key_creator.AddAsKey(post_op_param.param[0]);
-      } else if (post_op_param.name == "dst_scale") {
-        DCHECK_EQ(post_op_param.param.size(), 1);
-        key_creator.AddAsKey(post_op_param.name);
-        key_creator.AddAsKey(post_op_param.param[0]);
+      } else if (post_op_param.name == "src_scale" ||
+                 post_op_param.name == "wei_scale" ||
+                 post_op_param.name == "dst_scale") {
 #endif  // ENABLE_ONEDNN_V2
+        DCHECK_EQ(post_op_param.param.size(), 1);
+        key_creator.AddAsKey(post_op_param.name);
+        key_creator.AddAsKey(post_op_param.param[0]);
       } else {
         return string("not_a_key");
       }
@@ -1163,6 +1117,7 @@ void dnnl_gemm(char transa, char transb, int64_t m, int64_t n, int64_t k,
 
 #undef APPEND_ELTWISE
 #undef APPEND_ELTWISE_RELU6
+#undef OUTPUT_SCALE_DCHECK
 #undef SET_MKL_LAYOUT
 #undef TSCALED_BIAS
 

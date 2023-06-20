@@ -477,6 +477,7 @@ tf_xla_py_strict_test(
         "//tensorflow/python:platform_test",
         "//tensorflow/python/ops:linalg_ops",
         "//tensorflow/python/ops:random_ops",
+        "//tensorflow/python/platform:sysconfig",
         "//third_party/py/numpy",
         "@absl_py//absl/testing:parameterized",
     ],
@@ -1655,6 +1656,7 @@ tf_xla_py_strict_test(
     tags = [
         "no_cuda_asan",  # times out
         "no_pip",  # TODO(b/149738646): fix pip install so these tests run on kokoro pip
+        "noasan",  #times out
     ],
     deps = [
         ":xla_test",

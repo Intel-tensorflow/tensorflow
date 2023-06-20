@@ -159,9 +159,10 @@ class MklDnnQuantizedMatMulOp
     } else if (mode_string == "SCALED") {
       mode_ = QUANTIZE_MODE_SCALED;
     } else {
-      context->CtxFailure(errors::InvalidArgument(
-          "Quantization mode must be either MIN_FIRST or SCALED, but received ",
-          mode_string));
+      context->CtxFailure(absl::InvalidArgumentError(
+          absl::StrCat("Quantization mode must be either MIN_FIRST or "
+                       "SCALED, but received ",
+                       mode_string)));
     }
     this->is_weight_const_ = false;
     if (context->HasAttr("is_weight_const")) {
@@ -187,9 +188,9 @@ class MklDnnQuantizedMatMulOp
       GetMklShape(context, this->kInputIndexSrc, &src_mkl_shape, native_format);
       GetMklShape(context, this->kInputIndexWeight, &weight_mkl_shape,
                   native_format);
-      OP_REQUIRES(context, !weight_mkl_shape.IsMklTensor(),
-                  errors::InvalidArgument("Weight should not be in "
-                                          "MKL Layout"));
+      OP_REQUIRES(
+          context, !weight_mkl_shape.IsMklTensor(),
+          absl::InvalidArgumentError("Weight should not be in MKL Layout"));
 
       MklDnnData<Tinput> src(&(this->cpu_engine_));
       MklDnnData<Tweight> weight(&(this->cpu_engine_));
@@ -333,9 +334,9 @@ class MklDnnQuantizedMatMulOp
       string error_msg = tensorflow::strings::StrCat(
           "Status: ", e.status, ", message: ", string(e.message), ", in file ",
           __FILE__, ":", __LINE__);
-      OP_REQUIRES_OK(
-          context,
-          errors::Aborted("Operation received an exception:", error_msg));
+      OP_REQUIRES_OK(context,
+                     absl::AbortedError(absl::StrCat(
+                         "Operation received an exception:", error_msg)));
     }
     float min_output_value;
     float max_output_value;
@@ -348,14 +349,14 @@ class MklDnnQuantizedMatMulOp
       const Tensor& max_freezed_tensor = context->input(8);
       OP_REQUIRES(context,
                   TensorShapeUtils::IsScalar(min_freezed_tensor.shape()),
-                  errors::InvalidArgument(
+                  absl::InvalidArgumentError(absl::StrCat(
                       "`min_freezed_output` must be rank 0 but is rank ",
-                      min_freezed_tensor.dims()));
+                      min_freezed_tensor.dims())));
       OP_REQUIRES(context,
                   TensorShapeUtils::IsScalar(max_freezed_tensor.shape()),
-                  errors::InvalidArgument(
+                  absl::InvalidArgumentError(absl::StrCat(
                       "`max_freezed_output` must be rank 0 but is rank ",
-                      max_freezed_tensor.dims()));
+                      max_freezed_tensor.dims())));
       min_output_value = min_freezed_tensor.scalar<float>()();
       max_output_value = max_freezed_tensor.scalar<float>()();
     } else {
@@ -406,18 +407,22 @@ class MklDnnQuantizedMatMulOp
     const Tensor& min_weight_tensor = context->input(5);
     const Tensor& max_weight_tensor = context->input(6);
 
-    OP_REQUIRES(context, TensorShapeUtils::IsScalar(min_input_tensor.shape()),
-                errors::InvalidArgument("`min_a` must be rank 0 but is rank ",
-                                        min_input_tensor.dims()));
-    OP_REQUIRES(context, TensorShapeUtils::IsScalar(max_input_tensor.shape()),
-                errors::InvalidArgument("`max_a` must be rank 0 but is rank ",
-                                        max_input_tensor.dims()));
-    OP_REQUIRES(context, TensorShapeUtils::IsScalar(min_weight_tensor.shape()),
-                errors::InvalidArgument("`min_b` must be rank 0 but is rank ",
-                                        min_weight_tensor.dims()));
-    OP_REQUIRES(context, TensorShapeUtils::IsScalar(max_weight_tensor.shape()),
-                errors::InvalidArgument("`max_b` must be rank 0 but is rank ",
-                                        max_weight_tensor.dims()));
+    OP_REQUIRES(
+        context, TensorShapeUtils::IsScalar(min_input_tensor.shape()),
+        absl::InvalidArgumentError(absl::StrCat(
+            "`min_a` must be rank 0 but is rank ", min_input_tensor.dims())));
+    OP_REQUIRES(
+        context, TensorShapeUtils::IsScalar(max_input_tensor.shape()),
+        absl::InvalidArgumentError(absl::StrCat(
+            "`max_a` must be rank 0 but is rank ", max_input_tensor.dims())));
+    OP_REQUIRES(
+        context, TensorShapeUtils::IsScalar(min_weight_tensor.shape()),
+        absl::InvalidArgumentError(absl::StrCat(
+            "`min_b` must be rank 0 but is rank ", min_weight_tensor.dims())));
+    OP_REQUIRES(
+        context, TensorShapeUtils::IsScalar(max_weight_tensor.shape()),
+        absl::InvalidArgumentError(absl::StrCat(
+            "`max_b` must be rank 0 but is rank ", max_weight_tensor.dims())));
 
 #ifndef ENABLE_ONEDNN_V2
     const float min_input = min_input_tensor.scalar<float>()();
@@ -443,14 +448,14 @@ class MklDnnQuantizedMatMulOp
       // min-max values of freezed output range should be scalar.
       OP_REQUIRES(context,
                   TensorShapeUtils::IsScalar(min_freezed_tensor.shape()),
-                  errors::InvalidArgument(
+                  absl::InvalidArgumentError(absl::StrCat(
                       "`min_freezed_output` must be rank 0 but is rank ",
-                      min_freezed_tensor.dims()));
+                      min_freezed_tensor.dims())));
       OP_REQUIRES(context,
                   TensorShapeUtils::IsScalar(max_freezed_tensor.shape()),
-                  errors::InvalidArgument(
+                  absl::InvalidArgumentError(absl::StrCat(
                       "`max_freezed_output` must be rank 0 but is rank ",
-                      max_freezed_tensor.dims()));
+                      max_freezed_tensor.dims())));
       const float min_freezed_output = min_freezed_tensor.scalar<float>()();
       const float max_freezed_output = max_freezed_tensor.scalar<float>()();
       float scale_eightbit =
@@ -479,15 +484,12 @@ class MklDnnQuantizedMatMulOp
     }
 #else
       if (std::is_same<Toutput, quint8>::value) {
-        // Existing unit tests expect dst_scale to be computed using 256.0
-        // value as opposed to 255.0. This has no impact on model level
-        // accuracy.
-        dst_scale = scale_eightbit / 256.0;
+        dst_scale = scale_eightbit / 255.0;
       } else if (std::is_same<Toutput, qint8>::value) {
         dst_scale = scale_eightbit / 127.0;
       } else {
         // Output type is float.
-        dst_scale = src_scale * wei_scale;
+        dst_scale = 1.0;
       }
     } else {
       if (!std::is_same<Toutput, qint32>::value)
@@ -606,9 +608,8 @@ class MklDnnQuantizedMatMulOp
 
         return reinterpret_cast<Tbias*>(scaled_bias_->get_data_handle());
       } else {
-        context->CtxFailure(
-            errors::InvalidArgument("Quantization mode must be"
-                                    "either MIN_FIRST or SCALED."));
+        context->CtxFailure(absl::InvalidArgumentError(
+            "Quantization mode must be either MIN_FIRST or SCALED."));
         return nullptr;
       }
     }
@@ -676,8 +677,8 @@ class MklDnnQuantizedMatMulOp
               x += wt_buf[i * n + j];
             }
             if (std::is_same<Tbias, qint32>::value) {
-              // Starting oneDNN v3.0, bias is expected to be dequantized to
-              // float32.
+              // Starting with oneDNN v3.0, bias is expected to be dequantized
+              // to float32.
               comp_bias[j] = static_cast<float>(bias_buf[j]) / out_scale;
             } else {
               // Bias is float32 but still needs to be compensated.
@@ -718,9 +719,8 @@ class MklDnnQuantizedMatMulOp
           std::vector<MemoryArgsMap> net_args{reorder_net_args};
           ExecutePrimitive(net, &net_args, this->cpu_engine_, context);
         } else {
-          context->CtxFailure(
-              errors::InvalidArgument("Quantization mode must be"
-                                      "either MIN_FIRST or SCALED."));
+          context->CtxFailure(absl::InvalidArgumentError(
+              "Quantization mode must be either MIN_FIRST or SCALED."));
         }
 
         *bias_data = static_cast<void*>(
