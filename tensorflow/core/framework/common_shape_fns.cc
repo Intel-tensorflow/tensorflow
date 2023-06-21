@@ -2662,7 +2662,7 @@ Status FusedQuantizedDepthwiseConv2D(InferenceContext* c) {
 Status FusedQuantizedConv3DShape(InferenceContext* c) {
   TF_RETURN_IF_ERROR(shape_inference::Conv3DShapeImpl(c, true));
   TF_RETURN_IF_ERROR(FusedQuantizedConvShape(c, 5));
-  return Status::OK();
+  return OkStatus();
 }
 
 Status QuantizedAvgPoolShape(InferenceContext* c) {
