@@ -1942,6 +1942,10 @@ class MklQuantizedConvOp
         {"Relu", "Requantize"},
         {"BiasAdd", "LeakyRelu", "Requantize"},
         {"BiasAdd", "Relu", "Requantize"},
+        {"BiasAdd", "LeakyRelu", "Sum"},
+        {"BiasAdd", "Relu", "Sum"},
+        {"BiasAdd", "LeakyRelu", "Sum", "Requantize"},
+        {"BiasAdd", "Relu", "Sum", "Requantize"},
         {"BiasAdd", "Sum", "Relu"},
         {"BiasAdd", "Sum", "Relu", "Requantize"}};
 
@@ -2011,6 +2015,13 @@ class MklQuantizedConvOp
             errors::InvalidArgument(
                 "QuantizedConv: incorrect summand data type. When Sum is not "
                 "fused, Tsummand attribute must have same value as out_type."));
+      }
+      // TODO(intel-tf): Remove this restriction when u8 summand + s8 output
+      // is supported.
+      if (summand_dt == DT_QUINT8 && out_dt == DT_QINT8) {
+        TF_CHECK_OK(Status(absl::StatusCode::kFailedPrecondition,
+                           "Current fusion requires summand has same dtype as "
+                           "output if output is qint8"));
       }
     }
 
@@ -2303,7 +2314,7 @@ class MklQuantizedConvOp
     if (this->get_fuse_add()) {
       // Calculate the scale (beta in oneDNN api term) for sum
       DataType summand_dt = this->input_type(this->get_input_add_idx());
-      if (std::is_same<Toutput, quint8>::value) {
+      if (!std::is_same<Toutput, qint32>::value) {
         bool summand_condition =
             (summand_dt == DT_QINT8) || (summand_dt == DT_QUINT8);
         DCHECK((summand_condition));
@@ -2353,20 +2364,23 @@ class MklQuantizedConvOp
                                       std::abs(max_freezed_output));
         float summand_range = std::max(std::abs(min_freezed_summand),
                                        std::abs(max_freezed_summand));
-        // If summand_dt is also DT_QUINT8 as the output_range, the scaling
-        // factor of 255.0f cancels each other and thus is avoided. If it is
-        // not then it is DT_INT8 and is scaled appropriately.
-        if (summand_dt == DT_QUINT8) {
+        // If summand has the same data type as the output, the scaling
+        // factor (255.0f or 127.0f) cancels each other and thus is avoided.
+        // Otherwise summand is scaled appropriately.
+        // TODO(intel-tf): Support quint8 summand + qint8 output.
+        if (std::is_same<Toutput, quint8>::value && summand_dt == DT_QINT8) {
           params.post_op_params[post_op_to_idx_["sum"]] = {
               "sum",
               dnnl::algorithm::undef,
-              {SUMMAND_SCALE_U8(summand_range, output_range)},
+              {SUMMAND_SCALE_S8(summand_range, output_range)},
               ""};
         } else {
           params.post_op_params[post_op_to_idx_["sum"]] = {
               "sum",
               dnnl::algorithm::undef,
-              {SUMMAND_SCALE_S8(summand_range, output_range)},
+              {summand_dt == DT_QUINT8
+                   ? SUMMAND_SCALE_U8(summand_range, output_range)
+                   : SUMMAND_SCALE_S8(summand_range, output_range)},
               ""};
         }
       } else {
@@ -2405,15 +2419,15 @@ class MklQuantizedConvOp
                                                         output_mkl_shape,
                                                         output_tensor);
     } else {
-      if (std::is_same<Toutput, quint8>::value) {
+      if (!std::is_same<Toutput, qint32>::value) {
         int summand_idx = this->get_input_add_idx();
         DataType summand_dt = this->input_type(summand_idx);
-        bool summand_condition =
-            (summand_dt == DT_QINT8) || (summand_dt == DT_QUINT8);
-        DCHECK((summand_condition));
+
+        DCHECK((summand_dt == DT_QINT8) || (summand_dt == DT_QUINT8));
         Tensor& summand = const_cast<Tensor&>(context->input(summand_idx));
 
-        if (summand_dt == DT_QINT8) {
+        // TODO(intel-tf): Support quint8 summand + qint8 output.
+        if (std::is_same<Toutput, quint8>::value && summand_dt == DT_QINT8) {
           OP_REQUIRES_OK(context, summand.BitcastFrom(summand, DT_QUINT8,
                                                       summand.shape()));
         }

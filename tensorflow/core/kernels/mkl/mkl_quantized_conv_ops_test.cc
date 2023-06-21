@@ -939,7 +939,8 @@ class QuantizedConvTest : public OpsTestBase {
   }
 
   template <typename Tsummand, typename Toutput>
-  void TestBiasAddSumActivationFusion(string activation = "") {
+  void TestBiasAddSumActivationFusion(string activation = "",
+                                      const float alpha = 0.0) {
     const int stride = 1;
     const string padding = "VALID";
     std::vector<string> fused_ops = {"BiasAdd", "Sum"};
@@ -987,6 +988,7 @@ class QuantizedConvTest : public OpsTestBase {
             .Attr("strides", {1, stride, stride, 1})
             .Attr("padding", padding)
             .Attr("fused_ops", fused_ops)
+            .Attr("alpha", alpha)
             .Input(FakeInput())
             .Input(FakeInput())
             .Finalize(node_def()));
@@ -1121,6 +1123,105 @@ class QuantizedConvTest : public OpsTestBase {
         image_float, filter_float, bias_float, dummy_summand, expected_float,
         fused_ops, tol);
   }
+
+  template <typename Tsummand, typename Toutput>
+  void TestBiasAddActivationSumFusion(string activation = "",
+                                      const float alpha = 0.0) {
+    const int stride = 1;
+    const string padding = "VALID";
+    std::vector<string> fused_ops = {"BiasAdd"};
+    std::map<string, DataType> data_types = {
+        {"Tinput", DT_QINT8},
+        {"Tfilter", DT_QINT8},
+        {"Tbias", DT_FLOAT},
+        {"Tsummand", DataTypeToEnum<Tsummand>::v()},
+        {"out_type", DataTypeToEnum<Toutput>::v()}};
+
+    // Default values are for float summand and when Requantize is not fused
+    std::vector<DataType> input_types = {data_types["Tinput"],
+                                         data_types["Tfilter"],
+                                         data_types["Tbias"],
+                                         data_types["Tsummand"],
+                                         DT_FLOAT,   // min_input
+                                         DT_FLOAT,   // max_input
+                                         DT_FLOAT,   // min_filter
+                                         DT_FLOAT};  // max_filter
+    if (std::is_same<Tsummand, quint8>::value ||
+        std::is_same<Tsummand, qint8>::value) {
+      input_types.push_back(DT_FLOAT);  // min_summand
+      input_types.push_back(DT_FLOAT);  // max_summand
+    }
+    if (!activation.empty()) {
+      fused_ops.push_back(activation);
+    }
+    fused_ops.push_back("Sum");
+    if (std::is_same<Toutput, qint8>::value ||
+        std::is_same<Toutput, quint8>::value) {
+      fused_ops.push_back("Requantize");
+      input_types.push_back(DT_FLOAT);  // min_freezed_output
+      input_types.push_back(DT_FLOAT);  // min_freezed_output};
+    }
+    TF_EXPECT_OK(
+        NodeDefBuilder("quantized_conv_op", "_FusedQuantizedConv2D")
+            .Attr("Thost_inputs", input_types)
+            .Attr("Thost_outputs", {data_types["out_type"], DT_FLOAT, DT_FLOAT})
+            .Attr("Tdevice_inputs", std::vector<DataType>())
+            .Attr("Tdevice_outputs", std::vector<DataType>())
+            .Attr("Tinput", data_types["Tinput"])
+            .Attr("Tfilter", data_types["Tfilter"])
+            .Attr("Tbias", data_types["Tbias"])
+            .Attr("Tsummand", data_types["Tsummand"])
+            .Attr("out_type", data_types["out_type"])
+            .Attr("strides", {1, stride, stride, 1})
+            .Attr("padding", padding)
+            .Attr("fused_ops", fused_ops)
+            .Attr("alpha", alpha)
+            .Input(FakeInput())
+            .Input(FakeInput())
+            .Finalize(node_def()));
+    TF_ASSERT_OK(InitOp());
+    const int image_batch = 1;
+    const int image_height = 4;
+    const int image_width = 4;
+    const int channels = 2;
+
+    const int filter_height = 2;
+    const int filter_width = 2;
+    const int filter_out_channels = 2;
+
+    // Format is NHWC
+    Tensor image_float(DT_FLOAT,
+                       {image_batch, image_height, image_width, channels});
+    test::FillValues<float>(&image_float,
+                            {2, 4, 5, 6, 1, 2, 3, 0, 1, 1, 6, 2, 6, 2, 4, 1,
+                             3, 4, 3, 1, 1, 4, 0, 7, 3, 1, 5, 0, 2, 1, 3, 3});
+
+    Tensor filter_float(
+        DT_FLOAT, {filter_height, filter_width, channels, filter_out_channels});
+    test::FillValues<float>(
+        &filter_float, {1, -3, 0, 2, 3, -4, 0, 5, 2, 1, -1, -2, -5, 3, 4, 0});
+
+    Tensor bias_float(DT_FLOAT, {filter_out_channels});
+    test::FillValues<float>(&bias_float, {2, 4});
+
+    Tensor summand_float(DT_FLOAT, {1, 3, 3, 2});
+    if (std::is_same<Tsummand, qint8>::value) {
+      test::FillValues<float>(&summand_float, {1, 2, 3, 4, -5, 6, 7, -8, 9, 1,
+                                               2, -3, 4, 5, -6, 7, 8, 9});
+    } else {
+      test::FillValues<float>(&summand_float, {1, 2, 3, 4, 5, 6, 7, 8, 9, 1, 2,
+                                               3, 4, 5, 6, 7, 8, 9});
+    }
+
+    Tensor expected_float;
+    RunFloatConv(image_float, filter_float, bias_float, summand_float,
+                 &expected_float, /*is_depthwise*/ false, /*is_conv3d*/ false,
+                 fused_ops, padding, stride);
+
+    RunQuantizedKernel<qint8, qint8, Toutput, float, Tsummand>(
+        image_float, filter_float, bias_float, summand_float, expected_float,
+        fused_ops);
+  }
 };
 
 TEST_F(QuantizedConvTest, BiasAddFusion) {
@@ -1179,6 +1280,26 @@ TEST_F(QuantizedConvTest, BiasAddSumReluRequantizeFusionSignedSummand) {
 
 TEST_F(QuantizedConvTest, BiasAddSumReluFusionFloatSummand) {
   TestBiasAddSumActivationFusion<float, qint32>("Relu");
+}
+
+TEST_F(QuantizedConvTest, BiasAddReluSumRequantizeFusion) {
+  TestBiasAddActivationSumFusion<quint8, quint8>("Relu");
+}
+
+TEST_F(QuantizedConvTest, BiasAddReluSumRequantizeFusionSignedSummand) {
+  TestBiasAddActivationSumFusion<qint8, qint8>("Relu");
+}
+
+TEST_F(QuantizedConvTest, BiasAddLeakyReluSumRequantizeFusionSignedSummand) {
+  TestBiasAddActivationSumFusion<qint8, qint8>("LeakyRelu", 0.2);
+}
+
+TEST_F(QuantizedConvTest, BiasAddReluSumFusionFloatSummand) {
+  TestBiasAddActivationSumFusion<float, qint32>("Relu");
+}
+
+TEST_F(QuantizedConvTest, BiasAddLeakyReluSumFusionFloatSummand) {
+  TestBiasAddActivationSumFusion<float, qint32>("LeakyRelu", 0.2);
 }
 
 class QuantizedConv3DTest : public OpsTestBase {
