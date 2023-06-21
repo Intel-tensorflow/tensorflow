@@ -97,6 +97,16 @@ bool IsNonFloatingConv2D(const utils::MutableNodeView& node) {
   return false;
 }
 
+bool IsNonFloatingConv3D(const utils::MutableNodeView& node) {
+  if (IsConv3D(*node.node())) {
+    const auto* attr = node.GetAttr(kAttrT);
+    if (attr != nullptr) {
+      return !kDataTypeIsFloating.Contains(attr->type());
+    }
+  }
+  return false;
+}
+
 // Utils for layout agnostic transposer.
 
 bool IsComparisonOp(const NodeDef& node) {
@@ -281,8 +291,10 @@ bool Transposer::ShouldProcess(const TransposeContext& context,
 
   // Only transposes floating point nodes.
   const bool is_integer_conv2d = IsNonFloatingConv2D(node);
+  const bool is_integer_conv3d = IsNonFloatingConv3D(node);
 
   return is_on_target_device && data_format_match && !is_integer_conv2d &&
+         !is_integer_conv3d &&
          !context.nodes_to_preserve.contains(node_def->name()) &&
          !(node.NumRegularFanouts() == 0 && node.NumControlledFanouts() == 0);
 }
@@ -1096,6 +1108,19 @@ inline bool IsLayoutOptimizerAddedDstToSrcTransform(
           IsValidDataFormatNode(node, context.dst_format, context.src_format));
 }
 
+inline bool IsAfterLayoutSensitiveNode(const utils::MutableNodeView& node) {
+  const auto& fanin = node.GetRegularFanin(0);
+  const auto* fanin_node = fanin.node_view()->node();
+  return IsLayoutSensitiveOp(*fanin_node);
+}
+
+inline bool IsAfterExistingDstToSrcTransform(
+    const TransposeContext& context, const utils::MutableNodeView& node) {
+  return node.node_index() <= context.num_nodes &&
+         (IsValidConstPermTransposeNode(node, context.dst_to_src) &&
+          (IsAfterLayoutSensitiveNode(node)));
+}
+
 bool LayoutAgnosticOpTransposer::IsAfterDstToSrcTransform(
     const TransposeContext& context, const utils::MutableNodeView& node) const {
   std::deque<utils::MutableNodeView*> queue;
@@ -1112,7 +1137,8 @@ bool LayoutAgnosticOpTransposer::IsAfterDstToSrcTransform(
   while (!queue.empty()) {
     utils::MutableNodeView* current_node = queue.front();
     queue.pop_front();
-    if (IsLayoutOptimizerAddedDstToSrcTransform(context, *current_node)) {
+    if (IsLayoutOptimizerAddedDstToSrcTransform(context, *current_node) ||
+        IsAfterExistingDstToSrcTransform(context, *current_node)) {
       return true;
     }
     // We only continue searching if the path is connected through

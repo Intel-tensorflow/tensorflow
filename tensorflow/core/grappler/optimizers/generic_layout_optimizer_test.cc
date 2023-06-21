@@ -40,6 +40,7 @@ namespace grappler {
 
 using ::tensorflow::Scope;
 using ::tensorflow::ops::Conv2D;
+using ::tensorflow::ops::Conv3D;
 using ::tensorflow::ops::Identity;
 using ::tensorflow::ops::RandomUniform;
 
@@ -80,6 +81,10 @@ constexpr int kDepthOut = 16;
   { 0, 2, 3, 1 }
 #define PERMUTATION_DST_TO_SRC \
   { 0, 3, 1, 2 }
+#define DIMS_5D(n, d, h, w, c) \
+  { n, c, d, h, w }
+#define SRC_DATA_FORMAT_5D "NCDHW"
+#define DST_DATA_FORMAT_5D "NDHWC"
 #endif  // (GOOGLE_CUDA || TENSORFLOW_USE_ROCM)
 
 template <typename T = float>
@@ -484,7 +489,7 @@ TEST_F(GenericLayoutOptimizerTest, Conv2DDataFormatVecPermuteCollapse) {
       0);
 }
 
-TEST_F(GenericLayoutOptimizerTest, DoNotPruneNonAddedCancellableTransposes) {
+TEST_F(GenericLayoutOptimizerTest, RemoveCancellableTransposes) {
   GrapplerItem item;
   {
     Scope scope = Scope::NewRootScope().WithDevice(
@@ -532,23 +537,18 @@ TEST_F(GenericLayoutOptimizerTest, DoNotPruneNonAddedCancellableTransposes) {
   ASSERT_NE(input_node, nullptr);
 
   auto* input_in_transpose_node = graph_view.GetNode("input_in_transpose");
-  ASSERT_NE(input_in_transpose_node, nullptr);
-  ASSERT_EQ(input_in_transpose_node->NumRegularFanins(), 2);
-  VerifyRegularFaninMatch(input_in_transpose_node, 0, input_node->GetName(), 0);
+  ASSERT_EQ(input_in_transpose_node, nullptr);
 
   auto* input_out_transpose_node = graph_view.GetNode("input_out_transpose");
-  ASSERT_NE(input_out_transpose_node, nullptr);
-  ASSERT_EQ(input_out_transpose_node->NumRegularFanins(), 2);
-  VerifyRegularFaninMatch(input_out_transpose_node, 0,
-                          input_in_transpose_node->GetName(), 0);
+  ASSERT_EQ(input_out_transpose_node, nullptr);
 
   auto* bias_add_in_transpose_node = graph_view.GetNode(
       absl::StrCat("bias_add-0-Transpose", SRC_DATA_FORMAT, "To",
                    DST_DATA_FORMAT, "-LayoutOptimizer"));
   ASSERT_NE(bias_add_in_transpose_node, nullptr);
   ASSERT_EQ(bias_add_in_transpose_node->NumRegularFanins(), 2);
-  VerifyRegularFaninMatch(bias_add_in_transpose_node, 0,
-                          input_out_transpose_node->GetName(), 0);
+  VerifyRegularFaninMatch(bias_add_in_transpose_node, 0, input_node->GetName(),
+                          0);
 
   auto* bias_add_node = graph_view.GetNode("bias_add");
   ASSERT_NE(bias_add_node, nullptr);
@@ -559,22 +559,16 @@ TEST_F(GenericLayoutOptimizerTest, DoNotPruneNonAddedCancellableTransposes) {
   auto* bias_add_out_transpose_node = graph_view.GetNode(
       absl::StrCat("bias_add-0-0-Transpose", DST_DATA_FORMAT, "To",
                    SRC_DATA_FORMAT, "-LayoutOptimizer"));
-  ASSERT_NE(bias_add_out_transpose_node, nullptr);
-  ASSERT_EQ(bias_add_out_transpose_node->NumRegularFanins(), 2);
-  VerifyRegularFaninMatch(bias_add_out_transpose_node, 0,
-                          bias_add_node->GetName(), 0);
+  ASSERT_EQ(bias_add_out_transpose_node, nullptr);
 
   auto* output_in_transpose_node = graph_view.GetNode("output_in_transpose");
-  ASSERT_NE(output_in_transpose_node, nullptr);
-  ASSERT_EQ(output_in_transpose_node->NumRegularFanins(), 2);
-  VerifyRegularFaninMatch(output_in_transpose_node, 0,
-                          bias_add_out_transpose_node->GetName(), 0);
+  ASSERT_EQ(output_in_transpose_node, nullptr);
 
   auto* output_out_transpose_node = graph_view.GetNode("output_out_transpose");
   ASSERT_NE(output_out_transpose_node, nullptr);
   ASSERT_EQ(output_out_transpose_node->NumRegularFanins(), 2);
   VerifyRegularFaninMatch(output_out_transpose_node, 0,
-                          output_in_transpose_node->GetName(), 0);
+                          bias_add_node->GetName(), 0);
 
   auto* output_node = graph_view.GetNode("output");
   ASSERT_NE(output_node, nullptr);
@@ -622,7 +616,6 @@ TEST_F(GenericLayoutOptimizerTest, CancelTransposeAroundPad) {
 
   GraphDef expected = test::function::GDef({
       NDef("x", "Placeholder", {}, {{"dtype", DT_FLOAT}}),
-
       NDef("paddings", "Const", {},
            {{"dtype", DT_INT32}, {"value", kPermutedPaddings}}),
       NDef("perm_nhwc_to_nchw", "Const", {},
@@ -679,6 +672,187 @@ TEST_F(GenericLayoutOptimizerTest, PreserveInputShapes) {
   EXPECT_TRUE(arg->HasAttr("_output_shapes"));
   EXPECT_EQ(arg->GetAttr("_output_shapes")->DebugString(),
             output_shapes.DebugString());
+}
+
+TEST_F(GenericLayoutOptimizerTest, RemoveExistingTransposes) {
+  GrapplerItem item;
+  {
+    Scope scope = Scope::NewRootScope().WithDevice(
+        absl::StrCat("/device:", DEVICE, ":0"));
+    TensorShape input_shape(DIMS_5D(1, 4, 64, 64, 64));  // NCDW
+    Tensor input_data(DataTypeToEnum<float>::value, input_shape);
+    test::FillIota<float>(&input_data, static_cast<float>(1));
+    Output input =
+        ops::Const(scope.WithOpName("Input"), Input::Initializer(input_data));
+
+    auto input_in_transpose =
+        ops::Transpose(scope.WithOpName("input_in_transpose"), input,
+                       ops::Const(scope, {0, 2, 3, 4, 1}, {5}));
+
+    TensorShape filter_shape({3, 3, 3, 4, 32});
+    Tensor filter_data(DataTypeToEnum<float>::value, filter_shape);
+    test::FillIota<float>(&filter_data, static_cast<float>(1));
+    Output filter =
+        ops::Const(scope.WithOpName("Filter"), Input::Initializer(filter_data));
+
+    string device = "";
+    string padding = "VALID";
+    Output conv =
+        ops::Conv3D(scope.WithOpName("Conv3D").WithDevice(device),
+                    input_in_transpose, filter, DIMS_5D(1, 1, 1, 1, 1), padding,
+                    ops::Conv3D::Attrs().DataFormat(DST_DATA_FORMAT_5D));
+
+    auto output_out_transpose =
+        ops::Transpose(scope.WithOpName("output_out_transpose"), conv,
+                       ops::Const(scope, {0, 4, 1, 2, 3}, {5}));
+
+    auto square = ops::Square(scope.WithOpName("square"), output_out_transpose);
+
+    auto output = ops::Identity(scope.WithOpName("output"), square);
+
+    TF_ASSERT_OK(scope.ToGraphDef(&item.graph));
+  }
+
+  GenericLayoutOptimizer optimizer(
+      RewriterConfig::AGGRESSIVE,
+      RewriterConfig::NCHW_TO_NHWC /* CPU settings*/);
+  GraphDef output;
+  TF_ASSERT_OK(optimizer.Optimize(virtual_cluster_.get(), item, &output));
+
+  Status status;
+  utils::GraphView graph_view(&output, &status);
+  TF_ASSERT_OK(status);
+
+  auto* input_node = graph_view.GetNode("Input");
+  ASSERT_NE(input_node, nullptr);
+
+  auto* input_in_transpose_node = graph_view.GetNode("input_in_transpose");
+  ASSERT_NE(input_in_transpose_node, nullptr);
+
+  auto* conv_node = graph_view.GetNode("Conv3D");
+  ASSERT_NE(conv_node, nullptr);
+  ASSERT_EQ(conv_node->NumRegularFanins(), 2);
+  VerifyRegularFaninMatch(conv_node, 0, input_in_transpose_node->GetName(), 0);
+
+  auto* square_node = graph_view.GetNode("square");
+  ASSERT_NE(square_node, nullptr);
+  ASSERT_EQ(square_node->NumRegularFanins(), 1);
+  VerifyRegularFaninMatch(square_node, 0, conv_node->GetName(), 0);
+
+  auto* output_out_transpose_node = graph_view.GetNode("output_out_transpose");
+  ASSERT_EQ(output_out_transpose_node, nullptr);
+}
+
+TEST_F(GenericLayoutOptimizerTest, NoChangeToFormat) {
+  GrapplerItem item;
+  {
+    Scope scope = Scope::NewRootScope().WithDevice(
+        absl::StrCat("/device:", DEVICE, ":0"));
+    auto input = ops::RandomUniform(scope.WithOpName("input"),
+                                    {32, 8, 10, 10},  // {N, C, H, W}
+                                    DT_FLOAT);
+    // Permutation for source to destination data format.
+    // CPU: NCHW -> NHWC: {0, 2, 3, 1}
+    auto input_in_transpose =
+        ops::Transpose(scope.WithOpName("input_in_transpose"), input,
+                       ops::Const(scope, {0, 2, 3, 1}, {4}));
+    auto square = ops::Square(scope.WithOpName("square"), input_in_transpose);
+    auto output_out_transpose =
+        ops::Transpose(scope.WithOpName("output_out_transpose"), square,
+                       ops::Const(scope, {0, 3, 1, 2}, {4}));
+    auto output =
+        ops::Identity(scope.WithOpName("output"), output_out_transpose);
+    TF_ASSERT_OK(scope.ToGraphDef(&item.graph));
+  }
+  GenericLayoutOptimizer optimizer(
+      RewriterConfig::AGGRESSIVE,
+      RewriterConfig::NCHW_TO_NHWC /* CPU settings*/);
+  GraphDef output;
+  TF_ASSERT_OK(optimizer.Optimize(virtual_cluster_.get(), item, &output));
+  Status status;
+  utils::GraphView graph_view(&output, &status);
+  TF_ASSERT_OK(status);
+  auto* input_node = graph_view.GetNode("input");
+  ASSERT_NE(input_node, nullptr);
+  auto* input_in_transpose_node = graph_view.GetNode("input_in_transpose");
+  ASSERT_NE(input_in_transpose_node, nullptr);
+  auto* square_node = graph_view.GetNode("square");
+  ASSERT_NE(square_node, nullptr);
+  ASSERT_EQ(square_node->NumRegularFanins(), 1);
+  VerifyRegularFaninMatch(square_node, 0, input_in_transpose_node->GetName(),
+                          0);
+  auto* output_out_transpose_node = graph_view.GetNode("output_out_transpose");
+  ASSERT_NE(output_out_transpose_node, nullptr);
+  ASSERT_EQ(output_out_transpose_node->NumRegularFanins(), 2);
+  VerifyRegularFaninMatch(output_out_transpose_node, 0, square_node->GetName(),
+                          0);
+  auto* output_node = graph_view.GetNode("output");
+  ASSERT_NE(output_node, nullptr);
+  ASSERT_EQ(output_node->NumRegularFanins(), 1);
+  VerifyRegularFaninMatch(output_node, 0, output_out_transpose_node->GetName(),
+                          0);
+}
+
+TEST_F(GenericLayoutOptimizerTest, NoChangeToFormat_1) {
+  GrapplerItem item;
+  {
+    Scope scope = Scope::NewRootScope().WithDevice(
+        absl::StrCat("/device:", DEVICE, ":0"));
+    auto input = ops::RandomUniform(scope.WithOpName("input"),
+                                    {32, 8, 10, 10},  // {N, C, H, W}
+                                    DT_FLOAT);
+    // Permutation for source to destination data format.
+    // CPU: NCHW -> NHWC: {0, 2, 3, 1}
+    auto input_in_transpose =
+        ops::Transpose(scope.WithOpName("input_in_transpose"), input,
+                       ops::Const(scope, {0, 2, 3, 1}, {4}));
+
+    auto square = ops::Square(scope.WithOpName("square"), input_in_transpose);
+    auto output_out_transpose =
+        ops::Transpose(scope.WithOpName("output_out_transpose"), square,
+                       ops::Const(scope, {0, 3, 1, 2}, {4}));
+    auto abs = ops::Abs(scope.WithOpName("abs"), output_out_transpose);
+    auto output = ops::Identity(scope.WithOpName("output"), abs);
+    TF_ASSERT_OK(scope.ToGraphDef(&item.graph));
+  }
+
+  GenericLayoutOptimizer optimizer(
+      RewriterConfig::AGGRESSIVE,
+      RewriterConfig::NCHW_TO_NHWC /* CPU settings*/);
+  GraphDef output;
+  TF_ASSERT_OK(optimizer.Optimize(virtual_cluster_.get(), item, &output));
+
+  Status status;
+  utils::GraphView graph_view(&output, &status);
+  TF_ASSERT_OK(status);
+
+  auto* input_node = graph_view.GetNode("input");
+  ASSERT_NE(input_node, nullptr);
+
+  auto* input_in_transpose_node = graph_view.GetNode("input_in_transpose");
+  ASSERT_NE(input_in_transpose_node, nullptr);
+
+  auto* square_node = graph_view.GetNode("square");
+  ASSERT_NE(square_node, nullptr);
+  ASSERT_EQ(square_node->NumRegularFanins(), 1);
+  VerifyRegularFaninMatch(square_node, 0, input_in_transpose_node->GetName(),
+                          0);
+
+  auto* output_out_transpose_node = graph_view.GetNode("output_out_transpose");
+  ASSERT_NE(output_out_transpose_node, nullptr);
+  ASSERT_EQ(output_out_transpose_node->NumRegularFanins(), 2);
+  VerifyRegularFaninMatch(output_out_transpose_node, 0, square_node->GetName(),
+                          0);
+
+  auto* abs_node = graph_view.GetNode("abs");
+  ASSERT_NE(abs_node, nullptr);
+  ASSERT_EQ(abs_node->NumRegularFanins(), 1);
+  VerifyRegularFaninMatch(abs_node, 0, output_out_transpose_node->GetName(), 0);
+
+  auto* output_node = graph_view.GetNode("output");
+  ASSERT_NE(output_node, nullptr);
+  ASSERT_EQ(output_node->NumRegularFanins(), 1);
+  VerifyRegularFaninMatch(output_node, 0, abs_node->GetName(), 0);
 }
 
 // TODO(yanzha): Add more complex Graph for test.
