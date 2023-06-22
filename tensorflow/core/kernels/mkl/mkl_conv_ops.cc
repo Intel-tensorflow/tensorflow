@@ -489,8 +489,9 @@ class MklConvFwdPrimitive : public MklPrimitive {
         } else if (post_op_param.name == "wei_scale") {
           is_scale_set.insert({"wei", true});
           const int scale_size = post_op_param.param.size();
-          const int mask =
-              scale_size == 1 ? 0 : convFwdDims.is_depthwise ? 3 : 1;
+          const int mask = scale_size == 1            ? 0
+                           : convFwdDims.is_depthwise ? 3
+                                                      : 1;
           post_ops_attr.set_scales_mask(DNNL_ARG_WEIGHTS, mask);
           context_.wei_scale_md.reset(new memory::desc(
               {scale_size}, MklDnnType<float>(), memory::format_tag::x));
@@ -1899,7 +1900,8 @@ enum class oneDNNFusedOps {
   kRelu = 4,
   kRequantize = 8,
   kLeakyRelu = 16,
-  kSigmoid = 32
+  kSigmoid = 32,
+  kDequantize = 64
 };
 
 template <typename Device, typename Tinput, typename Tbias, typename Toutput,
@@ -1938,9 +1940,11 @@ class MklQuantizedConvOp
         {"Relu"},
         {"Requantize"},
         {"BiasAdd", "LeakyRelu"},
+        {"Dequantize"},
         {"BiasAdd", "Relu"},
         {"BiasAdd", "Sigmoid"},
         {"BiasAdd", "Requantize"},
+        {"BiasAdd", "Dequantize"},
         {"Relu", "Requantize"},
         {"BiasAdd", "LeakyRelu", "Requantize"},
         {"BiasAdd", "Relu", "Requantize"},
@@ -2003,11 +2007,17 @@ class MklQuantizedConvOp
       this->set_fuse_add(true);
     }
     const bool fuse_requantize = IsFused(oneDNNFusedOps::kRequantize);
+    const bool fuse_dequantize = IsFused(oneDNNFusedOps::kDequantize);
     OP_REQUIRES_OK(context, context->GetAttr("out_type", &out_dt));
     if (fuse_requantize) {
       OP_REQUIRES(context, out_dt == DT_QINT8 || out_dt == DT_QUINT8,
                   errors::InvalidArgument("QuantizedConv: unsupported output "
                                           "type when Requantize is fused."));
+    }
+    if (fuse_dequantize) {
+      OP_REQUIRES(context, out_dt == DT_FLOAT || out_dt == DT_BFLOAT16,
+                  errors::InvalidArgument("QuantizedConv: unsupported output "
+                                          "type when Dequantize is fused."));
     }
 
     if (context->HasAttr("Tsummand")) {
@@ -2028,9 +2038,9 @@ class MklQuantizedConvOp
       }
     }
 
-    // If Requantize is fused, we set output_scale as first post op since it is
-    // logically applied before any post op. Then we maintain the order of post
-    // ops according to the order of fused_ops.
+    // If Requantize is fused, we set output_scale as first post op
+    // since it is logically applied before any post op. Then we maintain the
+    // order of post ops according to the order of fused_ops.
 #ifdef ENABLE_ONEDNN_V2
     int idx = fuse_requantize ? 1 : 0;
 #else
@@ -2162,7 +2172,8 @@ class MklQuantizedConvOp
           context->input(min_freezed_output_idx_).template scalar<float>()();
       output_max->flat<float>()(0) =
           context->input(max_freezed_output_idx_).template scalar<float>()();
-    } else {
+    } else if (!(std::is_same<Toutput, float>::value ||
+                 std::is_same<Toutput, bfloat16>::value)) {
       const Tensor& min_filter = context->input(min_filter_idx_);
       const Tensor& max_filter = context->input(max_filter_idx_);
       if (min_filter.dims() == 0) {
@@ -2220,19 +2231,28 @@ class MklQuantizedConvOp
     float float_input_range =
         std::max(std::abs(min_input), std::abs(max_input));
     const float src_scale = float_input_range / int_input_limit;
-    if (std::is_same<Toutput, quint8>::value ||
+    FactoryKeyCreator dst_param_key;
+    if (std::is_same<Toutput, float>::value ||
+        std::is_same<Toutput, bfloat16>::value ||
+        std::is_same<Toutput, quint8>::value ||
         std::is_same<Toutput, qint8>::value) {
       // min_freezed_output and max_freezed_output are the actual range
       // for the output.
-      const float min_freezed_output =
-          context->input(min_freezed_output_idx_).template scalar<float>()();
-      const float max_freezed_output =
-          context->input(max_freezed_output_idx_).template scalar<float>()();
-
+      float float_output_range;
+      if (std::is_same<Toutput, quint8>::value ||
+          std::is_same<Toutput, qint8>::value) {
+        const float min_freezed_output =
+            context->input(min_freezed_output_idx_).template scalar<float>()();
+        const float max_freezed_output =
+            context->input(max_freezed_output_idx_).template scalar<float>()();
+        float_output_range = std::max(std::abs(min_freezed_output),
+                                      std::abs(max_freezed_output));
+        dst_param_key.AddAsKey<float>(min_freezed_output);
+        dst_param_key.AddAsKey<float>(max_freezed_output);
+      }
       float int_output_limit =
           std::is_same<Toutput, quint8>::value ? 255.0f : 127.0f;
-      float float_output_range =
-          std::max(std::abs(min_freezed_output), std::abs(max_freezed_output));
+
       const float int_const_scale_limit =
           (std::is_same<Tinput, quint8>::value) ? 255.0 * 127.0 : 127.0 * 127.0;
       for (size_t i = 0; i < depth; ++i) {
@@ -2248,6 +2268,7 @@ class MklQuantizedConvOp
         wei_scale[i] = float_filter_range / 127.0;
 #endif  // ENABLE_ONEDNN_V2
       }
+
       // we are creating a partial key here to use with primitive key caching to
       // improve key creation performance. Instead of using actual values we are
       // using the pointers for min/max_filter_vector, and this works since the
@@ -2256,17 +2277,15 @@ class MklQuantizedConvOp
       FactoryKeyCreator param_key;
       param_key.AddAsKey<float>(min_input);
       param_key.AddAsKey<float>(max_input);
-      param_key.AddAsKey<float>(min_freezed_output);
-      param_key.AddAsKey<float>(max_freezed_output);
       param_key.AddAsKey<const float*>(min_filter);
       param_key.AddAsKey<const float*>(max_filter);
       params.post_op_params[post_op_to_idx_["output_scale"]] = {
           "output_scale", dnnl::algorithm::undef, scales, param_key.GetKey()};
 #else
-      const float dst_scale = float_output_range / int_output_limit;
-      FactoryKeyCreator dst_param_key;
-      dst_param_key.AddAsKey<float>(min_freezed_output);
-      dst_param_key.AddAsKey<float>(max_freezed_output);
+      const float dst_scale = (std::is_same<Toutput, float>::value ||
+                               std::is_same<Toutput, bfloat16>::value)
+                                  ? 1.0
+                                  : float_output_range / int_output_limit;
       params.post_op_params[post_op_to_idx_["dst_scale"]] = {
           "dst_scale",
           dnnl::algorithm::undef,
@@ -2714,7 +2733,8 @@ class MklQuantizedConvOp
       {"Relu", oneDNNFusedOps::kRelu},
       {"Requantize", oneDNNFusedOps::kRequantize},
       {"LeakyRelu", oneDNNFusedOps::kLeakyRelu},
-      {"Sigmoid", oneDNNFusedOps::kSigmoid}};
+      {"Sigmoid", oneDNNFusedOps::kSigmoid},
+      {"Dequantize", oneDNNFusedOps::kDequantize}};
   std::shared_ptr<dnnl::memory> summand_;
   std::shared_ptr<dnnl::memory> dst_;
   int min_input_idx_ = -1;
@@ -3115,6 +3135,15 @@ REGISTER_MKL_KERNEL_ALL_INPUT_AND_BIAS_TYPES("_FusedQuantizedConv3D",
                                              MklQuantizedConvOp, qint8, quint8,
                                              false, quantized_fusions::none,
                                              -1);
+REGISTER_MKL_KERNEL_ALL_INPUT_AND_BIAS_TYPES("_FusedQuantizedConv3D",
+                                             MklQuantizedConvOp, bfloat16,
+                                             bfloat16, false,
+                                             quantized_fusions::none, -1);
+REGISTER_MKL_KERNEL_ALL_INPUT_AND_BIAS_TYPES("_FusedQuantizedConv3D",
+                                             MklQuantizedConvOp, float, float,
+                                             false, quantized_fusions::none,
+                                             -1);
+
 #undef LABEL
 #undef SUMMAND_TYPE_CONSTRAINT
 #undef BIAS_TYPE_CONSTRAINT
@@ -3249,7 +3278,7 @@ TF_CALL_half(REGISTER_MKL_CPU_2D_half)
           .Label(mkl_op_registry::kMklNameChangeOpLabel),                     \
       MklConvOp<CPUDevice, T, T, T, T, T, int32, false, false, true, true>);
 
-TF_CALL_float(REGISTER_MKL_CPU_2D_DEPTHWISE);
+    TF_CALL_float(REGISTER_MKL_CPU_2D_DEPTHWISE);
 TF_CALL_bfloat16(REGISTER_MKL_CPU_2D_DEPTHWISE);
 
 // Note we are registering _MklFusedConv2D.

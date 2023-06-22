@@ -2601,19 +2601,22 @@ Status QuantizedConv2DShape(InferenceContext* c) {
 }
 
 Status FusedQuantizedConvShape(InferenceContext* c, int num_dims) {
-  std::vector<string> fused_ops;
-  TF_RETURN_IF_ERROR(c->GetAttr("fused_ops", &fused_ops));
+  std::vector<string> fused_ops_;
+  TF_RETURN_IF_ERROR(c->GetAttr("fused_ops", &fused_ops_));
   ShapeHandle unused, channel;
-  bool fused_sum, fused_bias, fused_requantize;
-  fused_sum =
-      std::find(fused_ops.begin(), fused_ops.end(), "Sum") != fused_ops.end();
-  fused_bias = std::find(fused_ops.begin(), fused_ops.end(), "BiasAdd") !=
-               fused_ops.end();
-  fused_requantize = std::find(fused_ops.begin(), fused_ops.end(),
-                               "Requantize") != fused_ops.end();
+  bool fused_sum, fused_bias, fused_requantize, fused_dequantize;
+  fused_sum = std::find(fused_ops_.begin(), fused_ops_.end(), "Sum") !=
+              fused_ops_.end();
+  fused_bias = std::find(fused_ops_.begin(), fused_ops_.end(), "BiasAdd") !=
+               fused_ops_.end();
+  fused_requantize = std::find(fused_ops_.begin(), fused_ops_.end(),
+                               "Requantize") != fused_ops_.end();
+  fused_dequantize = std::find(fused_ops_.begin(), fused_ops_.end(),
+                               "Dequantize") != fused_ops_.end();
   const int kMinInputBaseIdx = 2;
   const int kMinFilterBaseIdx = 4;
   int min_input_filter_offset = 0;
+
   if (fused_bias && !fused_sum) {
     TF_RETURN_IF_ERROR(c->WithRank(c->input(2), 1, &unused));  // bias
     min_input_filter_offset = 1;
@@ -2637,12 +2640,14 @@ Status FusedQuantizedConvShape(InferenceContext* c, int num_dims) {
   TF_RETURN_IF_ERROR(c->WithRankAtMost(
       c->input(kMinFilterBaseIdx + min_input_filter_offset + 1), 1,
       &channel));  // max_filter
-  if (fused_requantize) {
-    c->set_output(1, c->Scalar());
-    c->set_output(2, c->Scalar());
-  } else {
-    c->set_output(1, channel);
-    c->set_output(2, channel);
+  if (!fused_dequantize) {
+    if (fused_requantize) {
+      c->set_output(1, c->Scalar());
+      c->set_output(2, c->Scalar());
+    } else {
+      c->set_output(1, channel);
+      c->set_output(2, channel);
+    }
   }
   return OkStatus();
 }
