@@ -832,6 +832,9 @@ class QuantizedConvTest : public OpsTestBase {
       if (fused_ops[i] == "Relu") {
         last_op = "with_relu";
         out_op = ops::Relu(root.WithOpName(last_op), out_op);
+      } else if (fused_ops[i] == "Sigmoid") {
+        last_op = "with_sigmoid";
+        out_op = ops::Sigmoid(root.WithOpName(last_op), out_op);
       }
 
       if (fused_ops[i] == "LeakyRelu") {
@@ -1300,6 +1303,14 @@ TEST_F(QuantizedConvTest, BiasAddReluSumFusionFloatSummand) {
 
 TEST_F(QuantizedConvTest, BiasAddLeakyReluSumFusionFloatSummand) {
   TestBiasAddActivationSumFusion<float, qint32>("LeakyRelu", 0.2);
+}
+
+TEST_F(QuantizedConvTest, BiasAddSigmoidRequantizeFusion) {
+  TestBiasAddFusion<qint8, qint8>(true, false, "Sigmoid");
+}
+
+TEST_F(QuantizedConvTest, DWBiasAddSigmoidRequantizeFusion) {
+  TestBiasAddFusion<qint8, qint8>(true, true, "Sigmoid");
 }
 
 class QuantizedConv3DTest : public OpsTestBase {

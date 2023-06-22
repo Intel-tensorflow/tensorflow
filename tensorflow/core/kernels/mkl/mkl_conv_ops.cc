@@ -1898,7 +1898,8 @@ enum class oneDNNFusedOps {
   kSum = 2,
   kRelu = 4,
   kRequantize = 8,
-  kLeakyRelu = 16
+  kLeakyRelu = 16,
+  kSigmoid = 32
 };
 
 template <typename Device, typename Tinput, typename Tbias, typename Toutput,
@@ -1938,6 +1939,7 @@ class MklQuantizedConvOp
         {"Requantize"},
         {"BiasAdd", "LeakyRelu"},
         {"BiasAdd", "Relu"},
+        {"BiasAdd", "Sigmoid"},
         {"BiasAdd", "Requantize"},
         {"Relu", "Requantize"},
         {"BiasAdd", "LeakyRelu", "Requantize"},
@@ -1946,6 +1948,7 @@ class MklQuantizedConvOp
         {"BiasAdd", "Relu", "Sum"},
         {"BiasAdd", "LeakyRelu", "Sum", "Requantize"},
         {"BiasAdd", "Relu", "Sum", "Requantize"},
+        {"BiasAdd", "Sigmoid", "Requantize"},
         {"BiasAdd", "Sum", "Relu"},
         {"BiasAdd", "Sum", "Relu", "Requantize"}};
 
@@ -2043,7 +2046,8 @@ class MklQuantizedConvOp
 #endif  // ENABLE_ONEDNN_V2
       } else if (fused_ops_[i] == "Sum") {
         post_op_to_idx_["sum"] = idx++;
-      } else if (fused_ops_[i] == "Relu" || fused_ops_[i] == "LeakyRelu") {
+      } else if (fused_ops_[i] == "Relu" || fused_ops_[i] == "LeakyRelu" ||
+                 fused_ops_[i] == "Sigmoid") {
         post_op_to_idx_["activation"] = idx++;
       }
     }
@@ -2399,6 +2403,9 @@ class MklQuantizedConvOp
     if (IsFused(oneDNNFusedOps::kRelu) || IsFused(oneDNNFusedOps::kLeakyRelu)) {
       params.post_op_params[post_op_to_idx_["activation"]] = {
           "activation", dnnl::algorithm::eltwise_relu, {1.0, alpha_, 0.0}, ""};
+    } else if (IsFused(oneDNNFusedOps::kSigmoid)) {
+      params.post_op_params[post_op_to_idx_["activation"]] = {
+          "activation", dnnl::algorithm::eltwise_logistic, {1.0, 0.0, 0.0}, ""};
     }
   }
 
@@ -2706,7 +2713,8 @@ class MklQuantizedConvOp
       {"Sum", oneDNNFusedOps::kSum},
       {"Relu", oneDNNFusedOps::kRelu},
       {"Requantize", oneDNNFusedOps::kRequantize},
-      {"LeakyRelu", oneDNNFusedOps::kLeakyRelu}};
+      {"LeakyRelu", oneDNNFusedOps::kLeakyRelu},
+      {"Sigmoid", oneDNNFusedOps::kSigmoid}};
   std::shared_ptr<dnnl::memory> summand_;
   std::shared_ptr<dnnl::memory> dst_;
   int min_input_idx_ = -1;
