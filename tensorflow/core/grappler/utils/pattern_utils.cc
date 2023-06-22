@@ -71,7 +71,6 @@ bool SubGraphMatcher<MatchingDirection::kFollowInputs>::DoesOpTypePatternMatch(
     const OpTypePattern& pattern, MutableNodeView* node_view,
     NodeViewMatch* match) {
   if (!PatternAllowCtrlDependencies()) {
-    VLOG(0) << "Not allowing Control Dependencies";
     if (node_view->NumControllingFanins() > 0 ||
         node_view->NumControlledFanouts() > 0)
       return false;
