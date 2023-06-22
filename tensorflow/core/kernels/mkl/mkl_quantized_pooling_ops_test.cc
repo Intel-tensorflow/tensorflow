@@ -259,6 +259,88 @@ TEST_F(QuantizedPoolingTest, SmallMaxPooling) {
   test::ExpectTensorNear<float>(expected_float, output_float, 0.2);
 }
 
+class QuantizedMaxPoolingTest : public OpsTestBase {
+ protected:
+  void RunFloatPooling(const Tensor& input, const int& ksize, const int& stride,
+                       const string& padding,
+                       const std::vector<int>& explicit_paddings,
+                       Tensor* output) {
+    auto root = tensorflow::Scope::NewRootScope();
+    string op_name = "maxpool";
+    auto input_op =
+        ops::Const(root.WithOpName("input"), Input::Initializer(input));
+    Output out_op =
+        ops::MaxPool(root.WithOpName(op_name), input_op, {1, ksize, ksize, 1},
+                     {1, stride, stride, 1}, padding,
+                     ops::MaxPool::Attrs().ExplicitPaddings(explicit_paddings));
+    tensorflow::GraphDef graph_def;
+    TF_ASSERT_OK(root.ToGraphDef(&graph_def));
+    MklTestingUtil::RunGraph(graph_def, op_name, output);
+  }
+
+  template <typename T>
+  void RunQuantizedPooling(const Tensor& input_float, const int& ksize,
+                           const int& stride, const string& padding,
+                           const std::vector<int>& explicit_paddings,
+                           Tensor* output) {
+    DataType type = DataTypeToEnum<T>::v();
+    TF_ASSERT_OK(NodeDefBuilder("quantized_max_pool_op", "_MklQuantizedMaxPool")
+                     .Input(FakeInput(type))
+                     .Input(FakeInput(DT_FLOAT))
+                     .Input(FakeInput(DT_FLOAT))
+                     .Attr("T", type)
+                     .Attr("ksize", {1, ksize, ksize, 1})
+                     .Attr("strides", {1, stride, stride, 1})
+                     .Attr("padding", padding)
+                     .Attr("explicit_paddings", explicit_paddings)
+                     .Finalize(node_def()));
+    TF_ASSERT_OK(InitOp());
+
+    float input_min, input_max;
+    MklTestingUtil::ComputeMinMax<float>(input_float, &input_min, &input_max);
+
+    Tensor input_quantized;
+    MklTestingUtil::RunMklQuantizeOp(input_float, input_min, input_max, type,
+                                     "SCALED", &input_quantized);
+
+    AddInputFromArray<T>(input_quantized.shape(), input_quantized.flat<T>());
+    AddInputFromArray<float>(TensorShape({}), {input_min});
+    AddInputFromArray<float>(TensorShape({}), {input_max});
+
+    TF_ASSERT_OK(RunOpKernel());
+
+    Tensor& output_quantized = *GetOutput(0);
+    Tensor& output_min = *GetOutput(1);
+    Tensor& output_max = *GetOutput(2);
+
+    MklTestingUtil::RunDequantizeOp(output_quantized, output_min, output_max,
+                                    "SCALED", output);
+  }
+};
+
+TEST_F(QuantizedMaxPoolingTest, Explicit_Padding) {
+  const int ksize = 3;
+  const int stride = 2;
+  const string padding = "EXPLICIT";
+  const std::vector<int> explicit_paddings = {0, 0, 0, 2, 0, 1, 0, 0};
+
+  const int input_height = 3;
+  const int input_width = 3;
+
+  Tensor input_float(DT_FLOAT, {1, input_height, input_width, 1});
+  test::FillValues<float>(&input_float, {1, 2, 3, 4, 5, 6, 7, 8, 9});
+
+  Tensor expected_output;
+  RunFloatPooling(input_float, ksize, stride, padding, explicit_paddings,
+                  &expected_output);
+
+  Tensor output_float;
+  RunQuantizedPooling<quint8>(input_float, ksize, stride, padding,
+                              explicit_paddings, &output_float);
+
+  test::ExpectTensorNear<float>(expected_output, output_float, 0.2);
+}
+
 }  // namespace tensorflow
 
 #endif  // INTEL_MKL && ENABLE_MKL
