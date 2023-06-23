@@ -3114,6 +3114,14 @@ REGISTER_MKL_KERNEL_ALL_INPUT_AND_BIAS_TYPES("_FusedQuantizedConv2D",
                                              MklQuantizedConvOp, qint8, quint8,
                                              false, quantized_fusions::none,
                                              -1);
+REGISTER_MKL_KERNEL_ALL_INPUT_AND_BIAS_TYPES("_FusedQuantizedConv2D",
+                                             MklQuantizedConvOp, bfloat16,
+                                             bfloat16, false,
+                                             quantized_fusions::none, -1);
+REGISTER_MKL_KERNEL_ALL_INPUT_AND_BIAS_TYPES("_FusedQuantizedConv2D",
+                                             MklQuantizedConvOp, float, float,
+                                             false, quantized_fusions::none,
+                                             -1);
 REGISTER_MKL_KERNEL_ALL_INPUT_AND_BIAS_TYPES("_FusedQuantizedDepthwiseConv2D",
                                              MklQuantizedConvOp, qint8, qint8,
                                              true, quantized_fusions::none, -1);
@@ -3125,6 +3133,13 @@ REGISTER_MKL_KERNEL_ALL_INPUT_AND_BIAS_TYPES("_FusedQuantizedDepthwiseConv2D",
                                              true, quantized_fusions::none, -1);
 REGISTER_MKL_KERNEL_ALL_INPUT_AND_BIAS_TYPES("_FusedQuantizedDepthwiseConv2D",
                                              MklQuantizedConvOp, qint8, quint8,
+                                             true, quantized_fusions::none, -1);
+REGISTER_MKL_KERNEL_ALL_INPUT_AND_BIAS_TYPES("_FusedQuantizedDepthwiseConv2D",
+                                             MklQuantizedConvOp, bfloat16,
+                                             bfloat16, true,
+                                             quantized_fusions::none, -1);
+REGISTER_MKL_KERNEL_ALL_INPUT_AND_BIAS_TYPES("_FusedQuantizedDepthwiseConv2D",
+                                             MklQuantizedConvOp, float, float,
                                              true, quantized_fusions::none, -1);
 REGISTER_MKL_KERNEL_ALL_INPUT_AND_BIAS_TYPES("_FusedQuantizedConv3D",
                                              MklQuantizedConvOp, qint8, qint8,

@@ -765,13 +765,14 @@ class QuantizedConvTest : public OpsTestBase {
     const Tensor& output = *GetOutput(0);
     const Tensor& output_min = *GetOutput(1);
     const Tensor& output_max = *GetOutput(2);
-    const float output_max_value = output_max.scalar<float>()();
 
-    Tensor output_float;
-    MklTestingUtil::RunDequantizeOp(output, output_min, output_max, "SCALED",
-                                    &output_float);
+    Tensor output_float = output;
+    if (!std::is_same<Toutput, float>::value)
+      MklTestingUtil::RunDequantizeOp(output, output_min, output_max, "SCALED",
+                                      &output_float);
     if (std::is_same<Tsummand, qint8>::value &&
         std::is_same<Toutput, quint8>::value) {
+      const float output_max_value = output_max.flat<float>()(0);
       // When summand's type is qint8 and output's type is quint8, we need to
       // clamp the expected value. Although output's type is quint8, it cannot
       // hold values larger than 127 due to limitation in the implementation.
@@ -850,9 +851,9 @@ class QuantizedConvTest : public OpsTestBase {
   }
 
   template <typename Tinput, typename Toutput>
-  void TestBiasAddFusion(bool fuse_requantize, const bool is_depthwise,
-                         string activation = "", const float tol = 1.0,
-                         const float alpha = 0.0) {
+  void TestBiasAddFusion(bool fuse_requantize, bool fuse_dequantize,
+                         const bool is_depthwise, string activation = "",
+                         const float tol = 1.0, const float alpha = 0.0) {
     const int stride = 1;
     const string padding = "VALID";
     std::vector<string> fused_ops = {"BiasAdd"};
@@ -877,6 +878,10 @@ class QuantizedConvTest : public OpsTestBase {
       fused_ops.push_back("Requantize");
       input_types.push_back(DT_FLOAT);  // min_freezed_output
       input_types.push_back(DT_FLOAT);  // max_freezed_output
+    }
+
+    if (fuse_dequantize) {
+      fused_ops.push_back("Dequantize");
     }
 
     TF_EXPECT_OK(
@@ -1228,11 +1233,19 @@ class QuantizedConvTest : public OpsTestBase {
 };
 
 TEST_F(QuantizedConvTest, BiasAddFusion) {
-  TestBiasAddFusion<qint8, qint32>(false, false);
+  TestBiasAddFusion<qint8, qint32>(false, false, false);
 }
 
 TEST_F(QuantizedConvTest, BiasAddRequantizeFusion) {
-  TestBiasAddFusion<qint8, qint8>(true, false);
+  TestBiasAddFusion<qint8, qint8>(true, false, false);
+}
+
+TEST_F(QuantizedConvTest, BiasAddDequantizeFusion) {
+  TestBiasAddFusion<qint8, float>(false, true, false);
+}
+
+TEST_F(QuantizedConvTest, DWBiasAddDequantizeFusion) {
+  TestBiasAddFusion<qint8, float>(false, true, true);
 }
 
 TEST_F(QuantizedConvTest, Conv3DBiasAddRequantizeFusion) {
@@ -1240,37 +1253,37 @@ TEST_F(QuantizedConvTest, Conv3DBiasAddRequantizeFusion) {
 }
 
 TEST_F(QuantizedConvTest, BiasAddReluRequantizeFusion) {
-  TestBiasAddFusion<qint8, qint8>(true, false, "Relu");
+  TestBiasAddFusion<qint8, qint8>(true, false, false, "Relu");
 }
 
 TEST_F(QuantizedConvTest, BiasAddLeakyReluRequantizeFusion) {
-  TestBiasAddFusion<qint8, qint8>(true, false, "LeakyRelu", 1.0, 0.2);
+  TestBiasAddFusion<qint8, qint8>(true, false, false, "LeakyRelu", 1.0, 0.2);
 }
 
 TEST_F(QuantizedConvTest, UnsignedInputBiasAddReluRequantizeFusion) {
   // We need higher tolerance for quint8 input/output
-  TestBiasAddFusion<quint8, quint8>(true, false, "Relu", 4.0);
+  TestBiasAddFusion<quint8, quint8>(true, false, false, "Relu", 4.0);
 }
 
 TEST_F(QuantizedConvTest, DWBiasAddFusion) {
-  TestBiasAddFusion<qint8, qint32>(false, true);
+  TestBiasAddFusion<qint8, qint32>(false, false, true);
 }
 
 TEST_F(QuantizedConvTest, DWBiasAddRequantizeFusion) {
-  TestBiasAddFusion<qint8, qint8>(true, true);
+  TestBiasAddFusion<qint8, qint8>(true, false, true);
 }
 
 TEST_F(QuantizedConvTest, DWBiasAddReluRequantizeFusion) {
-  TestBiasAddFusion<qint8, qint8>(true, true, "Relu");
+  TestBiasAddFusion<qint8, qint8>(true, false, true, "Relu");
 }
 
 TEST_F(QuantizedConvTest, DWBiasAddLeakyReluRequantizeFusion) {
-  TestBiasAddFusion<qint8, qint8>(true, true, "LeakyRelu", 1.0, 0.2);
+  TestBiasAddFusion<qint8, qint8>(true, false, true, "LeakyRelu", 1.0, 0.2);
 }
 
 TEST_F(QuantizedConvTest, DWUnsignedInputBiasAddReluRequantizeFusion) {
   // We need higher tolerance for quint8 input/output
-  TestBiasAddFusion<quint8, quint8>(true, true, "Relu", 4.0);
+  TestBiasAddFusion<quint8, quint8>(true, false, true, "Relu", 4.0);
 }
 
 TEST_F(QuantizedConvTest, BiasAddSumReluRequantizeFusion) {
@@ -1314,11 +1327,11 @@ TEST_F(QuantizedConvTest, BiasAddLeakyReluSumFusionFloatSummand) {
 }
 
 TEST_F(QuantizedConvTest, BiasAddSigmoidRequantizeFusion) {
-  TestBiasAddFusion<qint8, qint8>(true, false, "Sigmoid");
+  TestBiasAddFusion<qint8, qint8>(true, false, false, "Sigmoid");
 }
 
 TEST_F(QuantizedConvTest, DWBiasAddSigmoidRequantizeFusion) {
-  TestBiasAddFusion<qint8, qint8>(true, true, "Sigmoid");
+  TestBiasAddFusion<qint8, qint8>(true, false, true, "Sigmoid");
 }
 
 class QuantizedConv3DTest : public OpsTestBase {
