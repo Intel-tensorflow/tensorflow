@@ -14,7 +14,6 @@ limitations under the License.
 ==============================================================================*/
 #if defined(INTEL_MKL)
 
-#include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 #include "dnnl.hpp"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/register_types.h"
@@ -24,6 +23,7 @@ limitations under the License.
 #include "tensorflow/core/kernels/no_op.h"
 #include "tensorflow/core/util/mkl_util.h"
 #include "tensorflow/core/util/tensor_format.h"
+#include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 #ifdef DNNL_AARCH64_USE_ACL
 #include "tensorflow/core/platform/mutex.h"
 #endif
@@ -67,7 +67,26 @@ namespace tensorflow {
 
 using CPUDevice = Eigen::ThreadPoolDevice;
 
-using FusedBNActivationMode = functor::FusedBatchNormActivationMode;
+enum class FusedBNActivationMode { kIdentity, kRelu, kLeakyRelu };
+Status ParseActivationMode(OpKernelConstruction* context,
+                           FusedBNActivationMode* activation_mode) {
+  string activation_mode_str;
+  TF_RETURN_IF_ERROR(context->GetAttr("activation_mode", &activation_mode_str));
+
+  if (activation_mode_str == "Identity") {
+    *activation_mode = FusedBNActivationMode::kIdentity;
+    return OkStatus();
+  } else if (activation_mode_str == "Relu") {
+    *activation_mode = FusedBNActivationMode::kRelu;
+    return OkStatus();
+  } else if (activation_mode_str == "LeakyRelu") {
+    *activation_mode = FusedBNActivationMode::kLeakyRelu;
+    return OkStatus();
+  } else {
+    return errors::InvalidArgument("Unsupported activation mode: ",
+                                   activation_mode_str);
+  }
+}
 
 struct MklBatchNormFwdParams {
   memory::dims src_dims;
@@ -76,6 +95,7 @@ struct MklBatchNormFwdParams {
   bool training;
   TensorFormat data_format;
   FusedBNActivationMode activation_mode;
+  float alpha;
   memory::desc src_md;
 #ifndef ENABLE_ONEDNN_V2
   memory::desc dst_md;
@@ -87,13 +107,14 @@ struct MklBatchNormFwdParams {
 #ifndef ENABLE_ONEDNN_V2
                         memory::desc dst_md,
 #endif  // !ENABLE_ONEDNN_V2
-                        FusedBNActivationMode activation_mode)
+                        FusedBNActivationMode activation_mode, float alpha)
       : src_dims(src_dims),
         depth(depth),
         eps(eps),
         training(training),
         data_format(data_format),
         activation_mode(activation_mode),
+        alpha(alpha),
 #ifdef ENABLE_ONEDNN_V2
         src_md(src_md) {}
 #else
@@ -102,7 +123,7 @@ struct MklBatchNormFwdParams {
 #endif  // ENABLE_ONEDNN_V2
 };
 
-template <typename T, typename U>
+template <typename T, typename U, typename Tout>
 class MklFusedBatchNormFwdPrimitive : public MklPrimitive {
  public:
   explicit MklFusedBatchNormFwdPrimitive(const MklBatchNormFwdParams& fwdParams)
@@ -264,12 +285,17 @@ class MklFusedBatchNormFwdPrimitive : public MklPrimitive {
             : (GET_SCALE_AND_SHIFT_FLAGS | GET_FLAG(use_global_stats));
     context_.pkind =
         fwdParams.training ? prop_kind::forward_training : FORWARD_INFERENCE;
-
+    dnnl::post_ops post_ops;
+    dnnl::primitive_attr post_ops_attr;
     if (fwdParams.activation_mode == FusedBNActivationMode::kRelu) {
       context_.flags |= GET_FLAG(fuse_norm_relu);
+    } else if (fwdParams.activation_mode == FusedBNActivationMode::kLeakyRelu) {
+      post_ops.append_eltwise(dnnl::algorithm::eltwise_relu, fwdParams.alpha,
+                              0.0);
     }
     // Memory descriptor
     auto src_md = fwdParams.src_md;
+    post_ops_attr.set_post_ops(post_ops);
     // Create forward BatchNorm descriptor and primitive descriptor.
 #ifdef ENABLE_ONEDNN_V2
     auto fwd_desc = batch_normalization_forward::desc(
@@ -280,8 +306,8 @@ class MklFusedBatchNormFwdPrimitive : public MklPrimitive {
 #else
     auto dst_md = fwdParams.dst_md;
     context_.fwd_pd.reset(new BatchNormFwdPd(
-        cpu_engine_, context_.pkind, src_md, dst_md, fwdParams.eps,
-        static_cast<dnnl::normalization_flags>(context_.flags)));
+        cpu_engine_, context_.pkind, fwdParams.src_md, dst_md, fwdParams.eps,
+        static_cast<dnnl::normalization_flags>(context_.flags), post_ops_attr));
 #endif  // ENABLE_ONEDNN_V2
 
     // Create memory primitive based on dummy data
@@ -417,19 +443,19 @@ class MklFusedBatchNormFwdPrimitive : public MklPrimitive {
 #endif
 };
 
-template <typename T, typename U>
+template <typename T, typename U, typename Tout>
 class MklFusedBatchNormFwdPrimitiveFactory : public MklPrimitiveFactory<T> {
  public:
-  static MklFusedBatchNormFwdPrimitive<T, U>* Get(
+  static MklFusedBatchNormFwdPrimitive<T, U, Tout>* Get(
       const MklBatchNormFwdParams& fwdParams) {
-    auto bn_fwd = static_cast<MklFusedBatchNormFwdPrimitive<T, U>*>(
-        MklFusedBatchNormFwdPrimitiveFactory<T, U>::GetInstance()
+    auto bn_fwd = static_cast<MklFusedBatchNormFwdPrimitive<T, U, Tout>*>(
+        MklFusedBatchNormFwdPrimitiveFactory<T, U, Tout>::GetInstance()
             .GetBatchNormFwd(fwdParams));
 
     if (bn_fwd == nullptr) {
-      bn_fwd = new MklFusedBatchNormFwdPrimitive<T, U>(fwdParams);
-      MklFusedBatchNormFwdPrimitiveFactory<T, U>::GetInstance().SetBatchNormFwd(
-          fwdParams, bn_fwd);
+      bn_fwd = new MklFusedBatchNormFwdPrimitive<T, U, Tout>(fwdParams);
+      MklFusedBatchNormFwdPrimitiveFactory<T, U, Tout>::GetInstance()
+          .SetBatchNormFwd(fwdParams, bn_fwd);
     }
     return bn_fwd;
   }
@@ -453,8 +479,10 @@ class MklFusedBatchNormFwdPrimitiveFactory : public MklPrimitiveFactory<T> {
     key_creator.AddAsKey<bool>(fwdParams.training);
     key_creator.AddAsKey<TensorFormat>(fwdParams.data_format);
     key_creator.AddAsKey<FusedBNActivationMode>(fwdParams.activation_mode);
+    key_creator.AddAsKey<float>(fwdParams.alpha);
     key_creator.AddAsKey(typeid(T).name());
     key_creator.AddAsKey(typeid(U).name());
+    key_creator.AddAsKey(typeid(Tout).name());
     return key_creator.GetKey();
   }
 
@@ -747,7 +775,7 @@ class MklFusedBatchNormBwdPrimitive : public MklPrimitive {
          {DNNL_ARG_DIFF_SRC, *context_.diff_src_mem},
 #ifdef ENABLE_ONEDNN_V2
          {DNNL_ARG_SCALE_SHIFT, *context_.scale_shift_mem},
-         {DNNL_ARG_DIFF_SCALE_SHIFT, *context_.diff_scale_shift_mem}});
+         { DNNL_ARG_DIFF_SCALE_SHIFT, *context_.diff_scale_shift_mem }});
 #else
          // oneDNN v3.x does not require shift_mem during backward computation
          {DNNL_ARG_SCALE, *context_.scale_mem},
@@ -819,8 +847,8 @@ class MklFusedBatchNormBwdPrimitiveFactory : public MklPrimitiveFactory<T> {
 //  Adding a third parameter to the template to support FusedBatchNormV3
 //  with MKL. This is different from default where the classes are
 //  derived. Moves enabling to compile-time rather than runtime.
-template <typename Device, typename T, typename U, bool reserved_space,
-          bool is_batch_norm_ex = false, bool native_format = false>
+template <typename Device, typename T, typename U, typename Tout,
+          bool reserved_space, bool native_format = false>
 class MklFusedBatchNormOp : public OpKernel {
  public:
   explicit MklFusedBatchNormOp(OpKernelConstruction* context)
@@ -841,9 +869,7 @@ class MklFusedBatchNormOp : public OpKernel {
     mean_values_ = nullptr;
     variance_values_ = nullptr;
 
-    if (!is_batch_norm_ex) {
-      activation_mode_ = FusedBNActivationMode::kIdentity;
-    } else {
+    if (context->HasAttr("num_side_inputs")) {
       int num_side_inputs;
       OP_REQUIRES_OK(context,
                      context->GetAttr("num_side_inputs", &num_side_inputs));
@@ -851,23 +877,26 @@ class MklFusedBatchNormOp : public OpKernel {
       OP_REQUIRES(context, num_side_inputs == 0,
                   errors::InvalidArgument(
                       "_MKLFusedBatchNorm do not support side input now."));
-
+    }
+    if (context->HasAttr("activation_mode")) {
       OP_REQUIRES_OK(context, ParseActivationMode(context, &activation_mode_));
-      OP_REQUIRES(context, activation_mode_ == FusedBNActivationMode::kRelu,
-                  errors::InvalidArgument(
-                      "_MKLFusedBatchNorm only support Relu activation"));
+      if (context->HasAttr("alpha")) {
+        OP_REQUIRES_OK(context, context->GetAttr("alpha", &alpha_));
+      }
+    } else {
+      // Default value (no activation)
+      activation_mode_ = FusedBNActivationMode::kIdentity;
     }
   }
 
   void Compute(OpKernelContext* context) override {
     try {
-      const size_t kSrcIndex = 0;       // index of src input tensor
       const size_t kScaleIndex = 1;     // index of scale tensor
       const size_t kShiftIndex = 2;     // index of shift tensor
       const size_t kMeanIndex = 3;      // index of est_mean tensor
       const size_t kVarianceIndex = 4;  // index of est_variance tensor
 
-      const Tensor& src_tensor = MklGetInput(context, kSrcIndex);
+      const Tensor& src_tensor = MklGetInput(context, kSrcIndex_);
       const Tensor& scale_tensor = MklGetInput(context, kScaleIndex);
       const Tensor& shift_tensor = MklGetInput(context, kShiftIndex);
       const Tensor& est_mean_tensor = MklGetInput(context, kMeanIndex);
@@ -875,7 +904,7 @@ class MklFusedBatchNormOp : public OpKernel {
 
       TensorShape tf_shape_src;
       MklDnnShape dnn_shape_src;
-      GetMklShape(context, kSrcIndex, &dnn_shape_src, native_format);
+      GetMklShape(context, kSrcIndex_, &dnn_shape_src, native_format);
 
       if (dnn_shape_src.IsMklTensor()) {
         tf_shape_src = dnn_shape_src.GetTfShape();
@@ -941,6 +970,7 @@ class MklFusedBatchNormOp : public OpKernel {
       }
 
       // Handle the special case: input with 0 element and 0 batch size.
+      Tensor temp_tensor;
       Tensor* dst_tensor = nullptr;
       TensorShape workspace_tf_shape;
       if (tf_shape_src.num_elements() == 0) {
@@ -955,9 +985,6 @@ class MklFusedBatchNormOp : public OpKernel {
         depth_ = dnn_shape_src.DimSize(MklDnnDims::Dim_C);
       else
         ExtractParams(context);
-
-      // Index of output tensor(diff_src).
-      const size_t kDstIndex = 0;
 
       // Allocate 5 output TF tensors.
       Tensor* batch_mean_tensor = nullptr;
@@ -1008,13 +1035,13 @@ class MklFusedBatchNormOp : public OpKernel {
                                       tensor_format_, src_md, activation_mode_);
 #else
                                       tensor_format_, src_md, dst_md,
-                                      activation_mode_);
+                                      activation_mode_, alpha_);
 #endif  // ENABLE_ONEDNN_V2
 
       // Get forward batch-normalization op from the primitive caching pool.
       MklDnnThreadPool eigen_tp(context);
-      MklFusedBatchNormFwdPrimitive<T, U>* bn_fwd =
-          MklFusedBatchNormFwdPrimitiveFactory<T, U>::Get(fwdParams);
+      MklFusedBatchNormFwdPrimitive<T, U, Tout>* bn_fwd =
+          MklFusedBatchNormFwdPrimitiveFactory<T, U, Tout>::Get(fwdParams);
 
       // Allocate workspace tensor
       U* ws_data = nullptr;
@@ -1042,10 +1069,12 @@ class MklFusedBatchNormOp : public OpKernel {
                           &reserved_space_tensor);
       }
 
+      Tensor scaled_mean;
       if (is_training_)
-        SetMeanVariance(*batch_mean_tensor, *batch_variance_tensor);
+        SetMeanVariance(context, *batch_mean_tensor, *batch_variance_tensor);
       else
-        SetMeanVariance(est_mean_tensor, est_variance_tensor);
+        SetMeanVariance(context, est_mean_tensor, est_variance_tensor,
+                        &scaled_mean);
 
 #ifdef ENABLE_ONEDNN_V2
       // oneDNN packs scale & shift as a combined array in float32 type
@@ -1065,21 +1094,26 @@ class MklFusedBatchNormOp : public OpKernel {
       shift.AllocateBuffer(depth_ * sizeof(U));
       U* shift_data = reinterpret_cast<U*>(shift.GetAllocatedBuffer());
       const U* scale_tf = scale_tensor.flat<U>().data();
-      const U* shift_tf = shift_tensor.flat<U>().data();
+      Tensor scaled_shift;
+      const U* shift_tf = GetOffsetHandle(context, shift_tensor, &scaled_shift);
       std::memcpy(scale_data, scale_tf, depth_ * sizeof(U));
       std::memcpy(shift_data, shift_tf, depth_ * sizeof(U));
 #endif  // ENABLE_ONEDNN_V2
 
-      char* saved_mean_data_tf =
-          reinterpret_cast<char*>(saved_mean_tensor->flat<U>().data());
-      std::memcpy(saved_mean_data_tf, reinterpret_cast<char*>(mean_values_),
-                  depth_ * sizeof(U));
+      char* saved_mean_data_tf = nullptr;
+      char* saved_variance_data_tf = nullptr;
+      if (!IsQuantizedInput()) {
+        saved_mean_data_tf =
+            reinterpret_cast<char*>(saved_mean_tensor->flat<U>().data());
+        std::memcpy(saved_mean_data_tf, reinterpret_cast<char*>(mean_values_),
+                    depth_ * sizeof(U));
 
-      char* saved_variance_data_tf =
-          reinterpret_cast<char*>(saved_variance_tensor->flat<U>().data());
-      std::memcpy(saved_variance_data_tf,
-                  reinterpret_cast<char*>(variance_values_),
-                  depth_ * sizeof(U));
+        saved_variance_data_tf =
+            reinterpret_cast<char*>(saved_variance_tensor->flat<U>().data());
+        std::memcpy(saved_variance_data_tf,
+                    reinterpret_cast<char*>(variance_values_),
+                    depth_ * sizeof(U));
+      }
 
       // Check if reorder is needed for src.
       const T* src_data = nullptr;
@@ -1106,8 +1140,13 @@ class MklFusedBatchNormOp : public OpKernel {
       if (native_format) {
         tf_shape_dst = dnn_shape_dst.GetTfShape();
       }
-      AllocateOutputSetMklShape(context, kDstIndex, &dst_tensor, tf_shape_dst,
-                                dnn_shape_dst, native_format);
+      if (is_training_) {
+        OP_REQUIRES_OK(context, context->allocate_output(
+                                    kDstIndex_, tf_shape_dst, &dst_tensor));
+      } else {
+        this->AllocateOutputTensor(context, tf_shape_dst, &temp_tensor,
+                                   dst_tensor);
+      }
 
 #ifdef ENABLE_ONEDNN_V2
       U* scale_shift_op_data = scale_shift_data;
@@ -1115,8 +1154,15 @@ class MklFusedBatchNormOp : public OpKernel {
       U* scale_op_data = scale_data;
       U* shift_op_data = shift_data;
 #endif  // ENABLE_ONEDNN_V2
-      U* mean_op_data = saved_mean_tensor->flat<U>().data();
-      U* variance_op_data = saved_variance_tensor->flat<U>().data();
+      U* mean_op_data = nullptr;
+      U* variance_op_data = nullptr;
+      if (!IsQuantizedInput()) {
+        mean_op_data = saved_mean_tensor->flat<U>().data();
+        variance_op_data = saved_variance_tensor->flat<U>().data();
+      } else {
+        mean_op_data = mean_values_;
+        variance_op_data = variance_values_;
+      }
       T* dst_data = dst_tensor->flat<T>().data();
 
       // Execute
@@ -1137,33 +1183,37 @@ class MklFusedBatchNormOp : public OpKernel {
         adjust_factor = (static_cast<float>(orig_size)) / adjust_size;
       }
 
-      auto mean_data = reinterpret_cast<U*>(saved_mean_data_tf);
-      auto variance_data = reinterpret_cast<U*>(saved_variance_data_tf);
-      auto batch_mean_data = batch_mean_tensor->flat<U>().data();
-      auto batch_variance_data = batch_variance_tensor->flat<U>().data();
-      auto est_mean_data = est_mean_tensor.flat<U>().data();
-      auto est_variance_data = est_variance_tensor.flat<U>().data();
-      if (is_training_) {
-        if (exponential_avg_factor_ == U(1.0)) {
-          for (int k = 0; k < depth_; k++) {
-            batch_mean_data[k] = mean_data[k];
-            batch_variance_data[k] =
-                static_cast<U>(adjust_factor) * variance_data[k];
+      if (!IsQuantizedInput()) {
+        auto mean_data = reinterpret_cast<U*>(saved_mean_data_tf);
+        auto variance_data = reinterpret_cast<U*>(saved_variance_data_tf);
+        auto batch_mean_data = batch_mean_tensor->flat<U>().data();
+        auto batch_variance_data = batch_variance_tensor->flat<U>().data();
+        auto est_mean_data = est_mean_tensor.flat<U>().data();
+        auto est_variance_data = est_variance_tensor.flat<U>().data();
+        if (is_training_) {
+          if (exponential_avg_factor_ == U(1.0)) {
+            for (int k = 0; k < depth_; k++) {
+              batch_mean_data[k] = mean_data[k];
+              batch_variance_data[k] =
+                  static_cast<U>(adjust_factor) * variance_data[k];
+            }
+          } else {
+            U one_minus_factor = U(1.0) - exponential_avg_factor_;
+            for (int k = 0; k < depth_; k++) {
+              batch_mean_data[k] = one_minus_factor * est_mean_data[k] +
+                                   exponential_avg_factor_ * mean_data[k];
+              batch_variance_data[k] = one_minus_factor * est_variance_data[k] +
+                                       exponential_avg_factor_ *
+                                           static_cast<U>(adjust_factor) *
+                                           variance_data[k];
+            }
           }
         } else {
-          U one_minus_factor = U(1.0) - exponential_avg_factor_;
-          for (int k = 0; k < depth_; k++) {
-            batch_mean_data[k] = one_minus_factor * est_mean_data[k] +
-                                 exponential_avg_factor_ * mean_data[k];
-            batch_variance_data[k] = one_minus_factor * est_variance_data[k] +
-                                     exponential_avg_factor_ *
-                                         static_cast<U>(adjust_factor) *
-                                         variance_data[k];
-          }
+          std::memcpy(batch_mean_data, mean_data, depth_ * sizeof(U));
+          std::memcpy(batch_variance_data, variance_data, depth_ * sizeof(U));
         }
       } else {
-        std::memcpy(batch_mean_data, mean_data, depth_ * sizeof(U));
-        std::memcpy(batch_variance_data, variance_data, depth_ * sizeof(U));
+        this->PostProcessOutput(context, fwdParams, tf_shape_dst, dst_tensor);
       }
     } catch (dnnl::error& e) {
       string error_msg = "Status: " + std::to_string(e.status) +
@@ -1175,15 +1225,48 @@ class MklFusedBatchNormOp : public OpKernel {
     }
   }
 
+ protected:
+  const size_t kSrcIndex_ = 0;
+  const size_t kDstIndex_ = 0;
+  const size_t GetDepthDim() { return depth_; }
+  const engine GetEngine() { return cpu_engine_; }
+  const bool IsTraining() { return is_training_; }
+  const bool IsQuantizedInput() { return is_quantized_input_; }
+  void SetQuantizedInput(const bool is_quantized_input) {
+    is_quantized_input_ = is_quantized_input;
+  }
+  virtual U* GetOffsetHandle(OpKernelContext* context, const Tensor& offset,
+                             Tensor* scaled_offset) {
+    return const_cast<U*>(offset.flat<U>().data());
+  }
+
+  virtual U* GetMeanHandle(OpKernelContext* context, const Tensor& mean,
+                           Tensor* scaled_mean) {
+    return const_cast<U*>(mean.flat<U>().data());
+  }
+
+  virtual void AllocateOutputTensor(OpKernelContext* context,
+                                    TensorShape& tf_shape_dst,
+                                    Tensor* temp_tensor, Tensor*& dst_tensor) {
+    OP_REQUIRES_OK(context,
+                   context->forward_input_or_allocate_output(
+                       {kSrcIndex_}, kDstIndex_, tf_shape_dst, &dst_tensor));
+  }
+
+  virtual void PostProcessOutput(OpKernelContext*, MklBatchNormFwdParams&,
+                                 TensorShape&, Tensor*) {}
+
  private:
   float epsilon_;
   U exponential_avg_factor_;
   TensorFormat tensor_format_;
   bool is_training_;
+  bool is_quantized_input_ = false;
   U* mean_values_;
   U* variance_values_;
   size_t depth_;  // Batch normalization is performed for per channel.
   FusedBNActivationMode activation_mode_;
+  float alpha_ = 0.0;
   engine cpu_engine_ = engine(engine::kind::cpu, 0);
 
   void ExtractParams(OpKernelContext* context) {
@@ -1191,8 +1274,9 @@ class MklFusedBatchNormOp : public OpKernel {
     depth_ = static_cast<int>(GetTensorDim(input, tensor_format_, 'C'));
   }
 
-  void SetMeanVariance(const Tensor& mean, const Tensor& variance) {
-    mean_values_ = reinterpret_cast<U*>(const_cast<U*>(mean.flat<U>().data()));
+  void SetMeanVariance(OpKernelContext* context, const Tensor& mean,
+                       const Tensor& variance, Tensor* scaled_mean = nullptr) {
+    mean_values_ = GetMeanHandle(context, mean, scaled_mean);
     variance_values_ =
         reinterpret_cast<U*>(const_cast<U*>(variance.flat<U>().data()));
   }
@@ -1222,13 +1306,11 @@ class MklFusedBatchNormOp : public OpKernel {
                       &reserved_space_tensor);
   }
 
-  void AllocateTFOutputs(OpKernelContext* context, TensorShape tf_shape_scale,
-                         TensorShape workspace_tf_shape,
-                         Tensor** batch_mean_tensor,
-                         Tensor** batch_variance_tensor,
-                         Tensor** saved_mean_tensor,
-                         Tensor** saved_variance_tensor,
-                         Tensor** reserved_space_tensor) {
+  virtual void AllocateTFOutputs(
+      OpKernelContext* context, TensorShape tf_shape_scale,
+      TensorShape workspace_tf_shape, Tensor** batch_mean_tensor,
+      Tensor** batch_variance_tensor, Tensor** saved_mean_tensor,
+      Tensor** saved_variance_tensor, Tensor** reserved_space_tensor) {
     DCHECK(batch_mean_tensor);
     DCHECK(batch_variance_tensor);
     DCHECK(saved_mean_tensor);
@@ -1711,19 +1793,285 @@ class MklFusedBatchNormGradOp : public OpKernel {
   memory::dims GetMeanVarianceDims() { return memory::dims({1, depth_}); }
 };
 
+template <typename Device, typename T, typename U, typename Tout>
+class QuantizedFusedBatchNormOp
+    : public MklFusedBatchNormOp<Device, T, U, Tout, false, true> {
+ public:
+  explicit QuantizedFusedBatchNormOp(OpKernelConstruction* context)
+      : MklFusedBatchNormOp<Device, T, U, Tout, false, true>(context) {
+    // Inputs to this op are expected as follows:
+    // 0. x
+    // 1. scale
+    // 2. offset
+    // 3. mean
+    // 4. variance
+    // 5. x_min
+    // 6. x_max
+    // 7. {output_min}
+    // 8. {output_max}
+    DataType input_dt;
+    OP_REQUIRES_OK(context, context->GetAttr("T", &input_dt));
+    OP_REQUIRES(
+        context, input_dt == DT_QINT8,
+        errors::InvalidArgument(
+            "_QuantizedFusedBatchNorm only supports qint8 input data type."));
+    this->SetQuantizedInput(true);
+    OP_REQUIRES_OK(context, context->GetAttr("Tout", &out_dt_));
+    string data_format;
+    OP_REQUIRES_OK(context, context->GetAttr("data_format", &data_format));
+    OP_REQUIRES(
+        context, data_format == "NHWC",
+        errors::InvalidArgument("_QuantizedFusedBatchNorm only supports NHWC "
+                                "data format."));
+    OP_REQUIRES(
+        context, !this->IsTraining(),
+        errors::InvalidArgument(
+            "_QuantizedFusedBatchNorm is only supported in inference mode."));
+    OP_REQUIRES_OK(context,
+                   context->GetAttr("is_offset_const", &is_offset_const_));
+    OP_REQUIRES_OK(context, context->GetAttr("is_mean_const", &is_mean_const_));
+  }
+
+  void Compute(OpKernelContext* context) override {
+    MklFusedBatchNormOp<Device, T, U, Tout, false, true>::Compute(context);
+  }
+
+  U* GetOffsetHandle(OpKernelContext* context, const Tensor& offset,
+                     Tensor* scaled_offset) override {
+    const float min = context->input(5).flat<float>()(0);
+    const float max = context->input(6).flat<float>()(0);
+    const float max_abs = std::max(std::abs(min), std::abs(max));
+    const float scale = 127.0f / max_abs;
+
+    bool is_valid_scale =
+        std::abs(scale - offset_mean_scale_) > 1e-6 ? false : true;
+    offset_mean_scale_ = scale;
+    if (!is_offset_const_ || IsOffsetCacheEmpty() || !is_valid_scale) {
+      auto num_elem = offset.NumElements();
+      TF_CHECK_OK(context->allocate_temp(DataTypeToEnum<U>::value, {num_elem},
+                                         scaled_offset));
+      U* scaled_offset_buf =
+          static_cast<U*>(const_cast<U*>(scaled_offset->flat<U>().data()));
+      ScaleShiftOrMean(context, offset, offset_mean_scale_, scaled_offset_buf);
+      if (is_offset_const_) {
+        CacheOffset(context, num_elem, scaled_offset_buf);
+      }
+      return scaled_offset_buf;
+    }
+    return GetCachedOffset();
+  }
+
+  bool IsOffsetCacheEmpty() TF_LOCKS_EXCLUDED(offset_cache_mu_) {
+    tf_shared_lock lock(offset_cache_mu_);
+    return (cached_offset_tensor_.NumElements() == 0);
+  }
+
+  void CacheOffset(OpKernelContext* context, size_t num_elem, U* offset_data)
+      TF_LOCKS_EXCLUDED(offset_cache_mu_) {
+    mutex_lock lock(offset_cache_mu_);
+
+    if (cached_offset_tensor_.NumElements() > 0) {
+      return;
+    }
+
+    TF_CHECK_OK(context->allocate_temp(DataTypeToEnum<U>::value, {num_elem},
+                                       &cached_offset_tensor_));
+    U* cached_offset_data = cached_offset_tensor_.flat<U>().data();
+    size_t cached_offset_data_size = num_elem * sizeof(U);
+    memcpy(cached_offset_data, offset_data, cached_offset_data_size);
+  }
+
+  U* GetCachedOffset() TF_LOCKS_EXCLUDED(offset_cache_mu_) {
+    tf_shared_lock lock(offset_cache_mu_);
+    const Tensor& tensor = cached_offset_tensor_;
+    return static_cast<U*>(const_cast<U*>(tensor.flat<U>().data()));
+  }
+
+  U* GetMeanHandle(OpKernelContext* context, const Tensor& mean,
+                   Tensor* scaled_mean) override {
+    const float min = context->input(5).flat<float>()(0);
+    const float max = context->input(6).flat<float>()(0);
+    const float max_abs = std::max(std::abs(min), std::abs(max));
+    const float scale = 127.0f / max_abs;
+
+    bool is_valid_scale =
+        std::abs(scale - offset_mean_scale_) > 1e-6 ? false : true;
+    offset_mean_scale_ = scale;
+
+    if (!is_mean_const_ || IsMeanCacheEmpty() || !is_valid_scale) {
+      auto num_elem = mean.NumElements();
+      TF_CHECK_OK(context->allocate_temp(DataTypeToEnum<U>::value, {num_elem},
+                                         scaled_mean));
+      U* scaled_mean_buf =
+          static_cast<U*>(const_cast<U*>(scaled_mean->flat<U>().data()));
+      ScaleShiftOrMean(context, mean, offset_mean_scale_, scaled_mean_buf);
+      if (is_mean_const_) {
+        CacheMean(context, num_elem, scaled_mean_buf);
+      }
+      return scaled_mean_buf;
+    }
+    return GetCachedMean();
+  }
+
+  bool IsMeanCacheEmpty() TF_LOCKS_EXCLUDED(mean_cache_mu_) {
+    tf_shared_lock lock(mean_cache_mu_);
+    return (cached_mean_tensor_.NumElements() == 0);
+  }
+
+  void CacheMean(OpKernelContext* context, size_t num_elem, U* mean_data)
+      TF_LOCKS_EXCLUDED(mean_cache_mu_) {
+    mutex_lock lock(mean_cache_mu_);
+
+    if (cached_mean_tensor_.NumElements() > 0) {
+      return;
+    }
+
+    TF_CHECK_OK(context->allocate_temp(DataTypeToEnum<U>::value, {num_elem},
+                                       &cached_mean_tensor_));
+    U* cached_mean_data = cached_mean_tensor_.flat<U>().data();
+    size_t cached_mean_data_size = num_elem * sizeof(U);
+    memcpy(cached_mean_data, mean_data, cached_mean_data_size);
+  }
+
+  U* GetCachedMean() TF_LOCKS_EXCLUDED(mean_cache_mu_) {
+    tf_shared_lock lock(mean_cache_mu_);
+    const Tensor& tensor = cached_mean_tensor_;
+    return static_cast<U*>(const_cast<U*>(tensor.flat<U>().data()));
+  }
+
+  void ScaleShiftOrMean(OpKernelContext* context, const Tensor& tensor_in,
+                        const float scale, U*& scaled_buf_) {
+    // Scale offset or mean tensor via reorder
+    dnnl::primitive_attr scale_attr;
+    scale_attr.set_scales_mask(DNNL_ARG_DST, 0);
+    std::vector<float> scales;
+    scales.push_back(1.0 / scale);
+    auto scale_mem = memory({{1}, MklDnnType<float>(), memory::format_tag::x},
+                            this->GetEngine(), scales.data());
+    auto input_md = memory::desc({1, this->GetDepthDim()}, MklDnnType<U>(),
+                                 memory::format_tag::nc);
+    U* input_buf = static_cast<U*>(const_cast<U*>(tensor_in.flat<U>().data()));
+    std::shared_ptr<dnnl::memory> input_mem(
+        new memory(input_md, this->GetEngine(), input_buf));
+    std::shared_ptr<dnnl::memory> scaled_input_mem(
+        new memory(input_md, this->GetEngine(), scaled_buf_));
+    auto reorder_desc = ReorderPd(this->GetEngine(), input_md,
+                                  this->GetEngine(), input_md, scale_attr);
+    CreateAndExecuteReorder(reorder_desc, *input_mem, *scaled_input_mem,
+                            this->GetEngine(), context, &scale_mem);
+  }
+
+  void AllocateOutputTensor(OpKernelContext* context, TensorShape& tf_shape_dst,
+                            Tensor* temp_tensor, Tensor*& dst_tensor) override {
+    if (out_dt_ == DT_QINT8) {
+      OP_REQUIRES_OK(context, context->forward_input_or_allocate_output(
+                                  {this->kSrcIndex_}, this->kDstIndex_,
+                                  tf_shape_dst, &dst_tensor));
+    } else {
+      OP_REQUIRES_OK(
+          context, context->allocate_temp(DT_QINT8, tf_shape_dst, temp_tensor));
+      dst_tensor = temp_tensor;
+    }
+  }
+
+  void PostProcessOutput(OpKernelContext* context,
+                         MklBatchNormFwdParams& fwdParams,
+                         TensorShape& tf_shape_dst,
+                         Tensor* temp_output) override {
+    Tensor* output_min_t = nullptr;
+    Tensor* output_max_t = nullptr;
+    if (out_dt_ == DT_QINT8 || out_dt_ == DT_QUINT8) {
+      OP_REQUIRES_OK(context, context->allocate_output(1, {}, &output_min_t));
+      OP_REQUIRES_OK(context, context->allocate_output(2, {}, &output_max_t));
+    }
+    const float input_min = context->input(5).flat<float>()(0);
+    const float input_max = context->input(6).flat<float>()(0);
+    if (out_dt_ == DT_QINT8) {
+      output_min_t->flat<float>()(0) = input_min;
+      output_max_t->flat<float>()(0) = input_max;
+    } else {
+      // Currently explicit reorder primitive is used to support Dequantize and
+      // Requantize. This is not ideal for performance.
+      // TODO(intel-tf): Replace this reroder by directly setting primitive
+      // output datatype which will be supported in oneDNN v3.0.
+      float input_max_abs = std::max(std::abs(input_min), std::abs(input_max));
+      float scale = 1.0;
+      if (out_dt_ == DT_QUINT8) {
+        const float output_min = context->input(7).flat<float>()(0);
+        const float output_max = context->input(8).flat<float>()(0);
+        float output_max_abs =
+            std::max(std::abs(output_min), std::abs(output_max));
+        scale = (input_max_abs / 127.0) * (255.0 / output_max_abs);
+        output_min_t->flat<float>()(0) = output_min;
+        output_max_t->flat<float>()(0) = output_max;
+      } else {
+        scale = input_max_abs / 127.0;
+      }
+      dnnl::primitive_attr scale_attr;
+      scale_attr.set_scales_mask(DNNL_ARG_DST, 0);
+      std::vector<float> scales;
+      scales.push_back(1.0 / scale);
+      auto scale_mem = memory({{1}, MklDnnType<float>(), memory::format_tag::x},
+                              this->GetEngine(), scales.data());
+      auto input_md = memory::desc({temp_output->NumElements()},
+                                   MklDnnType<qint8>(), memory::format_tag::x);
+      auto out_md = memory::desc({temp_output->NumElements()},
+                                 MklDnnType<Tout>(), memory::format_tag::x);
+      Tensor* dst_tensor;
+      OP_REQUIRES_OK(context, context->allocate_output(
+                                  this->kDstIndex_, tf_shape_dst, &dst_tensor));
+
+      qint8* input_buf = static_cast<qint8*>(
+          const_cast<qint8*>(temp_output->flat<qint8>().data()));
+      Tout* output_buf = static_cast<Tout*>(
+          const_cast<Tout*>(dst_tensor->flat<Tout>().data()));
+
+      std::shared_ptr<dnnl::memory> input_mem(
+          new memory(input_md, this->GetEngine(), input_buf));
+      std::shared_ptr<dnnl::memory> output_mem(
+          new memory(out_md, this->GetEngine(), output_buf));
+      auto reorder_desc = ReorderPd(this->GetEngine(), input_md,
+                                    this->GetEngine(), out_md, scale_attr);
+      CreateAndExecuteReorder(reorder_desc, *input_mem, *output_mem,
+                              this->GetEngine(), context, &scale_mem);
+    }
+  }
+
+  void AllocateTFOutputs(OpKernelContext* context, TensorShape tf_shape_scale,
+                         TensorShape workspace_tf_shape,
+                         Tensor** batch_mean_tensor,
+                         Tensor** batch_variance_tensor,
+                         Tensor** saved_mean_tensor,
+                         Tensor** saved_variance_tensor,
+                         Tensor** reserved_space_tensor) override {
+    // No additional outputs are needed for quantized kernel.
+    return;
+  }
+
+ protected:
+  DataType out_dt_;
+  Tensor cached_offset_tensor_ TF_GUARDED_BY(offset_cache_mu_);
+  Tensor cached_mean_tensor_ TF_GUARDED_BY(mean_cache_mu_);
+
+ private:
+  bool is_offset_const_, is_mean_const_;
+  float offset_mean_scale_;
+  mutex offset_cache_mu_, mean_cache_mu_;
+};
+
 #define REGISTER_MKL_FUSED_BATCHNORM_CPU(T)                    \
   REGISTER_KERNEL_BUILDER(                                     \
       Name("_MklFusedBatchNorm")                               \
           .Device(DEVICE_CPU)                                  \
           .TypeConstraint<T>("T")                              \
           .Label(mkl_op_registry::kMklLayoutDependentOpLabel), \
-      MklFusedBatchNormOp<CPUDevice, T, T, false, false>);     \
+      MklFusedBatchNormOp<CPUDevice, T, T, T, false, false>);  \
   REGISTER_KERNEL_BUILDER(                                     \
       Name("_MklNativeFusedBatchNorm")                         \
           .Device(DEVICE_CPU)                                  \
           .TypeConstraint<T>("T")                              \
           .Label(mkl_op_registry::kMklNameChangeOpLabel),      \
-      MklFusedBatchNormOp<CPUDevice, T, T, false, false, true>);
+      MklFusedBatchNormOp<CPUDevice, T, T, T, false, true>);
 
 TF_CALL_float(REGISTER_MKL_FUSED_BATCHNORM_CPU);
 TF_CALL_bfloat16(REGISTER_MKL_FUSED_BATCHNORM_CPU);
@@ -1739,14 +2087,14 @@ TF_CALL_half(REGISTER_MKL_FUSED_BATCHNORM_CPU);
           .TypeConstraint<T>("T")                              \
           .TypeConstraint<U>("U")                              \
           .Label(mkl_op_registry::kMklLayoutDependentOpLabel), \
-      MklFusedBatchNormOp<CPUDevice, T, U, false, false>);     \
+      MklFusedBatchNormOp<CPUDevice, T, U, T, false, false>);  \
   REGISTER_KERNEL_BUILDER(                                     \
       Name("_MklNativeFusedBatchNormV2")                       \
           .Device(DEVICE_CPU)                                  \
           .TypeConstraint<T>("T")                              \
           .TypeConstraint<U>("U")                              \
           .Label(mkl_op_registry::kMklNameChangeOpLabel),      \
-      MklFusedBatchNormOp<CPUDevice, T, U, false, false, true>);
+      MklFusedBatchNormOp<CPUDevice, T, U, T, false, true>);
 
 REGISTER_MKL_FUSED_BATCHNORM_V2_CPU(float, float);
 REGISTER_MKL_FUSED_BATCHNORM_V2_CPU(bfloat16, float);
@@ -1803,28 +2151,28 @@ REGISTER_MKL_FUSED_BATCHNORM_GRAD_V2_CPU(bfloat16, float);
           .TypeConstraint<T>("T")                               \
           .TypeConstraint<U>("U")                               \
           .Label(mkl_op_registry::kMklLayoutDependentOpLabel),  \
-      MklFusedBatchNormOp<CPUDevice, T, U, true, false>);       \
+      MklFusedBatchNormOp<CPUDevice, T, U, T, true, false>);    \
   REGISTER_KERNEL_BUILDER(                                      \
       Name("_MklFusedBatchNormEx")                              \
           .Device(DEVICE_CPU)                                   \
           .TypeConstraint<T>("T")                               \
           .TypeConstraint<U>("U")                               \
           .Label(mkl_op_registry::kMklLayoutDependentOpLabel),  \
-      MklFusedBatchNormOp<CPUDevice, T, U, true, true>);        \
+      MklFusedBatchNormOp<CPUDevice, T, U, T, true, false>);    \
   REGISTER_KERNEL_BUILDER(                                      \
       Name("_MklNativeFusedBatchNormV3")                        \
           .Device(DEVICE_CPU)                                   \
           .TypeConstraint<T>("T")                               \
           .TypeConstraint<U>("U")                               \
           .Label(mkl_op_registry::kMklNameChangeOpLabel),       \
-      MklFusedBatchNormOp<CPUDevice, T, U, true, false, true>); \
+      MklFusedBatchNormOp<CPUDevice, T, U, T, true, true>);     \
   REGISTER_KERNEL_BUILDER(                                      \
       Name("_MklNativeFusedBatchNormEx")                        \
           .Device(DEVICE_CPU)                                   \
           .TypeConstraint<T>("T")                               \
           .TypeConstraint<U>("U")                               \
           .Label(mkl_op_registry::kMklNameChangeOpLabel),       \
-      MklFusedBatchNormOp<CPUDevice, T, U, true, true, true>);
+      MklFusedBatchNormOp<CPUDevice, T, U, T, true, true>);
 
 REGISTER_MKL_FUSED_BATCHNORM_V3_CPU(float, float);
 REGISTER_MKL_FUSED_BATCHNORM_V3_CPU(bfloat16, float);
@@ -1832,6 +2180,21 @@ REGISTER_MKL_FUSED_BATCHNORM_V3_CPU(bfloat16, float);
 REGISTER_MKL_FUSED_BATCHNORM_V3_CPU(Eigen::half, float);
 #endif  // !ENABLE_ONEDNN_V2
 #undef REGISTER_MKL_FUSED_BATCHNORM_V3_CPU
+
+#define REGISTER_QUANTIZED_FUSED_BATCHNORM(Tout) \
+  REGISTER_KERNEL_BUILDER(                       \
+      Name("_QuantizedFusedBatchNorm")           \
+          .Device(DEVICE_CPU)                    \
+          .TypeConstraint<qint8>("T")            \
+          .TypeConstraint<float>("U")            \
+          .TypeConstraint<Tout>("Tout"),         \
+      QuantizedFusedBatchNormOp<CPUDevice, qint8, float, Tout>);
+
+REGISTER_QUANTIZED_FUSED_BATCHNORM(qint8);
+REGISTER_QUANTIZED_FUSED_BATCHNORM(quint8);
+REGISTER_QUANTIZED_FUSED_BATCHNORM(float);
+REGISTER_QUANTIZED_FUSED_BATCHNORM(bfloat16);
+#undef REGISTER_QUANTIZED_FUSED_BATCHNORM
 
 REGISTER_KERNEL_BUILDER(Name("_FusedBatchNormEx")
                             .Device(DEVICE_CPU)

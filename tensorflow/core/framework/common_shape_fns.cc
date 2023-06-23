@@ -1258,11 +1258,22 @@ Status FusedBatchNormShape(shape_inference::InferenceContext* c) {
   ShapeHandle y;
   TF_RETURN_IF_ERROR(c->ReplaceDim(x, channel_dim_index, channel_dim, &y));
   c->set_output(0, y);
-  ShapeHandle vector_shape = c->Vector(channel_dim);
-  c->set_output(1, vector_shape);
-  c->set_output(2, vector_shape);
-  c->set_output(3, vector_shape);
-  c->set_output(4, vector_shape);
+  DataType input_dt;
+  TF_RETURN_IF_ERROR(c->GetAttr("T", &input_dt));
+  if (input_dt == DataType::DT_QINT8) {
+    DataType out_dt;
+    TF_RETURN_IF_ERROR(c->GetAttr("Tout", &out_dt));
+    if (out_dt == DataType::DT_QINT8 || out_dt == DataType::DT_QUINT8) {
+      c->set_output(1, c->Scalar());
+      c->set_output(2, c->Scalar());
+    }
+  } else {
+    ShapeHandle vector_shape = c->Vector(channel_dim);
+    c->set_output(1, vector_shape);
+    c->set_output(2, vector_shape);
+    c->set_output(3, vector_shape);
+    c->set_output(4, vector_shape);
+  }
   return OkStatus();
 }
 

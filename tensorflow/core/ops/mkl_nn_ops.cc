@@ -1641,6 +1641,24 @@ MKL-DNN implementation of quantized depthwise Conv2D with Bias, Relu and Requant
 expected to invoke this operator.
 )doc");
 
+REGISTER_OP("_QuantizedFusedBatchNorm")
+    .Input("input: input_types")
+    .Output("output: out_types")
+    .Attr("T: {qint8}")
+    .Attr("U: {float}")
+    .Attr("Tout: {qint8, quint8, float, bfloat16}")
+    .Attr("input_types: list(type)")
+    .Attr("out_types: list(type)")
+    .Attr("epsilon: float = 0.0001")
+    .Attr("exponential_avg_factor: float = 1.0")
+    .Attr("alpha: float = 0.0")
+    .Attr("activation_mode: string = \"Identity\"")
+    .Attr(GetConvnetDataFormatAttrString())
+    .Attr("is_training: bool = false")
+    .Attr("is_offset_const: bool = true")
+    .Attr("is_mean_const: bool = true")
+    .SetShapeFn(shape_inference::FusedBatchNormShape);
+
 REGISTER_OP("_MklFusedBatchNormV3")
     .Input("x: T")
     .Input("scale: U")

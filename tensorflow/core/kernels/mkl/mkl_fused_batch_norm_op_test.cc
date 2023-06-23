@@ -14,10 +14,12 @@ limitations under the License.
 ==============================================================================*/
 
 #if defined(INTEL_MKL)
+#define EIGEN_USE_THREADS
 
 #include "tensorflow/cc/ops/const_op.h"
 #include "tensorflow/cc/ops/image_ops.h"
 #include "tensorflow/cc/ops/nn_ops.h"
+#include "tensorflow/cc/ops/nn_ops_internal.h"
 #include "tensorflow/cc/ops/standard_ops.h"
 #include "tensorflow/core/common_runtime/kernel_benchmark_testlib.h"
 #include "tensorflow/core/framework/fake_input.h"
@@ -26,6 +28,7 @@ limitations under the License.
 #include "tensorflow/core/framework/types.pb.h"
 #include "tensorflow/core/graph/mkl_graph_util.h"
 #include "tensorflow/core/kernels/conv_ops_gpu.h"
+#include "tensorflow/core/kernels/mkl/mkl_kernel_util.h"
 #include "tensorflow/core/kernels/ops_testutil.h"
 #include "tensorflow/core/kernels/ops_util.h"
 #include "tensorflow/core/platform/test.h"
@@ -33,6 +36,7 @@ limitations under the License.
 #include "tensorflow/core/platform/types.h"
 #include "tensorflow/core/public/session.h"
 #include "tensorflow/core/util/util.h"
+#include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 
 namespace tensorflow {
 
@@ -425,6 +429,217 @@ REGISTER_TYPED_TEST_SUITE_P(FusedBatchNormOpTest, Training, TrainingRunningMean,
 using FusedBatchNormDataTypes = ::testing::Types<float>;
 INSTANTIATE_TYPED_TEST_SUITE_P(Test, FusedBatchNormOpTest,
                                FusedBatchNormDataTypes);
+
+class QuantizedFusedBatchNormTest : public OpsTestBase {
+ protected:
+  void RunFloatFusedBN(Tensor& input_float, Tensor& scale_float,
+                       Tensor& offset_float, Tensor& mean_float,
+                       Tensor& variance_float, string& activation_mode,
+                       const float alpha, Tensor* output) {
+    auto root = tensorflow::Scope::NewRootScope();
+    auto input_op =
+        ops::Const(root.WithOpName("input"), Input::Initializer(input_float));
+    auto scale_op =
+        ops::Const(root.WithOpName("scale"), Input::Initializer(scale_float));
+    auto offset_op =
+        ops::Const(root.WithOpName("offset"), Input::Initializer(offset_float));
+    auto mean_op =
+        ops::Const(root.WithOpName("mean"), Input::Initializer(mean_float));
+    auto variance_op = ops::Const(root.WithOpName("variance"),
+                                  Input::Initializer(variance_float));
+
+    ops::FusedBatchNorm::Attrs attr;
+    attr = attr.IsTraining(false);
+    attr = attr.ExponentialAvgFactor(1.0);
+    attr = attr.Epsilon(0.0001);
+    string last_op = "FusedBatchNorm";
+    auto bn_out_op =
+        ops::FusedBatchNorm(root.WithOpName(last_op), input_op, scale_op,
+                            offset_op, mean_op, variance_op, attr);
+    if (activation_mode == "Relu") {
+      last_op = "relu";
+      auto relu_out_op = ops::Relu(root.WithOpName(last_op), bn_out_op.y);
+    } else if (activation_mode == "LeakyRelu") {
+      last_op = "leaky_relu";
+      ops::internal::LeakyRelu::Attrs attr;
+      attr = attr.Alpha(alpha);
+      auto leaky_relu_out_op =
+          ops::internal::LeakyRelu(root.WithOpName(last_op), bn_out_op.y, attr);
+    }
+    tensorflow::GraphDef graph_def;
+    TF_ASSERT_OK(root.ToGraphDef(&graph_def));
+    MklTestingUtil::RunGraph(graph_def, last_op, output);
+  }
+
+  template <typename Tinput, typename Toutput>
+  void RunQuantizedFusedBN(Tensor& input_float, Tensor& scale_float,
+                           Tensor& offset_float, Tensor& mean_float,
+                           Tensor& variance_float, Tensor& expected_out_float) {
+    float input_min, input_max;
+    MklTestingUtil::ComputeMinMax<float>(input_float, &input_min, &input_max);
+    const float input_max_abs =
+        std::max(std::abs(input_min), std::abs(input_max));
+    Tensor input_quantized;
+    MklTestingUtil::RunMklQuantizeOp(input_float, -input_max_abs, input_max_abs,
+                                     DataTypeToEnum<Tinput>::v(), "SCALED",
+                                     &input_quantized);
+    AddInputFromArray<Tinput>(input_quantized.shape(),
+                              input_quantized.flat<Tinput>());
+    AddInputFromArray<float>(scale_float.shape(), scale_float.flat<float>());
+    AddInputFromArray<float>(offset_float.shape(), offset_float.flat<float>());
+    AddInputFromArray<float>(mean_float.shape(), mean_float.flat<float>());
+    AddInputFromArray<float>(variance_float.shape(),
+                             variance_float.flat<float>());
+    AddInputFromArray<float>(TensorShape({}), {-input_max_abs});
+    AddInputFromArray<float>(TensorShape({}), {input_max_abs});
+
+    if (std::is_same<Toutput, quint8>::value) {
+      // Requantize to quint8
+      float expected_output_min, expected_output_max;
+      MklTestingUtil::ComputeMinMax<float>(
+          expected_out_float, &expected_output_min, &expected_output_max);
+      const float output_max_abs = std::max(std::abs(expected_output_min),
+                                            std::abs(expected_output_max));
+      AddInputFromArray<float>(TensorShape({}), {-output_max_abs});
+      AddInputFromArray<float>(TensorShape({}), {output_max_abs});
+    }
+
+    TF_ASSERT_OK(RunOpKernel());
+    Tensor& output = *GetOutput(0);
+    if (std::is_same<Toutput, qint8>::value ||
+        std::is_same<Toutput, quint8>::value) {
+      const Tensor& output_min = *GetOutput(1);
+      const Tensor& output_max = *GetOutput(2);
+      Tensor output_float;
+      MklTestingUtil::RunDequantizeOp(output, output_min, output_max, "SCALED",
+                                      &output_float);
+      test::ExpectTensorNear<float>(expected_out_float, output_float, 1.1);
+    } else if (std::is_same<Toutput, bfloat16>::value) {
+      Tensor output_f32(DT_FLOAT, output.shape());
+      output_f32.flat<float>() = output.flat<bfloat16>().cast<float>();
+      test::ExpectTensorNear<float>(expected_out_float, output_f32, 1.1);
+    } else {
+      test::ExpectTensorNear<float>(expected_out_float, output, 1.1);
+    }
+
+    // Run the op kernel one more time to test validity of mean/offset caching.
+    if (std::is_same<Toutput, qint8>::value) {
+      // Since QuantizedFusedBatchNorm does in-place computation we need to
+      // reset the input tensor to original value. Input tensor is referenced by
+      // "output" here.
+      test::FillValues<Tinput>(&output, input_quantized.flat<Tinput>());
+      TF_ASSERT_OK(RunOpKernel());
+      const Tensor& output_new = *GetOutput(0);
+      const Tensor& output_min_new = *GetOutput(1);
+      const Tensor& output_max_new = *GetOutput(2);
+      Tensor output_float_new;
+      MklTestingUtil::RunDequantizeOp(output_new, output_min_new,
+                                      output_max_new, "SCALED",
+                                      &output_float_new);
+      test::ExpectTensorNear<float>(expected_out_float, output_float_new, 1.1);
+    }
+  }
+
+  template <typename Tinput, typename Toutput>
+  void TestQuatnizedFusedBN(string activation = "Identity",
+                            const float alpha = 0.0) {
+    DataType input_dt = DataTypeToEnum<Tinput>::v();
+    DataType out_type = DataTypeToEnum<Toutput>::v();
+    std::vector<DataType> input_types = {
+        input_dt,  // x
+        DT_FLOAT,  // scale
+        DT_FLOAT,  // offset
+        DT_FLOAT,  // mean
+        DT_FLOAT,  // variance
+        DT_FLOAT,  // x_min
+        DT_FLOAT   // x_max
+    };
+    if (std::is_same<Toutput, quint8>::value) {
+      input_types.push_back(DT_FLOAT);
+      input_types.push_back(DT_FLOAT);
+    }
+
+    std::vector<DataType> output_types = {out_type};
+    if (std::is_same<Toutput, qint8>::value ||
+        std::is_same<Toutput, quint8>::value) {
+      output_types.push_back(DT_FLOAT);
+      output_types.push_back(DT_FLOAT);
+    }
+
+    TF_EXPECT_OK(
+        NodeDefBuilder("quantized_fused_BN", "_QuantizedFusedBatchNorm")
+            .Attr("input_types", input_types)
+            .Attr("out_types", output_types)
+            .Attr("T", input_dt)
+            .Attr("U", DT_FLOAT)
+            .Attr("Tout", out_type)
+            .Attr("exponential_avg_factor", 1.0)
+            .Attr("activation_mode", activation)
+            .Attr("epsilon", 0.0001)
+            .Attr("alpha", alpha)
+            .Attr("is_training", false)
+            .Attr("is_offset_const", true)
+            .Attr("is_mean_const", true)
+            .Input(FakeInput())
+            .Finalize(node_def()));
+    TF_ASSERT_OK(InitOp());
+
+    const int batch = 1;
+    const int height = 2;
+    const int width = 2;
+    const int channels = 4;
+    Tensor input_float(DT_FLOAT, {batch, height, width, channels});
+    test::FillValues<float>(&input_float,
+                            {2, 3, 4, 1, 2, 3, 2, 3, 2, 2, 1, 2, 2, 3, 2, 3});
+    Tensor scale_float(DT_FLOAT, {channels});
+    test::FillValues<float>(&scale_float, {2, 3, 1, 3});
+    Tensor offset_float(DT_FLOAT, {channels});
+    test::FillValues<float>(&offset_float, {-5, -3, -4, -4});
+
+    const Eigen::IndexList<Eigen::type2index<1>, Eigen::type2index<2>>
+        reduction_indices;
+    Eigen::Tensor<float, 2, Eigen::RowMajor> float_mean(batch, channels);
+    float_mean = input_float.tensor<float, 4>().cast<float>().reduce(
+        reduction_indices, Eigen::internal::MeanReducer<float>());
+
+    Tensor mean_float(DT_FLOAT, {channels});
+    test::FillValues<float>(&mean_float, {0.1, 0.2, 0.2, 0.3});
+
+    Tensor variance_float(DT_FLOAT, {channels});
+    test::FillValues<float>(&variance_float, {1.1, 1.1, 1.2, 1.2});
+
+    Tensor expected_float;
+    RunFloatFusedBN(input_float, scale_float, offset_float, mean_float,
+                    variance_float, activation, alpha, &expected_float);
+    RunQuantizedFusedBN<Tinput, Toutput>(input_float, scale_float, offset_float,
+                                         mean_float, variance_float,
+                                         expected_float);
+  }
+};
+
+TEST_F(QuantizedFusedBatchNormTest, QuantizedFusedBN_No_Activation) {
+  TestQuatnizedFusedBN<qint8, qint8>();
+}
+
+TEST_F(QuantizedFusedBatchNormTest, QuantizedFusedBN_No_Activation_Float) {
+  TestQuatnizedFusedBN<qint8, float>();
+}
+
+TEST_F(QuantizedFusedBatchNormTest, QuantizedFusedBN_No_Activation_BFloat16) {
+  TestQuatnizedFusedBN<qint8, bfloat16>();
+}
+
+TEST_F(QuantizedFusedBatchNormTest, QuantizedFusedBN_Relu) {
+  TestQuatnizedFusedBN<qint8, qint8>("Relu");
+}
+
+TEST_F(QuantizedFusedBatchNormTest, QuantizedFusedBN_Relu_QUINT8) {
+  TestQuatnizedFusedBN<qint8, quint8>("Relu");
+}
+
+TEST_F(QuantizedFusedBatchNormTest, QuantizedFusedBN_LeakyRelu) {
+  TestQuatnizedFusedBN<qint8, qint8>("LeakyRelu", 0.3);
+}
 
 }  // namespace tensorflow
 
