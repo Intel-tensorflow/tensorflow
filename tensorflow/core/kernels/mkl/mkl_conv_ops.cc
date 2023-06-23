@@ -1036,7 +1036,7 @@ class MklConvOp : public OpKernel {
       MklDnnShape output_mkl_shape;
       std::shared_ptr<ConvFwdPd> conv_fwd_pd = conv_fwd->GetPrimitiveDesc();
       AllocateOutputTensor(context, *conv_fwd_pd, dst_dims_mkl_order, tf_fmt,
-                           &output_mkl_shape, &dst_tensor);
+                           &output_mkl_shape, dst_tf_shape, &dst_tensor);
 
       Tensor* filter_out_tensor = nullptr;
       if (emit_filter_output) {
@@ -1311,6 +1311,7 @@ class MklConvOp : public OpKernel {
                                     const memory::dims& output_dims_mkl_order,
                                     MklTensorFormat output_tf_format,
                                     MklDnnShape* output_mkl_shape,
+                                    const TensorShape& dst_tf_shape,
                                     Tensor** output_tensor) {
     DCHECK(output_tensor);
     auto dst_md = conv_prim_desc.dst_desc();
@@ -1943,11 +1944,13 @@ class MklQuantizedConvOp
         {"Dequantize"},
         {"BiasAdd", "Relu"},
         {"BiasAdd", "Sigmoid"},
+        {"BiasAdd", "Sum", "LeakyRelu"},
         {"BiasAdd", "Requantize"},
         {"BiasAdd", "Dequantize"},
         {"Relu", "Requantize"},
         {"BiasAdd", "LeakyRelu", "Requantize"},
         {"BiasAdd", "Relu", "Requantize"},
+        {"BiasAdd", "Sum", "LeakyRelu", "Requantize"},
         {"BiasAdd", "LeakyRelu", "Sum"},
         {"BiasAdd", "Relu", "Sum"},
         {"BiasAdd", "LeakyRelu", "Sum", "Requantize"},
@@ -2433,6 +2436,7 @@ class MklQuantizedConvOp
                             const memory::dims& output_dims_mkl_order,
                             MklTensorFormat output_tf_format,
                             MklDnnShape* output_mkl_shape,
+                            const TensorShape& dst_tf_shape,
                             Tensor** output_tensor) override {
     if (!this->get_fuse_add()) {
       MklConvOp<
@@ -2443,6 +2447,7 @@ class MklQuantizedConvOp
                                                         output_dims_mkl_order,
                                                         output_tf_format,
                                                         output_mkl_shape,
+                                                        dst_tf_shape,
                                                         output_tensor);
     } else {
       if (!std::is_same<Toutput, qint32>::value) {
@@ -2457,12 +2462,13 @@ class MklQuantizedConvOp
           OP_REQUIRES_OK(context, summand.BitcastFrom(summand, DT_QUINT8,
                                                       summand.shape()));
         }
-        // TODO(intel-tf): Support cases when summand cannot be forwarded.
-        OP_REQUIRES(context,
-                    context->forward_input_to_output_with_shape(
-                        summand_idx, 0, summand.shape(), output_tensor),
-                    errors::InvalidArgument(
-                        "Summand cannot be forwarded in the current fusion."));
+        if (context->forward_input_to_output_with_shape(
+                summand_idx, 0, summand.shape(), output_tensor)) {
+        } else {
+          // TODO(intel-tf): Fail here?
+          OP_REQUIRES_OK(context, context->allocate_output(0, dst_tf_shape,
+                                                           output_tensor));
+        }
         return;
       }
 #ifdef ENABLE_ONEDNN_V2
@@ -2474,6 +2480,7 @@ class MklQuantizedConvOp
                                                         output_dims_mkl_order,
                                                         output_tf_format,
                                                         output_mkl_shape,
+                                                        dst_tf_shape,
                                                         output_tensor);
       const Tensor& summand = context->input(this->get_input_add_idx());
       if (summand.dtype() != DT_FLOAT)
