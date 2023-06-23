@@ -3317,8 +3317,7 @@ Status AlgebraicSimplifierVisitor::HandleMultiply(HloInstruction* multiply) {
     // constant and multiply can be constant-folded. If it's not a constant, the
     // transformation would still be correct. But if the multiply cannot be
     // fused, it might be slower to do it on the filter than on the output.
-    if (options_.enable_scalar_multiply_reduction() &&
-        Match(multiply,
+    if (Match(multiply,
               m::MultiplyAnyOrder(
                   m::Convolution(&convolution, m::Op(&in), m::Constant(&filter))
                       .WithOneUser(),

@@ -766,7 +766,6 @@ cc_library(
     deps = BUILTIN_KERNEL_DEPS + [
         ":variable_op_kernels",
         "@fft2d",
-        "@cpuinfo//:cpuinfo_with_unstripped_include_path",
         "@ruy//ruy/profiler:instrumentation",
         "//tensorflow/lite:array",
         "//tensorflow/tsl/lib/random:philox_random",

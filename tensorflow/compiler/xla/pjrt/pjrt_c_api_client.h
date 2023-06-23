@@ -346,9 +346,6 @@ class PjRtCApiExecutable : public PjRtExecutable {
 
   int64_t SizeOfGeneratedCodeInBytes() const override;
 
-  StatusOr<absl::flat_hash_map<std::string, PjRtValueType>> GetCostAnalysis()
-      const override;
-
   StatusOr<std::vector<std::shared_ptr<HloModule>>> GetHloModules()
       const override;
 
@@ -377,9 +374,7 @@ class PjRtCApiLoadedExecutable : public PjRtLoadedExecutable {
   }
 
   StatusOr<absl::flat_hash_map<std::string, PjRtValueType>> GetCostAnalysis()
-      const override {
-    return executable_->GetCostAnalysis();
-  }
+      const override;
 
   const DeviceAssignment& device_assignment() const override {
     CHECK(false) << "PJRT C API does not support device_assignment";

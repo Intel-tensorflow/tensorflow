@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "tensorflow/compiler/xla/service/gpu/cudnn_fused_mha_rewriter.h"
 
+#include <functional>
 #include <numeric>
 #include <optional>
 #include <string>
@@ -23,10 +24,14 @@ limitations under the License.
 
 #include "tensorflow/compiler/xla/hlo/ir/hlo_casting_utils.h"
 #include "tensorflow/compiler/xla/hlo/ir/hlo_instruction.h"
+#include "tensorflow/compiler/xla/literal_util.h"
 #include "tensorflow/compiler/xla/permutation_util.h"
+#include "tensorflow/compiler/xla/primitive_util.h"
 #include "tensorflow/compiler/xla/service/gpu/backend_configs.pb.h"
 #include "tensorflow/compiler/xla/service/gpu/cublas_cudnn.h"
+#include "tensorflow/compiler/xla/service/gpu/ir_emission_utils.h"
 #include "tensorflow/compiler/xla/service/gpu/matmul_utils.h"
+#include "tensorflow/compiler/xla/service/hlo_creation_utils.h"
 #include "tensorflow/compiler/xla/service/pattern_matcher.h"
 #include "tensorflow/tsl/platform/errors.h"
 #include "tensorflow/tsl/platform/statusor.h"
@@ -237,7 +242,7 @@ bool IsComputeCapabilityAndCudnnSupported(
 }
 
 bool IsSupportedPrimitiveType(const HloInstruction* bmm) {
-  PrimitiveType dtype = bmm->shape().element_type();
+  auto dtype = bmm->shape().element_type();
   return dtype == BF16 || dtype == F16;
 }
 
@@ -537,7 +542,7 @@ bool MatchMHAPatternsForCanonicalization(
   // to determine if we need to canonicalize bmm2.
   // So we go through both of bmm2's operands and see which one matches our
   // desired patterns, if operand 1 consumes them, then we need to canonicalize.
-  for (int bmm2_operand_pos : {0, 1}) {
+  for (auto bmm2_operand_pos : {0, 1}) {
     if (bmm2_operand_pos == 1) {
       need_canonicalization = true;
     }
@@ -625,7 +630,7 @@ StatusOr<HloInstruction*> CanonicalizeBatchedGemmForcuDNNFMHA(
             *new_dnums.mutable_rhs_contracting_dimensions());
   std::swap(*new_dnums.mutable_lhs_batch_dimensions(),
             *new_dnums.mutable_rhs_batch_dimensions());
-  const Shape& original_bmm2_shape = bmm_2->shape();
+  auto original_bmm2_shape = bmm_2->shape();
   HloInstruction* new_dot = comp->AddInstruction(HloInstruction::CreateDot(
       ShapeUtil::MakeShape(original_bmm2_shape.element_type(),
                            Permute(original_bmm2_shape.dimensions(), perm)),

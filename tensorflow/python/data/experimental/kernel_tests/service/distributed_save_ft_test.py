@@ -23,7 +23,6 @@ from absl.testing import parameterized
 
 from tensorflow.python.data.experimental.kernel_tests.service import test_base as data_service_test_base
 from tensorflow.python.data.experimental.ops import distributed_save_op
-from tensorflow.python.data.experimental.service import _pywrap_snapshot_utils
 from tensorflow.python.data.kernel_tests import test_base
 from tensorflow.python.data.ops import dataset_ops
 from tensorflow.python.data.ops import test_mode
@@ -77,13 +76,11 @@ def get_stream_assignments(
 
 
 def snapshot_is_done(path):
-  return os.path.exists(
-      _pywrap_snapshot_utils.TF_DATA_SnapshotDoneFilePath(path))
+  return os.path.exists(os.path.join(path, "DONE"))
 
 
 def snapshot_has_error(path):
-  return os.path.exists(
-      _pywrap_snapshot_utils.TF_DATA_SnapshotErrorFilePath(path))
+  return os.path.exists(os.path.join(path, "ERROR"))
 
 
 def snapshots_are_done(paths):
@@ -269,7 +266,6 @@ class SnapshotFtTest(data_service_test_base.TestBase, parameterized.TestCase):
 
   @combinations.generate(test_base.default_test_combinations())
   def testWorkersDontExceedMaxStreamAssignments(self):
-    # TODO(b/250921378): Fix flaky test.
     num_workers = 3
     num_snapshots = 12
     cluster = data_service_test_base.TestCluster(num_workers=num_workers)

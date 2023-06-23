@@ -76,11 +76,9 @@ TEST_P(GraphExecutorTest, Vanilla) {
       auto fallback_state,
       tensorflow::tfrt_stub::FallbackState::Create(
           CreateDefaultSessionOptions(options), graph_def.library()))
-  auto resource_context = std::make_unique<tfrt::ResourceContext>();
   TF_ASSERT_OK_AND_ASSIGN(
       auto graph_executor,
-      GraphExecutor::Create(std::move(options), *fallback_state,
-                            std::move(resource_context), graph_def,
+      GraphExecutor::Create(std::move(options), *fallback_state, graph_def,
                             GetKernelRegistry()));
 
   // Set input 'x' to [[1, 1, 1]]
@@ -112,11 +110,9 @@ TEST_P(GraphExecutorTest, BasicWithOnlineCostAnalysis) {
       auto fallback_state,
       tensorflow::tfrt_stub::FallbackState::Create(
           CreateDefaultSessionOptions(options), graph_def.library()));
-  auto resource_context = std::make_unique<tfrt::ResourceContext>();
   TF_ASSERT_OK_AND_ASSIGN(
       auto graph_executor,
-      GraphExecutor::Create(std::move(options), *fallback_state,
-                            std::move(resource_context), graph_def,
+      GraphExecutor::Create(options, *fallback_state, graph_def,
                             GetKernelRegistry()));
 
   // Set input 'x' to [[1, 1, 1]]
@@ -154,15 +150,13 @@ TEST_F(GraphExecutorTest, DoOnlineCostAnalysisExactlyOnce) {
       /*graph_executor=*/nullptr,
       /*mlir_context=*/nullptr,
       /*tf_mlir_with_op_keys=*/{}, /*tfrt_mlir=*/{},
-      /*executable_context=*/nullptr,
-      /*enable_online_cost_analysis=*/true);
+      /*executable_context=*/nullptr);
   GraphExecutor::LoadedClientGraph loaded_client_graph_1(
       "name1", /*symbol_uids=*/{},
       /*graph_executor=*/nullptr,
       /*mlir_context=*/nullptr,
       /*tf_mlir_with_op_keys=*/{}, /*tfrt_mlir=*/{},
-      /*executable_context=*/nullptr,
-      /*enable_online_cost_analysis=*/true);
+      /*executable_context=*/nullptr);
 
   // For each `LoadedClientGraph`, `MaybeCreateCostRecorder()` only returns a
   // cost recorder for once.
@@ -195,11 +189,9 @@ TEST_F(GraphExecutorTest, Extend) {
   TF_ASSERT_OK_AND_ASSIGN(auto fallback_state,
                           tensorflow::tfrt_stub::FallbackState::Create(
                               session_options, graph_def.library()));
-  auto resource_context = std::make_unique<tfrt::ResourceContext>();
   TF_ASSERT_OK_AND_ASSIGN(
       auto graph_executor,
-      GraphExecutor::Create(std::move(options), *fallback_state,
-                            std::move(resource_context), graph_def,
+      GraphExecutor::Create(std::move(options), *fallback_state, graph_def,
                             GetKernelRegistry()));
 
   GraphDef extension;
@@ -240,11 +232,9 @@ TEST_F(GraphExecutorTest, DisableCompilation) {
       auto fallback_state,
       tensorflow::tfrt_stub::FallbackState::Create(
           CreateDefaultSessionOptions(options), graph_def.library()));
-  auto resource_context = std::make_unique<tfrt::ResourceContext>();
   TF_ASSERT_OK_AND_ASSIGN(
       auto graph_executor,
-      GraphExecutor::Create(std::move(options), *fallback_state,
-                            std::move(resource_context), graph_def,
+      GraphExecutor::Create(std::move(options), *fallback_state, graph_def,
                             GetKernelRegistry()));
 
   // Set input 'x' to [[1, 1, 1]]
@@ -286,12 +276,9 @@ TEST_F(GraphExecutorTest, SyncExecute) {
       auto fallback_state,
       tensorflow::tfrt_stub::FallbackState::Create(
           CreateDefaultSessionOptions(options), graph_def.library()));
-
-  auto resource_context = std::make_unique<tfrt::ResourceContext>();
   TF_ASSERT_OK_AND_ASSIGN(
       auto graph_executor,
-      GraphExecutor::Create(std::move(options), *fallback_state,
-                            std::move(resource_context), graph_def,
+      GraphExecutor::Create(std::move(options), *fallback_state, graph_def,
                             GetKernelRegistry()));
 
   std::vector<mlrt::Value> inputs;

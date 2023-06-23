@@ -355,6 +355,7 @@ bool IsOpAllowedTf2XlaPreferred(Operation* op) {
     TypeID::get<TF::LessEqualOp>(),
     TypeID::get<TF::LinSpaceOp>(),
     TypeID::get<TF::LogicalOrOp>(),
+    TypeID::get<TF::MatrixDiagPartV3Op>(),
     TypeID::get<TF::MaxOp>(),
     TypeID::get<TF::MaximumOp>(),
     TypeID::get<TF::MaxPoolOp>(),

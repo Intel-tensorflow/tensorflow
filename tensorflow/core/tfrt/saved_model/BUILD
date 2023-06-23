@@ -117,6 +117,7 @@ cc_library(
         "@tf_runtime//:support",
     ] + if_google([
         "//third_party/tf_runtime_google:streamz_metrics_registry_alwayslink",
+        "//learning/brain/experimental/tfrt/native_lowering/kernels",
     ]),
 )
 

@@ -1,5 +1,4 @@
 load("//tensorflow:strict.default.bzl", "py_strict_library")
-load("//tensorflow:pytype.default.bzl", "pytype_strict_library")
 load("//tensorflow:tensorflow.default.bzl", "cuda_py_strict_test", "tf_py_strict_test")
 load("//tensorflow/compiler/tests:build_defs.bzl", "tf_xla_py_strict_test")
 
@@ -38,7 +37,7 @@ py_strict_library(
     deps = [],
 )
 
-pytype_strict_library(
+py_strict_library(
     name = "atomic_function",
     srcs = ["atomic_function.py"],
     srcs_version = "PY3",
@@ -59,7 +58,6 @@ pytype_strict_library(
         "//tensorflow/python/framework:function_def_to_graph",
         "//tensorflow/python/framework:ops",
         "//tensorflow/python/ops:handle_data_util",
-        "//tensorflow/python/types:core",
         "//tensorflow/python/util:compat",
         "//tensorflow/python/util:function_utils",
     ],

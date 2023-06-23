@@ -550,9 +550,7 @@ TEST_F(AlgebraicSimplifierTest, MultiplyConvolutionBroadcastReorder) {
   )";
 
   TF_ASSERT_OK_AND_ASSIGN(auto m, ParseAndReturnVerifiedModule(kModuleStr));
-  AlgebraicSimplifierOptions opts = default_options_;
-  opts.set_enable_scalar_multiply_reduction(true);
-  ASSERT_TRUE(AlgebraicSimplifier(opts).Run(m.get()).value());
+  ASSERT_TRUE(AlgebraicSimplifier(default_options_).Run(m.get()).value());
   EXPECT_THAT(
       m->entry_computation()->root_instruction(),
       GmockMatch(m::Convolution(
@@ -578,9 +576,8 @@ TEST_F(AlgebraicSimplifierTest, DoNotMultiplyConvolutionBroadcastReorder) {
   )";
 
   TF_ASSERT_OK_AND_ASSIGN(auto m, ParseAndReturnVerifiedModule(kModuleStr));
-  AlgebraicSimplifierOptions opts = default_options_;
-  opts.set_enable_scalar_multiply_reduction(true);
-  ASSERT_FALSE(RunHloPass(AlgebraicSimplifier(opts), m.get()).value());
+  AlgebraicSimplifier simplifier(default_options_);
+  ASSERT_FALSE(RunHloPass(&simplifier, m.get()).value());
 }
 
 // Test that select(true, a, b) is simplified to a

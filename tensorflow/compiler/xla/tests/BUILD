@@ -2761,15 +2761,3 @@ xla_test(
         "@com_google_absl//absl/strings",
     ],
 )
-
-xla_cc_test(
-    name = "tile_assignment_test",
-    srcs = ["tile_assignment_test.cc"],
-    deps = [
-        ":xla_internal_test_main",
-        "//tensorflow/compiler/xla:array3d",
-        "//tensorflow/compiler/xla:test",
-        "//tensorflow/compiler/xla/hlo/ir:tile_assignment",
-        "@com_google_absl//absl/hash",
-    ],
-)

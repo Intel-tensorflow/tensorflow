@@ -1252,7 +1252,7 @@ cc_library(
 
 cc_library(
     name = "gpu_serializable_autotuner",
-    srcs = ["gpu_serializable_autotuner.cc"],
+    srcs = [],
     hdrs = ["gpu_serializable_autotuner.h"],
     deps = [
         "//tensorflow/compiler/xla:autotune_results_proto_cc",
@@ -2670,8 +2670,6 @@ cc_library(
         "//tensorflow/compiler/xla/service:hlo_pass_pipeline",
         "//tensorflow/compiler/xla/service:latency_hiding_scheduler",
         "//tensorflow/compiler/xla/service:profile_guided_latency_estimator",
-        "//tensorflow/tsl/platform:env",
-        "//tensorflow/tsl/platform:protobuf",
         "@com_google_absl//absl/memory",
     ],
 )
@@ -2685,7 +2683,6 @@ xla_cc_test(
     deps = [
         ":gpu_device_info",
         ":gpu_hlo_schedule",
-        "//tensorflow/compiler/xla:xla_proto_cc",
         "//tensorflow/compiler/xla/hlo/ir:hlo",
         "//tensorflow/compiler/xla/hlo/utils:hlo_query",
         "//tensorflow/compiler/xla/service:gpu_plugin",
@@ -2927,10 +2924,13 @@ cc_library(
     deps = [
         ":backend_configs_cc",
         ":cublas_cudnn",
+        ":ir_emission_utils",
         ":matmul_utils",
         "//tensorflow/compiler/xla:comparison_util",
+        "//tensorflow/compiler/xla:literal_util",
         "//tensorflow/compiler/xla:permutation_util",
         "//tensorflow/compiler/xla/hlo/ir:hlo",
+        "//tensorflow/compiler/xla/service:hlo_creation_utils",
         "//tensorflow/compiler/xla/service:hlo_pass",
         "//tensorflow/compiler/xla/service:pattern_matcher",
         "//tensorflow/compiler/xla/stream_executor:stream_executor_headers",

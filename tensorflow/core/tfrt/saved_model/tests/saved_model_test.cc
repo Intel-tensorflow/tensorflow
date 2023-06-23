@@ -1097,12 +1097,9 @@ TEST(SavedModelTest, CustomModelConfig) {
 
   TestConfig1 test_config;
   runtime->AddCreateRuntimeResourceFn(
-      [&test_config](ModelRuntimeContext& model_context) {
-        test_config = model_context.graph_execution_options()
-                          .runtime_config.Get<TestConfig1>()
-                          .value();
-        EXPECT_TRUE(model_context.meta_graph_def());
-        return absl::OkStatus();
+      [&test_config](const GraphExecutionOptions& options,
+                     tfrt::ResourceContext*) {
+        test_config = options.runtime_config.Get<TestConfig1>().value();
       });
 
   auto options = DefaultSavedModelOptions(runtime.get());

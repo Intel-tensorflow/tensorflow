@@ -16,12 +16,9 @@
 
 import dataclasses
 import traceback
-import typing
-from typing import Any, Dict, List, Sequence, Optional, Union
+from typing import Any, List
 
 from tensorflow.core.framework import attr_value_pb2
-from tensorflow.core.framework import function_pb2
-from tensorflow.core.framework import graph_debug_info_pb2
 from tensorflow.core.function.polymorphism import function_type as function_type_lib
 from tensorflow.python.client import pywrap_tf_session
 from tensorflow.python.eager import context
@@ -36,7 +33,6 @@ from tensorflow.python.framework import func_graph as func_graph_module
 from tensorflow.python.framework import function_def_to_graph
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import handle_data_util
-from tensorflow.python.types import core
 from tensorflow.python.util import compat
 from tensorflow.python.util import function_utils
 
@@ -88,12 +84,12 @@ class AtomicFunction:
 
   def __init__(
       self,
-      name: Union[str, bytes],
-      bound_context: context.Context,
-      function_type: function_type_lib.FunctionType,
-      children: Optional[List["AtomicFunction"]] = None,
-      call_options: CallOptions = CallOptions(),
-      cached_graph: Optional[func_graph_module.FuncGraph] = None,
+      name,
+      bound_context,
+      function_type,
+      children=None,
+      call_options=CallOptions(),
+      cached_graph=None,
   ):
     """Construct a new AtomicFunction.
 
@@ -124,27 +120,27 @@ class AtomicFunction:
       RUNTIME_FUNCTION_REFS[ref_key] += 1
 
   @property
-  def name(self) -> bytes:
+  def name(self):
     """Name represented in UTF-8 encoded bytes."""
     return self._name
 
   @property
-  def function_type(self) -> function_type_lib.FunctionType:
+  def function_type(self):
     """Represents the input/output contract of this function."""
     return self._function_type
 
   @property
-  def children(self) -> List["AtomicFunction"]:
+  def children(self):
     """AtomicFunctions needed as dependencies for this one."""
     return self._children
 
   @property
-  def definition(self) -> function_pb2.FunctionDef:
+  def definition(self):
     """Current FunctionDef in the Runtime."""
     return self._bound_context.get_function_def(self.name)
 
   @property
-  def attributes(self) -> Any:
+  def attributes(self):
     """Returns FunctionDef attributes in the Runtime."""
     attrs = self.definition.attr
     # Remove construction context since it is specific to runtime and this fn.
@@ -152,7 +148,7 @@ class AtomicFunction:
     return attrs
 
   @property
-  def graph_debug_info(self) -> graph_debug_info_pb2.GraphDebugInfo:
+  def graph_debug_info(self):
     """A GraphDebugInfo proto mapping nodes to corresponding stack traces."""
     return self._bound_context.get_graph_debug_info(self.name)
 
@@ -162,7 +158,7 @@ class AtomicFunction:
     return self._call_options
 
   @property
-  def graph_call_attrs(self) -> Dict[str, Any]:
+  def graph_call_attrs(self):
     """Returns a dictionary of attributes needed to add a call in graph."""
     attrs = {
         "is_stateful": self.call_options.is_stateful,
@@ -177,13 +173,13 @@ class AtomicFunction:
     return attrs
 
   @property
-  def _c_func(self) -> Any:
+  def _c_func(self):
     """Returns a scoped pybind object containing FunctionRecord in runtime."""
     return self._bound_context.get_c_function(self.name)
 
   # TODO(fmuham): Move caching to dependent code and remove method.
   @property
-  def cached_definition(self) -> function_pb2.FunctionDef:
+  def cached_definition(self):
     """Cached FunctionDef (not guaranteed to be fresh)."""
     if self._cached_definition is None:
       self._cached_definition = self.definition
@@ -191,7 +187,7 @@ class AtomicFunction:
     return self._cached_definition
 
   @property
-  def graph(self) -> func_graph_module.FuncGraph:
+  def graph(self):
     """Returns a FuncGraph corresponding to the AtomicFunction."""
     if self._cached_graph:
       return self._cached_graph
@@ -202,20 +198,18 @@ class AtomicFunction:
 
     return self._generated_graph
 
-  def structured_call(
-      self, args: Sequence[Any], kwargs: Dict[str, Any], captures: Sequence[Any]
-  ) -> Any:
+  def structured_call(self, args, kwargs, captures):
     """Calls with structured tensor inputs and returns structured output."""
     tensor_inputs = self.function_type.unpack_inputs(args, kwargs)
     capture_inputs = self.function_type.unpack_captures(captures)
     return self.flat_call(tensor_inputs + capture_inputs)
 
-  def flat_call(self, args: Sequence[core.Tensor]) -> Any:
+  def flat_call(self, args):
     """Calls with tensor inputs and returns the structured output."""
     flat_outputs = self(*args)
     return self.function_type.pack_output(flat_outputs)
 
-  def __call__(self, *args: core.Tensor) -> Sequence[core.Tensor]:
+  def __call__(self, *args):
     """Calls with flat tensor inputs and returns flat tensor outputs.
 
     Args:
@@ -298,9 +292,7 @@ class AtomicFunction:
         # been unloaded. Will catch other module unloads as well.
 
 
-def _set_read_only_resource_inputs_attr(
-    op: ops.Operation, func_graph: func_graph_module.FuncGraph
-):
+def _set_read_only_resource_inputs_attr(op, func_graph):
   """Sets the list of resource inputs which are read-only.
 
   This is used by AutomaticControlDependencies.
@@ -316,14 +308,14 @@ def _set_read_only_resource_inputs_attr(
 
 
 def partitioned_call_op(
-    name: str,
-    args: Sequence[core.Tensor],
-    is_stateful: bool,
-    tout: Sequence[Any],
-    config: Any = None,
-    executor_type: Optional[str] = None,
-    xla_compile_attr: Any = None,
-) -> ops.Operation:
+    name,
+    args,
+    is_stateful,
+    tout,
+    config=None,
+    executor_type=None,
+    xla_compile_attr=None,
+):
   """Generates a function call op respecting device annotations.
 
   Args:
@@ -391,11 +383,7 @@ def partitioned_call_op(
   return op
 
 
-def make_call_op_in_graph(
-    atomic: AtomicFunction,
-    tensor_inputs: Sequence[core.Tensor],
-    context_call_attrs: Dict[str, Any],
-):
+def make_call_op_in_graph(atomic, tensor_inputs, context_call_attrs):
   """Adds an AtomicFunction to graph."""
   graph = ops.get_default_graph()
   graph._add_function_recursive(atomic)  # pylint: disable=protected-access
@@ -424,10 +412,7 @@ def make_call_op_in_graph(
   return op.outputs
 
 
-def from_function_def(
-    function_def: function_pb2.FunctionDef,
-    function_type: function_type_lib.FunctionType,
-) -> AtomicFunction:
+def from_function_def(function_def, function_type):
   """Create a new AtomicFunction from FunctionDef + FunctionType."""
   bound_context = context.context()
   if bound_context.has_function(compat.as_bytes(function_def.signature.name)):
@@ -439,13 +424,7 @@ def from_function_def(
   )
 
 
-def from_func_graph(
-    name: Union[str, bytes],
-    graph: func_graph_module.FuncGraph,
-    attrs: Dict[str, attr_value_pb2.AttrValue],
-    function_type: Optional[function_type_lib.FunctionType] = None,
-    overwrite: bool = False,
-) -> AtomicFunction:
+def from_func_graph(name, graph, attrs, function_type=None, overwrite=False):
   """Initializes an AtomicFunction from FuncGraph.
 
   Args:
@@ -559,7 +538,7 @@ def from_func_graph(
   )
 
 
-def to_func_graph(atomic: AtomicFunction) -> func_graph_module.FuncGraph:
+def to_func_graph(atomic):
   """Generate a FuncGraph from an AtomicFunction."""
   # pylint: disable=protected-access
   input_signature, output_signature = function_type_lib.to_structured_signature(
@@ -648,7 +627,6 @@ class InterpolateRuntimeError(object):
   def __exit__(self, typ, exc, tb):
     if not exc or not isinstance(exc, errors.OpError):
       return False
-    exc = typing.cast(errors.OpError, exc)
     message = compat.as_text(exc.message)
     parsed_message, func_tags, node_tags = error_interpolation.parse_message(
         message

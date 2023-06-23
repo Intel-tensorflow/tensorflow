@@ -15,10 +15,8 @@ limitations under the License.
 #ifndef TENSORFLOW_COMPILER_XLA_SERVICE_GPU_GPU_SERIALIZABLE_AUTOTUNER_H_
 #define TENSORFLOW_COMPILER_XLA_SERVICE_GPU_GPU_SERIALIZABLE_AUTOTUNER_H_
 
-#include <algorithm>
 #include <string>
 #include <tuple>
-#include <utility>
 #include <variant>
 
 #include "tensorflow/compiler/xla/autotune_results.pb.h"
@@ -26,7 +24,6 @@ limitations under the License.
 #include "tensorflow/compiler/xla/hlo/ir/hlo_instructions.h"
 #include "tensorflow/compiler/xla/stream_executor/stream_executor_pimpl.h"
 #include "tensorflow/compiler/xla/types.h"
-#include "tensorflow/tsl/protobuf/autotuning.pb.h"
 
 namespace xla {
 namespace gpu {
@@ -72,12 +69,6 @@ inline AutotuneCacheKey AutotuneCacheKeyFromInstruction(
   options.set_print_backend_config(true);
   return std::make_tuple(std::string(model_str), instr->ToString(options));
 }
-
-Status SerializeAutotuneResults(const AutotuneCacheMap& autotune_cache,
-                                AutotuneResults* results);
-
-Status LoadAutotuneResults(AutotuneCacheMap& autotune_cache,
-                           const AutotuneResults& results);
 
 }  // namespace gpu
 }  // namespace xla

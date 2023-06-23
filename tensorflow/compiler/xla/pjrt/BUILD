@@ -165,7 +165,6 @@ cc_library(
         ":pjrt_device_description",
         ":pjrt_executable",
         ":pjrt_future",
-        ":utils",
         "//tensorflow/compiler/xla:literal",
         "//tensorflow/compiler/xla:shape_util",
         "//tensorflow/compiler/xla:status",
@@ -220,13 +219,11 @@ cc_library(
     hdrs = ["pjrt_executable.h"],
     visibility = [":friends"],
     deps = [
-        ":pjrt_common",
         "//tensorflow/compiler/xla:statusor",
         "//tensorflow/compiler/xla:util",
         "//tensorflow/compiler/xla:xla_data_proto_cc",
         "//tensorflow/compiler/xla/client:executable_build_options",
         "//tensorflow/compiler/xla/hlo/ir:hlo",
-        "//tensorflow/compiler/xla/service:hlo_cost_analysis",
         "//tensorflow/compiler/xla/service:hlo_proto_cc",
         "//tensorflow/tsl/platform:statusor",
         "@com_google_absl//absl/strings",
@@ -250,7 +247,6 @@ cc_library(
     name = "pjrt_device_description",
     hdrs = ["pjrt_device_description.h"],
     deps = [
-        ":pjrt_common",
         "@com_google_absl//absl/container:flat_hash_map",
     ],
 )
@@ -282,12 +278,6 @@ xla_cc_test(
         "//tensorflow/compiler/xla/client:xla_computation",
         "@com_google_googletest//:gtest_main",
     ],
-)
-
-cc_library(
-    name = "pjrt_common",
-    hdrs = ["pjrt_common.h"],
-    visibility = [":friends"],
 )
 
 cc_library(

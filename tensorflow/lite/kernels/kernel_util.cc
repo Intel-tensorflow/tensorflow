@@ -24,10 +24,9 @@ limitations under the License.
 
 #ifndef TF_LITE_STATIC_MEMORY
 #include <string>
-
-#include "tensorflow/lite/array.h"
 #endif  // TF_LITE_STATIC_MEMORY
 
+#include "tensorflow/lite/array.h"
 #include "tensorflow/lite/context_util.h"
 #include "tensorflow/lite/core/c/builtin_op_data.h"
 #include "tensorflow/lite/core/c/common.h"

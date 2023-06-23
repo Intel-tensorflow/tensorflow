@@ -170,7 +170,8 @@ class DimensionOrder {
   // of `hlo` it becomes a description of the input of `hlo`.
   Status HandleInstruction(const HloInstruction* hlo) {
     VLOG(7) << hlo->ToString();
-    if (hlo->opcode() == HloOpcode::kParameter) {
+    if (hlo->opcode() == HloOpcode::kParameter ||
+        hlo->opcode() == HloOpcode::kConstant) {
       return OkStatus();
     } else if (hlo->opcode() == HloOpcode::kBitcast) {
       return HandleBitcast(hlo);
