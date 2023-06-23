@@ -1229,7 +1229,6 @@ class MklRemapperConv2dFusedBatchNormSwishTest : public GrapplerTest {
 TEST_F(MklRemapperConv2dFusedBatchNormSwishTest, F32) { RunTest<DT_FLOAT>(); }
 #endif // ENABLE_ONEDNN_V2
 
-#ifdef ENABLE_ONEDNN_V2
 class MklFuseInstanceNormTest : public GrapplerTest {
  protected:
   template <DataType DTYPE>
@@ -1349,7 +1348,7 @@ class MklFuseInstanceNormTest : public GrapplerTest {
     if (DTYPE == DT_BFLOAT16) {
       test::ExpectClose(tensors[0], tensors_expected[0], 1e-2, 1e-2);
     } else {
-      test::ExpectClose(tensors[0], tensors_expected[0], 2e-6, 1e-6);
+      test::ExpectClose(tensors[0], tensors_expected[0], 3e-6, 1e-6);
     }
   }
 
@@ -1468,7 +1467,7 @@ class MklFuseInstanceNormTest : public GrapplerTest {
     if (DTYPE == DT_BFLOAT16) {
       test::ExpectClose(tensors[0], tensors_expected[0], 1e-2, 1e-2);
     } else {
-      test::ExpectClose(tensors[0], tensors_expected[0], 2e-6, 1e-6);
+      test::ExpectClose(tensors[0], tensors_expected[0], 3e-6, 1e-6);
     }
   }
 
@@ -1519,7 +1518,6 @@ TEST_F(MklFuseInstanceNormTest, FuseMklInstanceNormWithActivation4D_FP32_NHWC) {
 TEST_F(MklFuseInstanceNormTest, FuseMklInstanceNormWithActivation4D_FP32_NCHW) {
   FuseMklInstanceNorm4D<DT_FLOAT>("NCHW", true);
 }
-#endif  // ENABLE_ONEDNN_V2
 
 }  // namespace grappler
 }  // namespace tensorflow

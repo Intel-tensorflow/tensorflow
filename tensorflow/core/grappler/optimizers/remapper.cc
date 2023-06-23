@@ -2830,8 +2830,8 @@ bool FindInstanceNorm(RemapperContext* ctx, int node_index,
   if (input_shape.unknown_rank()) return false;
 
   DataType dtype = GetDataTypeFromAttr(*mean1_node, "T");
-  // TODO(intel-tf): enable bfloat16 data type support
-  if (dtype != DT_FLOAT) return false;
+  // Allow bfloat16 data type (TODO - upstream after dependency)
+  if (dtype != DT_FLOAT && dtype != DT_BFLOAT16) return false;
 
   // Check if gamma and beta constants have the same shape
   NodeDef* gamma_node =
@@ -4918,7 +4918,6 @@ Status Remapper::Optimize(Cluster* cluster, const GrapplerItem& item,
         continue;
       }
 
-#if defined(ENABLE_ONEDNN_V2)
       // Remap ops that make up instancenorm followed by Relu or LeakyRelu
       // into _MklFusedInstanceNorm
       matched_nodes_map.clear();
@@ -4940,7 +4939,6 @@ Status Remapper::Optimize(Cluster* cluster, const GrapplerItem& item,
             &nodes_to_delete, false));
         continue;
       }
-#endif
     }
 
     // Remap MatMul + BiasAdd + gelu-subgraph
