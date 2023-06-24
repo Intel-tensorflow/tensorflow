@@ -17,7 +17,6 @@ limitations under the License.
 
 #include "tensorflow/core/common_runtime/local_device.h"
 
-#include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 #include "tensorflow/core/common_runtime/process_state.h"
 #include "tensorflow/core/common_runtime/process_util.h"
 #include "tensorflow/core/lib/core/threadpool.h"
@@ -29,6 +28,8 @@ limitations under the License.
 #include "tensorflow/core/platform/types.h"
 #include "tensorflow/core/public/session_options.h"
 #include "tensorflow/core/util/env_var.h"
+#include "tensorflow/core/util/util.h"
+#include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 
 namespace tensorflow {
 namespace {
@@ -80,6 +81,15 @@ struct LocalDevice::EigenThreadPoolInfo {
       if (intra_op_parallelism_threads == 0) {
         intra_op_parallelism_threads = port::MaxParallelism(numa_node);
       }
+    }
+    auto topology = port::GetTopology();
+    // Limit intra-op threads to num-phys-cores when we have pinning specified.
+    if (IsMKLEnabled() && port::ThreadPinningMode() != "none" &&
+        (intra_op_parallelism_threads > port::NumPhysCores(topology))) {
+      intra_op_parallelism_threads = port::NumPhysCores(topology);
+      VLOG(0) << "Explicit core pinning is specified. Setting intra_op "
+                 "parallelism to "
+              << intra_op_parallelism_threads << " threads.";
     }
     ThreadOptions thread_opts;
     thread_opts.numa_node = numa_node;

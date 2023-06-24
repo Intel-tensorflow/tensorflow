@@ -13,6 +13,7 @@ def repo():
 
     tf_http_archive(
         name = "eigen_archive",
+        patch_file = ["//third_party/eigen3:threading.patch"],
         build_file = "//third_party/eigen3:eigen_archive.BUILD",
         sha256 = EIGEN_SHA256,
         strip_prefix = "eigen-{commit}".format(commit = EIGEN_COMMIT),

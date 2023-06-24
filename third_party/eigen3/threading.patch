@@ -1,0 +1,26 @@
+diff --git a/unsupported/Eigen/CXX11/src/ThreadPool/NonBlockingThreadPool.h b/unsupported/Eigen/CXX11/src/ThreadPool/NonBlockingThreadPool.h
+index 390ba40ce..17fd93e15 100644
+--- a/unsupported/Eigen/CXX11/src/ThreadPool/NonBlockingThreadPool.h
++++ b/unsupported/Eigen/CXX11/src/ThreadPool/NonBlockingThreadPool.h
+@@ -57,7 +57,7 @@ class ThreadPoolTempl : public Eigen::ThreadPoolInterface {
+     for (int i = 0; i < num_threads_; i++) {
+       SetStealPartition(i, EncodePartition(0, num_threads_));
+       thread_data_[i].thread.reset(
+-          env_.CreateThread([this, i]() { WorkerLoop(i); }));
++          env_.CreateThread([this, i]() { WorkerLoop(i); }, i));
+     }
+ #ifndef EIGEN_THREAD_LOCAL
+     // Wait for workers to initialize per_thread_map_. Otherwise we might race
+diff --git a/unsupported/Eigen/CXX11/src/ThreadPool/ThreadEnvironment.h b/unsupported/Eigen/CXX11/src/ThreadPool/ThreadEnvironment.h
+index 02ec36648..716f71ebc 100644
+--- a/unsupported/Eigen/CXX11/src/ThreadPool/ThreadEnvironment.h
++++ b/unsupported/Eigen/CXX11/src/ThreadPool/ThreadEnvironment.h
+@@ -32,7 +32,7 @@ struct StlThreadEnvironment {
+     std::thread thr_;
+   };
+ 
+-  EnvThread* CreateThread(std::function<void()> f) { return new EnvThread(std::move(f)); }
++  EnvThread* CreateThread(std::function<void()> f, int tid = -1) { return new EnvThread(std::move(f)); }
+   Task CreateTask(std::function<void()> f) { return Task{std::move(f)}; }
+   void ExecuteTask(const Task& t) { t.f(); }
+ };

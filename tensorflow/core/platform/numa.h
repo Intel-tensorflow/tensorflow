@@ -22,6 +22,9 @@ limitations under the License.
 
 namespace tensorflow {
 namespace port {
+using tsl::port::CPUTopology;
+using tsl::port::GetPinningCoreList;
+using tsl::port::GetTopology;
 using tsl::port::kNUMANoAffinity;
 using tsl::port::NUMAEnabled;
 using tsl::port::NUMAFree;
@@ -30,6 +33,10 @@ using tsl::port::NUMAGetThreadNodeAffinity;
 using tsl::port::NUMAMalloc;
 using tsl::port::NUMANumNodes;
 using tsl::port::NUMASetThreadNodeAffinity;
+using tsl::port::NumPhysCores;
+using tsl::port::PinThread;
+using tsl::port::PrintTopology;
+using tsl::port::ThreadPinningMode;
 }  // namespace port
 }  // namespace tensorflow
 #endif  // TENSORFLOW_CORE_PLATFORM_NUMA_H_
