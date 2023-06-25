@@ -1903,7 +1903,9 @@ enum class oneDNNFusedOps {
   kLeakyRelu = 16,
   kSigmoid = 32,
   kDequantize = 64,
-  kFusedHardSwish = 128
+  kFusedHardSwish = 128,
+  kElu = 256,
+  kFusedSwish = 512
 };
 
 template <typename Device, typename Tinput, typename Tbias, typename Toutput,
@@ -1946,6 +1948,8 @@ class MklQuantizedConvOp
         {"BiasAdd", "Relu"},
         {"BiasAdd", "Sigmoid"},
         {"BiasAdd", "_FusedHardSwish"},
+        {"BiasAdd", "Elu"},
+        {"BiasAdd", "_FusedSwish"},
         {"BiasAdd", "Sum", "LeakyRelu"},
         {"BiasAdd", "Requantize"},
         {"BiasAdd", "Dequantize"},
@@ -1953,6 +1957,8 @@ class MklQuantizedConvOp
         {"BiasAdd", "LeakyRelu", "Requantize"},
         {"BiasAdd", "Relu", "Requantize"},
         {"BiasAdd", "_FusedHardSwish", "Requantize"},
+        {"BiasAdd", "Elu", "Requantize"},
+        {"BiasAdd", "_FusedSwish", "Requantize"},
         {"BiasAdd", "Sum", "LeakyRelu", "Requantize"},
         {"BiasAdd", "LeakyRelu", "Sum"},
         {"BiasAdd", "Relu", "Sum"},
@@ -2064,7 +2070,8 @@ class MklQuantizedConvOp
         post_op_to_idx_["sum"] = idx++;
       } else if (fused_ops_[i] == "Relu" || fused_ops_[i] == "LeakyRelu" ||
                  fused_ops_[i] == "Sigmoid" ||
-                 fused_ops_[i] == "_FusedHardSwish") {
+                 fused_ops_[i] == "_FusedHardSwish" || fused_ops_[i] == "Elu" ||
+                 fused_ops_[i] == "_FusedSwish") {
         post_op_to_idx_["activation"] = idx++;
       }
     }
@@ -2438,6 +2445,12 @@ class MklQuantizedConvOp
           dnnl::algorithm::eltwise_hardswish,
           {1.0, 1.0 / 6.0, 1.0 / 2.0},
           ""};
+    } else if (IsFused(oneDNNFusedOps::kElu)) {
+      params.post_op_params[post_op_to_idx_["activation"]] = {
+          "activation", dnnl::algorithm::eltwise_elu, {1.0, 0.0, 0.0}, ""};
+    } else if (IsFused(oneDNNFusedOps::kFusedSwish)) {
+      params.post_op_params[post_op_to_idx_["activation"]] = {
+          "activation", dnnl::algorithm::eltwise_swish, {1.0, 1.0, 0.0}, ""};
     }
   }
 
@@ -2752,7 +2765,9 @@ class MklQuantizedConvOp
       {"LeakyRelu", oneDNNFusedOps::kLeakyRelu},
       {"Sigmoid", oneDNNFusedOps::kSigmoid},
       {"Dequantize", oneDNNFusedOps::kDequantize},
-      {"_FusedHardSwish", oneDNNFusedOps::kFusedHardSwish}};
+      {"_FusedHardSwish", oneDNNFusedOps::kFusedHardSwish},
+      {"Elu", oneDNNFusedOps::kElu},
+      {"_FusedSwish", oneDNNFusedOps::kFusedSwish}};
   std::shared_ptr<dnnl::memory> summand_;
   std::shared_ptr<dnnl::memory> dst_;
   int min_input_idx_ = -1;
