@@ -1341,6 +1341,14 @@ TEST_F(QuantizedConvTest, BiasAddSumReluFusionFloatSummand) {
   TestBiasAddSumActivationFusion<float, qint32>("Relu");
 }
 
+TEST_F(QuantizedConvTest, BiasAddSumRequantizeFusion) {
+  TestBiasAddSumActivationFusion<qint8, qint8>();
+}
+
+TEST_F(QuantizedConvTest, BiasAddSumFusionFloatSummand) {
+  TestBiasAddSumActivationFusion<float, qint32>();
+}
+
 TEST_F(QuantizedConvTest, BiasAddSumLeakyReluRequantizeFusionSignedSummand) {
   TestBiasAddSumActivationFusion<qint8, qint8>("LeakyRelu", 0.2);
 }
