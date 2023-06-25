@@ -442,7 +442,8 @@ class MklDnnQuantizedMatMulOp
     // quint8. A post_op "output_scale" is added to do the conversion.
     if (std::is_same<Toutput, quint8>::value ||
         std::is_same<Toutput, qint8>::value ||
-        std::is_same<Toutput, float>::value) {
+        std::is_same<Toutput, float>::value ||
+        std::is_same<Toutput, bfloat16>::value) {
       const Tensor& min_freezed_tensor = context->input(7);
       const Tensor& max_freezed_tensor = context->input(8);
       // min-max values of freezed output range should be scalar.
@@ -488,7 +489,7 @@ class MklDnnQuantizedMatMulOp
       } else if (std::is_same<Toutput, qint8>::value) {
         dst_scale = scale_eightbit / 127.0;
       } else {
-        // Output type is float.
+        // Output type is float or bfloat16.
         dst_scale = 1.0;
       }
     } else {
@@ -815,6 +816,8 @@ REGISTER_MKL_KERNEL_ALL_BIAS_TYPES("QuantizedMatMulWithBiasAndRequantize", NoOp,
                                    quint8, false);
 REGISTER_MKL_KERNEL_ALL_BIAS_TYPES("QuantizedMatMulWithBiasAndDequantize", NoOp,
                                    float, false);
+REGISTER_MKL_KERNEL_ALL_BIAS_TYPES("QuantizedMatMulWithBiasAndDequantize", NoOp,
+                                   bfloat16, false);
 #undef BIAS_TYPE_CONSTRAINT
 #undef TEMPLATE_ARGS
 #undef LABEL
@@ -838,6 +841,8 @@ REGISTER_MKL_KERNEL_ALL_BIAS_TYPES("_MklQuantizedMatMulWithBiasAndRequantize",
                                    MklDnnQuantizedMatMulOp, quint8, true);
 REGISTER_MKL_KERNEL_ALL_BIAS_TYPES("_MklQuantizedMatMulWithBiasAndDequantize",
                                    MklDnnQuantizedMatMulOp, float, true);
+REGISTER_MKL_KERNEL("_MklQuantizedMatMulWithBiasAndDequantize",
+                    MklDnnQuantizedMatMulOp, qint32, bfloat16, true);
 #undef BIAS_TYPE_CONSTRAINT
 #undef TEMPLATE_ARGS
 #undef LABEL

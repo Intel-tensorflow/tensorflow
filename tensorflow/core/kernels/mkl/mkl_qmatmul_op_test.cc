@@ -35,7 +35,78 @@ limitations under the License.
 
 namespace tensorflow {
 
-class QuantizedMatMulTest : public OpsTestBase {};
+class QuantizedMatMulTest : public OpsTestBase {
+ protected:
+  template <typename Tbias, typename Toutput>
+  void Run() {
+    TF_ASSERT_OK(NodeDefBuilder("quantized_mat_mul_op",
+                                "_MklQuantizedMatMulWithBiasAndDequantize")
+                     .Input(FakeInput(DT_QUINT8))
+                     .Input(FakeInput(DT_QINT8))
+                     .Input(FakeInput(DataTypeToEnum<Tbias>::v()))
+                     .Input(FakeInput(DT_FLOAT))
+                     .Input(FakeInput(DT_FLOAT))
+                     .Input(FakeInput(DT_FLOAT))
+                     .Input(FakeInput(DT_FLOAT))
+                     .Input(FakeInput(DT_FLOAT))
+                     .Input(FakeInput(DT_FLOAT))
+                     .Attr("Tbias", DataTypeToEnum<Tbias>::v())
+                     .Attr("Toutput", DataTypeToEnum<Toutput>::v())
+                     .Attr("_kernel", "QuantizedMklOp")
+                     .Finalize(node_def()));
+    TF_ASSERT_OK(InitOp());
+    // A matrix is:
+    // |  1 |  2 |  3 |
+    // |  4 |  5 |  6 |
+    AddInputFromArray<quint8>(TensorShape({2, 3}), {1, 2, 3, 4, 5, 6});
+    // B matrix is:
+    // |  7 |  8 |  9 | 10 |
+    // | 11 | 12 | 13 | 14 |
+    // | 15 | 16 | 17 | 18 |
+    AddInputFromArray<qint8>(TensorShape({3, 4}),
+                             {7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18});
+    Tensor* bias = AddInput(DataTypeToEnum<Tbias>::v(), TensorShape({4}));
+    test::FillValues<Tbias>(bias, {10, -20, 30, -40});
+    AddInputFromArray<float>(TensorShape({}), {0});
+    AddInputFromArray<float>(TensorShape({}), {255.0f});
+    AddInputFromArray<float>(TensorShape({}), {-127.0f});
+    AddInputFromArray<float>(TensorShape({}), {127.0f});
+    AddInputFromArray<float>(TensorShape({}), {0});
+    AddInputFromArray<float>(TensorShape({}), {255.0f});
+
+    TF_ASSERT_OK(RunOpKernel());
+    // Here are the results we expect, from hand calculations:
+    // (1 * 7) + (2 * 11) + (3 * 15) = 74
+    // (1 * 8) + (2 * 12) + (3 * 16) = 80
+    // (1 * 9) + (2 * 13) + (3 * 17) = 86
+    // (1 * 10) + (2 * 14) + (3 * 18) = 92
+    // (4 * 7) + (5 * 11) + (6 * 15) = 173
+    // (4 * 8) + (5 * 12) + (6 * 16) = 188
+    // (4 * 9) + (5 * 13) + (6 * 17) = 203
+    // (4 * 10) + (5 * 14) + (6 * 18) = 218
+    // After Bias addition
+    // 74+10=84, 80-20=60, 86+30=116, 92-40=52,
+    // 173+10=183, 188-20=168, 203+30=233, 218-40=178
+    // After Dequantize
+    // requantscale = scale_int32 / static_cast<float>(1 << 31)
+    // requantscale = 2^31/2^31 ~= 1.0000
+    // 84 * 1.00000 ~= 84
+    // 60 * 1.00000 ~=  60
+    // 116 * 1.00000 ~= 116
+    // 52 * 1.00000 ~= 52
+    // 183 * 1.00000 ~= 183
+    // 168 * 1.00000 ~= 168
+    // 233 * 1.00000 ~= 233
+    // 178 * 1.00000 ~= 178
+
+    Tensor expected(allocator(), DataTypeToEnum<Toutput>::v(),
+                    TensorShape({2, 4}));
+    test::FillValues<Toutput>(&expected, {84, 60, 116, 52, 183, 168, 233, 178});
+
+    const Tensor& output = *GetOutput(0);
+    test::ExpectTensorEqual<Toutput>(expected, output);
+  }
+};
 
 // Two small matrices A of type uint8 and B of type int8  are multiplied
 // and the result is added with int32 bias
@@ -283,72 +354,10 @@ TEST_F(QuantizedMatMulTest, Small_withBiasAndReq) {
   test::ExpectTensorEqual<quint8>(expected, output);
 }
 
-// Two small matrices A of type uint8 and B of type int8  are multiplied
-// and the result is added with int32 bias and Requantization fusion
-TEST_F(QuantizedMatMulTest, Small_withBiasAndDeq) {
-  TF_ASSERT_OK(NodeDefBuilder("quantized_mat_mul_op",
-                              "_MklQuantizedMatMulWithBiasAndDequantize")
-                   .Input(FakeInput(DT_QUINT8))
-                   .Input(FakeInput(DT_QINT8))
-                   .Input(FakeInput(DT_QINT32))
-                   .Input(FakeInput(DT_FLOAT))
-                   .Input(FakeInput(DT_FLOAT))
-                   .Input(FakeInput(DT_FLOAT))
-                   .Input(FakeInput(DT_FLOAT))
-                   .Input(FakeInput(DT_FLOAT))
-                   .Input(FakeInput(DT_FLOAT))
-                   .Attr("Toutput", DataTypeToEnum<float>::v())
-                   .Attr("_kernel", "QuantizedMklOp")
-                   .Finalize(node_def()));
-  TF_ASSERT_OK(InitOp());
-  // A matrix is:
-  // |  1 |  2 |  3 |
-  // |  4 |  5 |  6 |
-  AddInputFromArray<quint8>(TensorShape({2, 3}), {1, 2, 3, 4, 5, 6});
-  // B matrix is:
-  // |  7 |  8 |  9 | 10 |
-  // | 11 | 12 | 13 | 14 |
-  // | 15 | 16 | 17 | 18 |
-  AddInputFromArray<qint8>(TensorShape({3, 4}),
-                           {7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18});
-  AddInputFromArray<qint32>(TensorShape({4}), {10, -20, 30, -40});
-  AddInputFromArray<float>(TensorShape({}), {0});
-  AddInputFromArray<float>(TensorShape({}), {255.0f});
-  AddInputFromArray<float>(TensorShape({}), {-127.0f});
-  AddInputFromArray<float>(TensorShape({}), {127.0f});
-  AddInputFromArray<float>(TensorShape({}), {0});
-  AddInputFromArray<float>(TensorShape({}), {255.0f});
+TEST_F(QuantizedMatMulTest, Small_withFP32BiasAndDeq) { Run<qint32, float>(); }
 
-  TF_ASSERT_OK(RunOpKernel());
-  // Here are the results we expect, from hand calculations:
-  // (1 * 7) + (2 * 11) + (3 * 15) = 74
-  // (1 * 8) + (2 * 12) + (3 * 16) = 80
-  // (1 * 9) + (2 * 13) + (3 * 17) = 86
-  // (1 * 10) + (2 * 14) + (3 * 18) = 92
-  // (4 * 7) + (5 * 11) + (6 * 15) = 173
-  // (4 * 8) + (5 * 12) + (6 * 16) = 188
-  // (4 * 9) + (5 * 13) + (6 * 17) = 203
-  // (4 * 10) + (5 * 14) + (6 * 18) = 218
-  // After Bias addition
-  // 74+10=84, 80-20=60, 86+30=116, 92-40=52,
-  // 173+10=183, 188-20=168, 203+30=233, 218-40=178
-  // After Dequantize
-  // requantscale = scale_int32 / static_cast<float>(1 << 31)
-  // requantscale = 2^31/2^31 ~= 1.0000
-  // 84 * 1.00000 ~= 84
-  // 60 * 1.00000 ~=  60
-  // 116 * 1.00000 ~= 116
-  // 52 * 1.00000 ~= 52
-  // 183 * 1.00000 ~= 183
-  // 168 * 1.00000 ~= 168
-  // 233 * 1.00000 ~= 233
-  // 178 * 1.00000 ~= 178
-
-  Tensor expected(allocator(), DT_FLOAT, TensorShape({2, 4}));
-  test::FillValues<float>(&expected, {84, 60, 116, 52, 183, 168, 233, 178});
-
-  const Tensor& output = *GetOutput(0);
-  test::ExpectTensorEqual<float>(expected, output);
+TEST_F(QuantizedMatMulTest, Small_withBF16BiasAndDeq) {
+  Run<qint32, bfloat16>();
 }
 
 // Two small matrices A of type uint8 and B of type int8  are multiplied
