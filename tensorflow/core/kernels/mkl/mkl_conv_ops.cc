@@ -1902,7 +1902,8 @@ enum class oneDNNFusedOps {
   kRequantize = 8,
   kLeakyRelu = 16,
   kSigmoid = 32,
-  kDequantize = 64
+  kDequantize = 64,
+  kFusedHardSwish = 128
 };
 
 template <typename Device, typename Tinput, typename Tbias, typename Toutput,
@@ -1944,12 +1945,14 @@ class MklQuantizedConvOp
         {"Dequantize"},
         {"BiasAdd", "Relu"},
         {"BiasAdd", "Sigmoid"},
+        {"BiasAdd", "_FusedHardSwish"},
         {"BiasAdd", "Sum", "LeakyRelu"},
         {"BiasAdd", "Requantize"},
         {"BiasAdd", "Dequantize"},
         {"Relu", "Requantize"},
         {"BiasAdd", "LeakyRelu", "Requantize"},
         {"BiasAdd", "Relu", "Requantize"},
+        {"BiasAdd", "_FusedHardSwish", "Requantize"},
         {"BiasAdd", "Sum", "LeakyRelu", "Requantize"},
         {"BiasAdd", "LeakyRelu", "Sum"},
         {"BiasAdd", "Relu", "Sum"},
@@ -2060,7 +2063,8 @@ class MklQuantizedConvOp
       } else if (fused_ops_[i] == "Sum") {
         post_op_to_idx_["sum"] = idx++;
       } else if (fused_ops_[i] == "Relu" || fused_ops_[i] == "LeakyRelu" ||
-                 fused_ops_[i] == "Sigmoid") {
+                 fused_ops_[i] == "Sigmoid" ||
+                 fused_ops_[i] == "_FusedHardSwish") {
         post_op_to_idx_["activation"] = idx++;
       }
     }
@@ -2428,6 +2432,12 @@ class MklQuantizedConvOp
     } else if (IsFused(oneDNNFusedOps::kSigmoid)) {
       params.post_op_params[post_op_to_idx_["activation"]] = {
           "activation", dnnl::algorithm::eltwise_logistic, {1.0, 0.0, 0.0}, ""};
+    } else if (IsFused(oneDNNFusedOps::kFusedHardSwish)) {
+      params.post_op_params[post_op_to_idx_["activation"]] = {
+          "activation",
+          dnnl::algorithm::eltwise_hardswish,
+          {1.0, 1.0 / 6.0, 1.0 / 2.0},
+          ""};
     }
   }
 
@@ -2741,7 +2751,8 @@ class MklQuantizedConvOp
       {"Requantize", oneDNNFusedOps::kRequantize},
       {"LeakyRelu", oneDNNFusedOps::kLeakyRelu},
       {"Sigmoid", oneDNNFusedOps::kSigmoid},
-      {"Dequantize", oneDNNFusedOps::kDequantize}};
+      {"Dequantize", oneDNNFusedOps::kDequantize},
+      {"_FusedHardSwish", oneDNNFusedOps::kFusedHardSwish}};
   std::shared_ptr<dnnl::memory> summand_;
   std::shared_ptr<dnnl::memory> dst_;
   int min_input_idx_ = -1;
