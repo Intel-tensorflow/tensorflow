@@ -428,7 +428,7 @@ expected to invoke this one.
 REGISTER_OP("__MklDummyPadWithFusedConv2D")
     .Input("input: T")
     .Input("filter: T")
-    .Input("args: num_args * T")
+    .Input("args: TArgs")
     .Input("paddings: Tpaddings")
     .Output("output: T")
     .Output("filter_output: T")
@@ -439,6 +439,7 @@ REGISTER_OP("__MklDummyPadWithFusedConv2D")
 #else
     .Attr("T: {bfloat16, float}")
 #endif  // !ENABLE_ONEDNN_V2
+    .Attr("TArgs: list(type)")
     .Attr("num_args: int >= 0")
     .Attr("strides: list(int)")
     .Attr(GetPaddingAttrString())
@@ -497,7 +498,7 @@ REGISTER_OP("_MklPadWithFusedConv2D")
 REGISTER_OP("_MklNativePadWithFusedConv2D")
     .Input("input: T")
     .Input("filter: T")
-    .Input("args: num_args * T")
+    .Input("args: TArgs")
     .Input("paddings: Tpaddings")
     .Output("output: T")
 #ifndef ENABLE_ONEDNN_V2
@@ -505,6 +506,7 @@ REGISTER_OP("_MklNativePadWithFusedConv2D")
 #else
     .Attr("T: {bfloat16, float}")
 #endif  // !ENABLE_ONEDNN_V2
+    .Attr("TArgs: list(type)")
     .Attr("num_args: int >= 0")
     .Attr("strides: list(int)")
     .Attr("is_filter_const: bool = false")

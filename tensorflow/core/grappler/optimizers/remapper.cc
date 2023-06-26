@@ -961,7 +961,7 @@ bool FindConv2DWithBatchNorm(const RemapperContext& ctx, int node_index,
       IsMKLEnabled() && HasDataType(node_def, DT_HALF, "T");
 
   if (node_view->GetOp() != "FusedBatchNorm" &&
-      (!dtypeU_is_float || dtypeT_is_bf16 || dtypeT_is_mkl_fp16)) {
+      (!dtypeU_is_float || dtypeT_is_mkl_fp16)) {
     return false;
   }
 
@@ -3003,9 +3003,6 @@ void CopyConv2DAttributes(const NodeDef& conv2d, NodeDef* fused_conv2d,
 
   (*attr)["T"] = src_attr.at("T");
   int num_args = fused_conv2d->input_size() - 2;
-  for (int i = 0; i < num_args; ++i) {
-    (*attr)["TArgs"].mutable_list()->add_type(src_attr.at("T").type());
-  }
   (*attr)["num_args"].set_i(num_args);
   (*attr)["num_host_args"].set_i(0);
   (*attr)["strides"] = src_attr.at("strides");
@@ -3140,9 +3137,18 @@ void SetFusedOpAttributes(NodeDef* fused,
                           const absl::Span<const absl::string_view> fused_ops,
                           int num_args = 1, float epsilon = 0.0) {
   auto* attr = fused->mutable_attr();
+
+  if (fused->op() == kFusedConv2D) {
+    // FusedBatchNormV2/V3 have an extra type parameter U which is DT_FLOAT
+    DataType targs =
+        fused_ops.at(0) == "FusedBatchNorm" ? DT_FLOAT : attr->at("T").type();
+    for (int i = 0; i < num_args; ++i) {
+      (*attr)["TArgs"].mutable_list()->add_type(targs);
+    }
+  }
   SetAttrValue(fused_ops, &(*attr)["fused_ops"]);
-  SetAttrValue(num_args, &(*attr)["num_args"]);
   SetAttrValue(epsilon, &(*attr)["epsilon"]);  // required only for BatchNorm
+  SetAttrValue(num_args, &(*attr)["num_args"]);
 }
 
 Status AddFusedContractionNode(RemapperContext* ctx,
