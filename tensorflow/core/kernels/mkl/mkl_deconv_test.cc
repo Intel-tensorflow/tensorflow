@@ -79,11 +79,9 @@ TEST_F(DeConv2DTest, Small) {
   Tensor filter_float(DT_FLOAT, {3, 3, 2, 3});
   test::FillValues<float>(
       &filter_float,
-      {10, 40, 70, 20, 50, 80, 30, 60, 90, 10, 40, 70, 20, 50, 80, 30, 60,
-      90,
-       10, 40, 70, 20, 50, 80, 30, 60, 90, 10, 40, 70, 20, 50, 80, 30, 60,
-       90, 10, 40, 70, 20, 50, 80, 30, 60, 90, 10, 40, 70, 20, 50, 80, 30,
-       60, 90});
+      {10, 40, 70, 20, 50, 80, 30, 60, 90, 10, 40, 70, 20, 50, 80, 30, 60, 90,
+       10, 40, 70, 20, 50, 80, 30, 60, 90, 10, 40, 70, 20, 50, 80, 30, 60, 90,
+       10, 40, 70, 20, 50, 80, 30, 60, 90, 10, 40, 70, 20, 50, 80, 30, 60, 90});
   AddInputFromArray<int>(input_sizes.shape(), input_sizes.flat<int>());
   AddInputFromArray<float>(filter_float.shape(), filter_float.flat<float>());
   AddInputFromArray<float>(image_float.shape(), image_float.flat<float>());

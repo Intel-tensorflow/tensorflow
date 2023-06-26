@@ -151,7 +151,8 @@ class MklDeconvFwdPrimitive : public MklPrimitive {
     context_.dst_mem->set_data_handle(
         static_cast<Toutput*>(const_cast<Toutput*>(dst_data)), *fwd_stream);
     if (sp_data) {
-      context_.sp_mem->set_data_handle(static_cast<void*>(sp_data), *fwd_stream);
+      context_.sp_mem->set_data_handle(static_cast<void*>(sp_data),
+                                       *fwd_stream);
     }
 #else
     context_.src_mem->set_data_handle(
@@ -227,7 +228,7 @@ class MklDeconvFwdPrimitive : public MklPrimitive {
     std::shared_ptr<DeconvFwdPd> fwd_pd;
 #ifdef ENABLE_ONEDNN_V2
     std::shared_ptr<dnnl::deconvolution_forward::desc> fwd_desc;
-#endif // !ENABLE_ONEDNN_V2
+#endif  // !ENABLE_ONEDNN_V2
 
     // Deconv fwd primitive.
     std::shared_ptr<dnnl::primitive> deconv_fwd;
@@ -270,7 +271,8 @@ class MklDeconvFwdPrimitive : public MklPrimitive {
           bn_scale_md(nullptr),
           bn_mean_md(nullptr),
           bn_rsqrt_md(nullptr),
-          bn_offset_md(nullptr) {}
+          bn_offset_md(nullptr) {
+    }
   };
 
   void Setup(const MklDeconvFwdParams& deconvFwdParams) {
@@ -304,19 +306,23 @@ class MklDeconvFwdPrimitive : public MklPrimitive {
           deconvFwdParams.strides, deconvFwdParams.dilations,
           deconvFwdParams.padding_left, deconvFwdParams.padding_right));
     }
-#endif // !ENABLE_ONEDNN_V2
+#endif  // !ENABLE_ONEDNN_V2
 
     if (!deconvFwdParams.fuse_bn_dims.empty()) {
       const memory::format_tag fused_bn_arg_fmt = deconvFwdParams.fmt_tag;
 
-      context_.bn_scale_md.reset(new memory::desc(
-          {deconvFwdParams.fuse_bn_dims}, MklDnnType<float>(), fused_bn_arg_fmt));
-      context_.bn_mean_md.reset(new memory::desc(
-          {deconvFwdParams.fuse_bn_dims}, MklDnnType<float>(), fused_bn_arg_fmt));
-      context_.bn_rsqrt_md.reset(new memory::desc(
-          {deconvFwdParams.fuse_bn_dims}, MklDnnType<float>(), fused_bn_arg_fmt));
-      context_.bn_offset_md.reset(new memory::desc(
-          {deconvFwdParams.fuse_bn_dims}, MklDnnType<float>(), fused_bn_arg_fmt));
+      context_.bn_scale_md.reset(
+          new memory::desc({deconvFwdParams.fuse_bn_dims}, MklDnnType<float>(),
+                           fused_bn_arg_fmt));
+      context_.bn_mean_md.reset(new memory::desc({deconvFwdParams.fuse_bn_dims},
+                                                 MklDnnType<float>(),
+                                                 fused_bn_arg_fmt));
+      context_.bn_rsqrt_md.reset(
+          new memory::desc({deconvFwdParams.fuse_bn_dims}, MklDnnType<float>(),
+                           fused_bn_arg_fmt));
+      context_.bn_offset_md.reset(
+          new memory::desc({deconvFwdParams.fuse_bn_dims}, MklDnnType<float>(),
+                           fused_bn_arg_fmt));
     }
 
     // Check if there is any fusions as post-ops
@@ -676,7 +682,8 @@ class MklDeconvOp : public OpKernel {
 
       MklDeconvFwdParams deconvFwdParams(
           fwd_src_dims, fwd_filter_dims, fuse_biasadd_ ? bias_dims : NONE_DIMS,
-          src_dims, strides, dilations, padding_left, padding_right, fuse_bn_dims, fmt_tag);
+          src_dims, strides, dilations, padding_left, padding_right,
+          fuse_bn_dims, fmt_tag);
 
       this->ExtendDeconvFwdParams(context, deconvFwdParams);
 
@@ -747,9 +754,9 @@ class MklDeconvOp : public OpKernel {
         const Tensor& bias_tensor = context->input(kBiasIndex);
         Tbias* bias_data =
             this->GetBiasHandle(context, deconv_fwd_pd, bias_tensor);
-        deconv_fwd->Execute(src_data, filter_data, bias_data, dst_data,
-                            nullptr, nullptr, nullptr, nullptr,
-                            cpu_stream, scratch_pad.Get());
+        deconv_fwd->Execute(src_data, filter_data, bias_data, dst_data, nullptr,
+                            nullptr, nullptr, nullptr, cpu_stream,
+                            scratch_pad.Get());
       } else if (fuse_bn_) {
         const Tensor& bn_scale_tensor =
             MklGetInput(context, kInputIndex_BN_Scale);
@@ -773,12 +780,12 @@ class MklDeconvOp : public OpKernel {
         this->ComputeBNScale(context, epsilon_, kInputIndex_BN_Variance,
                              bn_rsqrt_data);
         deconv_fwd->Execute(src_data, filter_data, nullptr, dst_data,
-                          bn_scale_data, bn_mean_data, bn_offset_data,
-                          bn_rsqrt_data, cpu_stream, scratch_pad.Get());
+                            bn_scale_data, bn_mean_data, bn_offset_data,
+                            bn_rsqrt_data, cpu_stream, scratch_pad.Get());
       } else {
-        deconv_fwd->Execute(src_data, filter_data, nullptr, dst_data,
-                            nullptr, nullptr, nullptr, nullptr,
-                            cpu_stream, scratch_pad.Get());
+        deconv_fwd->Execute(src_data, filter_data, nullptr, dst_data, nullptr,
+                            nullptr, nullptr, nullptr, cpu_stream,
+                            scratch_pad.Get());
       }
     } catch (dnnl::error& e) {
       string error_msg = "Status: " + std::to_string(e.status) +
@@ -1004,13 +1011,13 @@ class MklDeconvOp : public OpKernel {
 template <typename Device, class Tinput, class Tfilter, class Tbias,
           class Toutput, bool is_depthwise>
 class MklFusedDeconvOp : public MklDeconvOp<Device, Tinput, /*Tfilter*/ Tfilter,
-                                             Tbias, Toutput, is_depthwise> {
+                                            Tbias, Toutput, is_depthwise> {
  public:
   virtual ~MklFusedDeconvOp() {}
 
   explicit MklFusedDeconvOp(OpKernelConstruction* context)
-    : MklDeconvOp<Device, Tinput, /*Tfilter*/ Tfilter, Tbias, Toutput,
-                  is_depthwise>(context) {
+      : MklDeconvOp<Device, Tinput, /*Tfilter*/ Tfilter, Tbias, Toutput,
+                    is_depthwise>(context) {
     std::vector<string> fused_ops;
     OP_REQUIRES_OK(context, context->GetAttr("fused_ops", &fused_ops));
 
@@ -1021,10 +1028,10 @@ class MklFusedDeconvOp : public MklDeconvOp<Device, Tinput, /*Tfilter*/ Tfilter,
                     "FusedDeconv2D must have at least one fused op."));
 
     if (fused_ops == std::vector<string>{"BiasAdd"}) {
-    this->fuse_biasadd_ = true;
-    OP_REQUIRES(context, num_args == 1,
-                errors::InvalidArgument(
-                    "FusedDeconv2D must have one extra argument: bias."));
+      this->fuse_biasadd_ = true;
+      OP_REQUIRES(context, num_args == 1,
+                  errors::InvalidArgument(
+                      "FusedDeconv2D must have one extra argument: bias."));
     } else if (fused_ops == std::vector<string>{"BiasAdd", "Relu"}) {
       this->fuse_biasadd_ = true;
       this->set_fuse_activation(true, dnnl::algorithm::eltwise_relu);
@@ -1069,25 +1076,25 @@ class MklFusedDeconvOp : public MklDeconvOp<Device, Tinput, /*Tfilter*/ Tfilter,
       this->set_fuse_bn(true, epsilon);
       this->set_fuse_activation(true, dnnl::algorithm::eltwise_relu);
     } else {
-    OP_REQUIRES(context, false,
-                errors::Unimplemented("Fusion is not implemented: [",
-                                      absl::StrJoin(fused_ops, ","), "]"));
+      OP_REQUIRES(context, false,
+                  errors::Unimplemented("Fusion is not implemented: [",
+                                        absl::StrJoin(fused_ops, ","), "]"));
     }
   }
 
   void ComputeBNScale(OpKernelContext* context, float epsilon,
                       int bn_variance_index, float* scale_buf_ptr) override {
-      const Tensor& bn_var_tensor = MklGetInput(context, bn_variance_index);
+    const Tensor& bn_var_tensor = MklGetInput(context, bn_variance_index);
 
-      Eigen::Tensor<float, 1, Eigen::RowMajor> bn_rsqrt =
-          (bn_var_tensor.flat<float>() + static_cast<float>(epsilon)).rsqrt();
-      float* bn_rsqrt_data = bn_rsqrt.data();
-      size_t num_elem = bn_var_tensor.shape().dim_size(0);
-      for (size_t i = 0; i < num_elem; i++) {
-        scale_buf_ptr[i] = bn_rsqrt_data[i];
-      }
-      return;
+    Eigen::Tensor<float, 1, Eigen::RowMajor> bn_rsqrt =
+        (bn_var_tensor.flat<float>() + static_cast<float>(epsilon)).rsqrt();
+    float* bn_rsqrt_data = bn_rsqrt.data();
+    size_t num_elem = bn_var_tensor.shape().dim_size(0);
+    for (size_t i = 0; i < num_elem; i++) {
+      scale_buf_ptr[i] = bn_rsqrt_data[i];
     }
+    return;
+  }
 };
 
 #define REGISTER_MKL_CPU_KERNELS(T)                                           \

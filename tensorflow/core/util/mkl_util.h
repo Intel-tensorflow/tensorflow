@@ -1099,7 +1099,7 @@ inline memory::format_tag MklTensorFormatToMklDnnDataFormat(
 // @return: oneDNN's memory format tag corresponding to TensorFormat.
 //          Fails with an error if invalid data format.
 inline memory::format_tag TFDataFormatToOneDnn2DDataFormat(
-                              TensorFormat format) {
+    TensorFormat format) {
   if (format == FORMAT_NHWC) return memory::format_tag::nhwc;
   if (format == FORMAT_NCHW) return memory::format_tag::nchw;
   return memory::format_tag::undef;
@@ -1111,7 +1111,7 @@ inline memory::format_tag TFDataFormatToOneDnn2DDataFormat(
 // @return: oneDNN's memory format tag corresponding to TensorFormat.
 //          Fails with an error if invalid data format.
 inline memory::format_tag TFDataFormatToOneDnn3DDataFormat(
-                              TensorFormat format) {
+    TensorFormat format) {
   if (format == FORMAT_NHWC) return memory::format_tag::ndhwc;
   if (format == FORMAT_NCHW) return memory::format_tag::ncdhw;
   return memory::format_tag::undef;
