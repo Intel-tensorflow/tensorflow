@@ -1093,6 +1093,30 @@ inline memory::format_tag MklTensorFormatToMklDnnDataFormat(
   return memory::format_tag::undef;
 }
 
+// Map TensorFormat to oneDNN 2D format tag
+//
+// @input: TensorFlow data format
+// @return: oneDNN's memory format tag corresponding to TensorFormat.
+//          Fails with an error if invalid data format.
+inline memory::format_tag TFDataFormatToOneDnn2DDataFormat(
+                              TensorFormat format) {
+  if (format == FORMAT_NHWC) return memory::format_tag::nhwc;
+  if (format == FORMAT_NCHW) return memory::format_tag::nchw;
+  return memory::format_tag::undef;
+}
+
+// Map TensorFormat to oneDNN 3D format tag
+//
+// @input: TensorFlow data format
+// @return: oneDNN's memory format tag corresponding to TensorFormat.
+//          Fails with an error if invalid data format.
+inline memory::format_tag TFDataFormatToOneDnn3DDataFormat(
+                              TensorFormat format) {
+  if (format == FORMAT_NHWC) return memory::format_tag::ndhwc;
+  if (format == FORMAT_NCHW) return memory::format_tag::ncdhw;
+  return memory::format_tag::undef;
+}
+
 /// Map TensorFlow data format into oneDNN 3D data format
 /// @input: TensorFlow data format
 /// @return: oneDNN 3D data format corresponding to TensorFlow data format;

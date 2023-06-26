@@ -269,6 +269,36 @@ tf_cc_test_mkl(
 )
 
 tf_mkl_kernel_library(
+    name = "mkl_deconv_op",
+    prefix = "mkl_deconv_op",
+    deps = [
+        "@com_google_absl//absl/strings",
+        "//tensorflow/core/kernels:conv_grad_shape_utils",
+        "//tensorflow/core/kernels:no_op",
+    ] + MKL_DEPS,
+)
+
+tf_cc_test_mkl(
+    name = "mkl_deconv_test",
+    size = "small",
+    srcs = ["mkl_deconv_test.cc"],
+    linkstatic = 1,  # Fixes dyld error on MacOS.
+    deps = [
+        ":mkl_conv_op",
+        ":mkl_deconv_op",
+        ":mkl_kernel_util",
+        "//tensorflow/core/kernels:quantization_utils",
+        "//tensorflow/core/kernels:quantized_ops",
+        "//tensorflow/core/kernels:bias_op",
+        "//tensorflow/core/kernels:conv_ops",
+        "//tensorflow/core/kernels:depthwise_conv_grad_op",
+        "//tensorflow/core/kernels:depthwise_conv_op",
+        "//tensorflow/core/kernels:relu_op",
+    ] + MKL_TEST_DEPS,
+)
+
+
+tf_mkl_kernel_library(
     name = "mkl_tfconv_op",
     prefix = "mkl_tfconv",
     deps = MKL_SHORT_DEPS,
