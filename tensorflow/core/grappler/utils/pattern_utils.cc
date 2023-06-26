@@ -17,11 +17,24 @@ limitations under the License.
 
 #include <algorithm>
 
+#include "absl/base/call_once.h"
 #include "absl/container/flat_hash_set.h"
+#include "tensorflow/core/util/env_var.h"
 
 namespace tensorflow {
 namespace grappler {
 namespace utils {
+
+bool PatternAllowCtrlDependencies() {
+  static bool allow_ctrl_dependencies = false;
+  static absl::once_flag once;
+  absl::call_once(once, [&] {
+    TF_CHECK_OK(ReadBoolFromEnvVar("TF_PATTERN_ALLOW_CTRL_DEPENDENCIES",
+                                   /*default_value*/ false,
+                                   &allow_ctrl_dependencies));
+  });
+  return allow_ctrl_dependencies;
+}
 
 const bool IsCommutativeOp(const string& op) {
   // TODO(intel-tf): Add more ops to this list if needed.
@@ -57,10 +70,11 @@ template <>
 bool SubGraphMatcher<MatchingDirection::kFollowInputs>::DoesOpTypePatternMatch(
     const OpTypePattern& pattern, MutableNodeView* node_view,
     NodeViewMatch* match) {
-  // Currently no control inputs and outputs are allowed.
-  if (node_view->NumControllingFanins() > 0 ||
-      node_view->NumControlledFanouts() > 0)
-    return false;
+  if (!PatternAllowCtrlDependencies()) {
+    if (node_view->NumControllingFanins() > 0 ||
+        node_view->NumControlledFanouts() > 0)
+      return false;
+  }
 
   bool op_type_matched = false;
   if (pattern.op == "*") {
