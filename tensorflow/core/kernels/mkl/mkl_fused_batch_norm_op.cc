@@ -1248,9 +1248,9 @@ class MklFusedBatchNormOp : public OpKernel {
   virtual void AllocateOutputTensor(OpKernelContext* context,
                                     TensorShape& tf_shape_dst,
                                     Tensor* temp_tensor, Tensor*& dst_tensor) {
-    OP_REQUIRES_OK(context,
-                   context->forward_input_or_allocate_output(
-                       {kSrcIndex_}, kDstIndex_, tf_shape_dst, &dst_tensor));
+    OP_REQUIRES_OK(context, context->forward_input_or_allocate_output(
+                                {static_cast<int>(kSrcIndex_)}, kDstIndex_,
+                                tf_shape_dst, &dst_tensor));
   }
 
   virtual void PostProcessOutput(OpKernelContext*, MklBatchNormFwdParams&,
@@ -1848,7 +1848,8 @@ class QuantizedFusedBatchNormOp
     offset_mean_scale_ = scale;
     if (!is_offset_const_ || IsOffsetCacheEmpty() || !is_valid_scale) {
       auto num_elem = offset.NumElements();
-      TF_CHECK_OK(context->allocate_temp(DataTypeToEnum<U>::value, {num_elem},
+      TF_CHECK_OK(context->allocate_temp(DataTypeToEnum<U>::value,
+                                         {static_cast<int64_t>(num_elem)},
                                          scaled_offset));
       U* scaled_offset_buf =
           static_cast<U*>(const_cast<U*>(scaled_offset->flat<U>().data()));
@@ -1874,7 +1875,8 @@ class QuantizedFusedBatchNormOp
       return;
     }
 
-    TF_CHECK_OK(context->allocate_temp(DataTypeToEnum<U>::value, {num_elem},
+    TF_CHECK_OK(context->allocate_temp(DataTypeToEnum<U>::value,
+                                       {static_cast<int64_t>(num_elem)},
                                        &cached_offset_tensor_));
     U* cached_offset_data = cached_offset_tensor_.flat<U>().data();
     size_t cached_offset_data_size = num_elem * sizeof(U);
@@ -1900,7 +1902,8 @@ class QuantizedFusedBatchNormOp
 
     if (!is_mean_const_ || IsMeanCacheEmpty() || !is_valid_scale) {
       auto num_elem = mean.NumElements();
-      TF_CHECK_OK(context->allocate_temp(DataTypeToEnum<U>::value, {num_elem},
+      TF_CHECK_OK(context->allocate_temp(DataTypeToEnum<U>::value,
+                                         {static_cast<int64_t>(num_elem)},
                                          scaled_mean));
       U* scaled_mean_buf =
           static_cast<U*>(const_cast<U*>(scaled_mean->flat<U>().data()));
@@ -1926,7 +1929,8 @@ class QuantizedFusedBatchNormOp
       return;
     }
 
-    TF_CHECK_OK(context->allocate_temp(DataTypeToEnum<U>::value, {num_elem},
+    TF_CHECK_OK(context->allocate_temp(DataTypeToEnum<U>::value,
+                                       {static_cast<int64_t>(num_elem)},
                                        &cached_mean_tensor_));
     U* cached_mean_data = cached_mean_tensor_.flat<U>().data();
     size_t cached_mean_data_size = num_elem * sizeof(U);
@@ -1948,8 +1952,8 @@ class QuantizedFusedBatchNormOp
     scales.push_back(1.0 / scale);
     auto scale_mem = memory({{1}, MklDnnType<float>(), memory::format_tag::x},
                             this->GetEngine(), scales.data());
-    auto input_md = memory::desc({1, this->GetDepthDim()}, MklDnnType<U>(),
-                                 memory::format_tag::nc);
+    auto input_md = memory::desc({1, static_cast<int64_t>(this->GetDepthDim())},
+                                 MklDnnType<U>(), memory::format_tag::nc);
     U* input_buf = static_cast<U*>(const_cast<U*>(tensor_in.flat<U>().data()));
     std::shared_ptr<dnnl::memory> input_mem(
         new memory(input_md, this->GetEngine(), input_buf));
@@ -1965,8 +1969,8 @@ class QuantizedFusedBatchNormOp
                             Tensor* temp_tensor, Tensor*& dst_tensor) override {
     if (out_dt_ == DT_QINT8) {
       OP_REQUIRES_OK(context, context->forward_input_or_allocate_output(
-                                  {this->kSrcIndex_}, this->kDstIndex_,
-                                  tf_shape_dst, &dst_tensor));
+                                  {static_cast<int>(this->kSrcIndex_)},
+                                  this->kDstIndex_, tf_shape_dst, &dst_tensor));
     } else {
       OP_REQUIRES_OK(
           context, context->allocate_temp(DT_QINT8, tf_shape_dst, temp_tensor));

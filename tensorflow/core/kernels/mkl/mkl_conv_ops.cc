@@ -2776,7 +2776,9 @@ class MklQuantizedConvOp
         scaled_bias_->set_data_handle(scaled_bias_buf_);
       }
       std::unique_ptr<memory> scale_mem(
-          new memory({{depth}, MklDnnType<float>(), memory::format_tag::x},
+          new memory({{static_cast<int64_t>(depth)},
+                      MklDnnType<float>(),
+                      memory::format_tag::x},
                      this->cpu_engine_, scales_.data()));
       auto reorder_desc =
           ReorderPd(this->cpu_engine_, input_bias_->get_desc(),
