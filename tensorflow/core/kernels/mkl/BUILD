@@ -272,6 +272,7 @@ tf_mkl_kernel_library(
     name = "mkl_deconv_op",
     prefix = "mkl_deconv_op",
     deps = [
+        ":mkl_kernel_util",
         "@com_google_absl//absl/strings",
         "//tensorflow/core/kernels:conv_grad_shape_utils",
         "//tensorflow/core/kernels:no_op",
