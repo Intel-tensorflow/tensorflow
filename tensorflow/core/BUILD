@@ -631,6 +631,7 @@ cc_library(
     ] + if_mkl([
         "//tensorflow/core/kernels/mkl:mkl_concat_op",
         "//tensorflow/core/kernels/mkl:mkl_dequantize_op",
+        "//tensorflow/core/kernels/mkl:mkl_deconv_op",
         "//tensorflow/core/kernels/mkl:mkl_conv_op",
         "//tensorflow/core/kernels/mkl:mkl_fused_batch_norm_op",
         "//tensorflow/core/kernels/mkl:mkl_fused_instance_norm_op",
