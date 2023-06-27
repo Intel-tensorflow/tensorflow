@@ -55,12 +55,7 @@ using dnnl::stream;
 
 namespace tensorflow {
 
-#ifdef ENABLE_ONEDNN_V2
-#define APPEND_ELTWISE(scale, alg, alpha, beta) \
-  append_eltwise(scale, alg, alpha, beta)
-#else
 #define APPEND_ELTWISE(scale, alg, alpha, beta) append_eltwise(alg, alpha, beta)
-#endif  // !ENABLE_ONEDNN_V2
 
 using DeconvFwdPd = dnnl::deconvolution_forward::primitive_desc;
 
@@ -129,32 +124,6 @@ class MklDeconvFwdPrimitive : public MklPrimitive {
                const float* bn_scale_data, const float* bn_mean_data,
                const float* bn_offset_data, const float* bn_rsqrt_data,
                std::shared_ptr<stream> fwd_stream, void* sp_data = nullptr) {
-#if !defined(ENABLE_ONEDNN_OPENMP) && defined(ENABLE_ONEDNN_V2)
-    context_.src_mem->set_data_handle(
-        static_cast<Tinput*>(const_cast<Tinput*>(src_data)), *fwd_stream);
-    context_.filter_mem->set_data_handle(
-        static_cast<Tfilter*>(const_cast<Tfilter*>(filter_data)), *fwd_stream);
-    if (bias_data != nullptr) {
-      context_.bias_mem->set_data_handle(
-          static_cast<void*>(const_cast<Tbias*>(bias_data)), *fwd_stream);
-    }
-    if (bn_scale_data != nullptr) {
-      context_.bn_scale_mem->set_data_handle(
-          static_cast<void*>(const_cast<float*>(bn_scale_data)), *fwd_stream);
-      context_.bn_mean_mem->set_data_handle(
-          static_cast<void*>(const_cast<float*>(bn_mean_data)), *fwd_stream);
-      context_.bn_rsqrt_mem->set_data_handle(
-          static_cast<void*>(const_cast<float*>(bn_rsqrt_data)), *fwd_stream);
-      context_.bn_offset_mem->set_data_handle(
-          static_cast<void*>(const_cast<float*>(bn_offset_data)), *fwd_stream);
-    }
-    context_.dst_mem->set_data_handle(
-        static_cast<Toutput*>(const_cast<Toutput*>(dst_data)), *fwd_stream);
-    if (sp_data) {
-      context_.sp_mem->set_data_handle(static_cast<void*>(sp_data),
-                                       *fwd_stream);
-    }
-#else
     context_.src_mem->set_data_handle(
         static_cast<Tinput*>(const_cast<Tinput*>(src_data)));
     context_.filter_mem->set_data_handle(
@@ -176,7 +145,6 @@ class MklDeconvFwdPrimitive : public MklPrimitive {
     context_.dst_mem->set_data_handle(
         static_cast<Toutput*>(const_cast<Toutput*>(dst_data)));
     if (sp_data) context_.sp_mem->set_data_handle(static_cast<void*>(sp_data));
-#endif  // !ENABLE_ONEDNN_OPENMP && !ENABLE_ONEDNN_V2
 
     // if (sp_data) {
     //   context_.sp_mem->set_data_handle(static_cast<void*>(sp_data),
@@ -226,9 +194,6 @@ class MklDeconvFwdPrimitive : public MklPrimitive {
 
     // Deconv forward primitive descriptor and descriptor.
     std::shared_ptr<DeconvFwdPd> fwd_pd;
-#ifdef ENABLE_ONEDNN_V2
-    std::shared_ptr<dnnl::deconvolution_forward::desc> fwd_desc;
-#endif  // !ENABLE_ONEDNN_V2
 
     // Deconv fwd primitive.
     std::shared_ptr<dnnl::primitive> deconv_fwd;
@@ -260,9 +225,6 @@ class MklDeconvFwdPrimitive : public MklPrimitive {
           bn_rsqrt_mem(nullptr),
           bn_offset_mem(nullptr),
           fwd_pd(nullptr),
-#ifdef ENABLE_ONEDNN_V2
-          fwd_desc(nullptr),
-#endif  // !ENABLE_ONEDNN_V2
           deconv_fwd(nullptr),
           src_md(nullptr),
           filter_md(nullptr),
@@ -290,23 +252,6 @@ class MklDeconvFwdPrimitive : public MklPrimitive {
                                               MklDnnType<Tbias>(),
                                               memory::format_tag::any));
     }
-
-    // Create descriptors for forward deconv op.
-#ifdef ENABLE_ONEDNN_V2
-    if (!deconvFwdParams.bias_dims.empty()) {
-      context_.fwd_desc.reset(new deconvolution_forward::desc(
-          prop_kind::forward_inference, dnnl::algorithm::deconvolution_direct,
-          *context_.src_md, *context_.filter_md, *context_.bias_md,
-          *context_.dst_md, deconvFwdParams.strides, deconvFwdParams.dilations,
-          deconvFwdParams.padding_left, deconvFwdParams.padding_right));
-    } else {
-      context_.fwd_desc.reset(new deconvolution_forward::desc(
-          prop_kind::forward_inference, dnnl::algorithm::deconvolution_direct,
-          *context_.src_md, *context_.filter_md, *context_.dst_md,
-          deconvFwdParams.strides, deconvFwdParams.dilations,
-          deconvFwdParams.padding_left, deconvFwdParams.padding_right));
-    }
-#endif  // !ENABLE_ONEDNN_V2
 
     if (!deconvFwdParams.fuse_bn_dims.empty()) {
       const memory::format_tag fused_bn_arg_fmt = deconvFwdParams.fmt_tag;
@@ -341,19 +286,11 @@ class MklDeconvFwdPrimitive : public MklPrimitive {
           post_ops.APPEND_ELTWISE(op_scale, post_op_param.alg, op_alpha,
                                   op_beta);
         } else if (post_op_param.name == "output_scale") {
-#ifdef ENABLE_ONEDNN_V2
-          if (post_op_param.param.size() == 1) {
-            post_ops_attr.set_output_scales(0, post_op_param.param);
-          } else {
-            post_ops_attr.set_output_scales(2, post_op_param.param);
-          }
-#else
           // TODO(intel-tf): Enable this for int8 when using oneDNN v3.x
           assert(post_op_param.param.size() == 1);
           post_ops_attr.set_scales_mask(DNNL_ARG_SRC, 0);
           post_ops_attr.set_scales_mask(DNNL_ARG_WEIGHTS, 0);
           post_ops_attr.set_scales_mask(DNNL_ARG_DST, 0);
-#endif  // !ENABLE_ONEDNN_V2
         } else if (post_op_param.name == "fuse_bn") {
           post_ops.append_binary(dnnl::algorithm::binary_sub,
                                  *context_.bn_mean_md);
@@ -372,10 +309,6 @@ class MklDeconvFwdPrimitive : public MklPrimitive {
       post_ops_attr.set_post_ops(post_ops);
     }
 
-#ifdef ENABLE_ONEDNN_V2
-    context_.fwd_pd.reset(
-        new DeconvFwdPd(*context_.fwd_desc, post_ops_attr, cpu_engine_));
-#else
     if (!deconvFwdParams.bias_dims.empty()) {
       context_.fwd_pd.reset(new DeconvFwdPd(
           cpu_engine_, prop_kind::forward_inference,
@@ -392,7 +325,6 @@ class MklDeconvFwdPrimitive : public MklPrimitive {
           deconvFwdParams.dilations, deconvFwdParams.padding_left,
           deconvFwdParams.padding_right, post_ops_attr));
     }
-#endif  // !ENABLE_ONEDNN_V2
 
     // Create memory using dummy data.
     context_.src_mem.reset(
@@ -1097,22 +1029,22 @@ class MklFusedDeconvOp : public MklDeconvOp<Device, Tinput, /*Tfilter*/ Tfilter,
   }
 };
 
-#define REGISTER_MKL_CPU_KERNELS(T)                                           \
-  REGISTER_KERNEL_BUILDER(Name("_MklNativeConv2DBackpropInput")               \
-                              .Device(DEVICE_CPU)                             \
-                              .TypeConstraint<T>("T")                         \
-                              .Label(mkl_op_registry::kMklNameChangeOpLabel), \
-                          MklDeconvOp<CPUDevice, T, T, T, T, false>);         \
-  REGISTER_KERNEL_BUILDER(Name("_MklNativeConv3DBackpropInputV2")             \
-                              .Device(DEVICE_CPU)                             \
-                              .TypeConstraint<T>("T")                         \
-                              .Label(mkl_op_registry::kMklNameChangeOpLabel), \
-                          MklDeconvOp<CPUDevice, T, T, T, T, false>);
+// #define REGISTER_MKL_CPU_KERNELS(T)                                           \
+//   REGISTER_KERNEL_BUILDER(Name("_MklNativeConv2DBackpropInput")               \
+//                               .Device(DEVICE_CPU)                             \
+//                               .TypeConstraint<T>("T")                         \
+//                               .Label(mkl_op_registry::kMklNameChangeOpLabel), \
+//                           MklDeconvOp<CPUDevice, T, T, T, T, false>);         \
+//   REGISTER_KERNEL_BUILDER(Name("_MklNativeConv3DBackpropInputV2")             \
+//                               .Device(DEVICE_CPU)                             \
+//                               .TypeConstraint<T>("T")                         \
+//                               .Label(mkl_op_registry::kMklNameChangeOpLabel), \
+//                           MklDeconvOp<CPUDevice, T, T, T, T, false>);
 
-TF_CALL_float(REGISTER_MKL_CPU_KERNELS);
-TF_CALL_bfloat16(REGISTER_MKL_CPU_KERNELS);
+// TF_CALL_float(REGISTER_MKL_CPU_KERNELS);
+// TF_CALL_bfloat16(REGISTER_MKL_CPU_KERNELS);
 
-#undef REGISTER_MKL_CPU_KERNELS
+// #undef REGISTER_MKL_CPU_KERNELS
 
 }  // namespace tensorflow
 #endif  // INTEL_MKL
