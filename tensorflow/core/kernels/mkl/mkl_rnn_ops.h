@@ -214,11 +214,12 @@ struct GRUWeights {
     if (!w_reordered || !inference) {
       if (w_cache_tensor.flat<float>().size() != dst_desc.get_size()) {
         TensorShape tf_shape = MklDnnDimsToTFShape(dst_desc.get_dims());
+        long dsize = dst_desc.get_size();
         OP_REQUIRES_OK(
             ctx, ctx->allocate_temp(
                      DataTypeToEnum<T>::v(),
                      // tf_shape, //TensorShape({dst_desc.get_size()}),
-                     TensorShape({dst_desc.get_size()}), &w_cache_tensor));
+                     TensorShape({dsize}), &w_cache_tensor));
       }
       ReorderAndCache(ctx, w_tensor, w_cache_tensor, src_desc, dst_desc,
                       cpu_engine_, inference);
@@ -232,11 +233,12 @@ struct GRUWeights {
     if (!w_i_reordered || !inference) {
       if (w_icache_tensor.flat<float>().size() != dst_desc.get_size()) {
         TensorShape tf_shape = MklDnnDimsToTFShape(dst_desc.get_dims());
+        long dsize = dst_desc.get_size();
         OP_REQUIRES_OK(
             ctx, ctx->allocate_temp(
                      DataTypeToEnum<T>::v(),
                      // tf_shape, //TensorShape({dst_desc.get_size()}),
-                     TensorShape({dst_desc.get_size()}), &w_icache_tensor));
+                     TensorShape({dsize}), &w_icache_tensor));
       }
       ReorderAndCache(ctx, w_i_tensor, w_icache_tensor, src_desc, dst_desc,
                       cpu_engine_, inference);
