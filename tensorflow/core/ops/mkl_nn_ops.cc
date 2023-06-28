@@ -263,6 +263,10 @@ REGISTER_OP("_MklNativeFusedConv2D")
     .Attr("epsilon: float = 0.0001")
     // Attributes for the LeakyRelu ----------------------------------------- //
     .Attr("leakyrelu_alpha: float = 0.2")
+    // Attributes for the Depthwise post op
+    // ----------------------------------------- //
+    .Attr("fuseddepthwise_filtersize: int = 3")
+    .Attr("fuseddepthwise_stride: int = 1")    
     // ---------------------------------------------------------------------- //
     .SetShapeFn(shape_inference::Conv2DShapeWithExplicitPadding)
     .Doc(R"doc(

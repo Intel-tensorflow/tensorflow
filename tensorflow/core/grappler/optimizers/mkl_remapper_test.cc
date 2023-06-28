@@ -1519,6 +1519,114 @@ TEST_F(MklFuseInstanceNormTest, FuseMklInstanceNormWithActivation4D_FP32_NCHW) {
   FuseMklInstanceNorm4D<DT_FLOAT>("NCHW", true);
 }
 
+class MklRemapperConv1x1BiasAddSwishDepthwiseBiasAddSwishTest
+    : public GrapplerTest {
+ protected:
+  template <DataType DTYPE>
+  void RunTest() {
+    using ::tensorflow::ops::Placeholder;
+
+    tensorflow::Scope s = tensorflow::Scope::NewRootScope();
+
+    auto input_shape = Placeholder::Shape({1, 32, 32, 16});
+    auto filter_shape = Placeholder::Shape({1, 1, 16, 96});
+    auto bias_shape = Placeholder::Shape({96});
+
+    auto input = Placeholder(s.WithOpName("input"), DTYPE, input_shape);
+    auto filter = Placeholder(s.WithOpName("filter"), DTYPE, filter_shape);
+    auto bias = Placeholder(s.WithOpName("bias"), DTYPE, bias_shape);
+
+    std::vector<int> strides = {1, 1, 1, 1};
+    auto conv =
+        ops::Conv2D(s.WithOpName("conv2d"), input, filter, strides, "SAME");
+    auto bias_add = ops::BiasAdd(s.WithOpName("bias_add"), conv, bias);
+    auto sigmoid = ops::Sigmoid(s.WithOpName("sigmoid"), bias_add);
+    auto mul = ops::Mul(s.WithOpName("mul"), bias_add, sigmoid);
+
+    auto filterdepthwise_shape = Placeholder::Shape({3, 3, 96, 1});
+    auto biasdepthwise_shape = Placeholder::Shape({96});
+    auto filterdepthwise = Placeholder(s.WithOpName("filter_depthwise"), DTYPE,
+                                       filterdepthwise_shape);
+    auto biasdepthwise =
+        Placeholder(s.WithOpName("bias_depthwise"), DTYPE, biasdepthwise_shape);
+
+    std::vector<int> dw_strides = {1, 2, 2, 1};
+
+    auto depthwiseconv =
+        ops::DepthwiseConv2dNative(s.WithOpName("depthwise_conv"), mul,
+                                   filterdepthwise, dw_strides, "SAME");
+    auto bias_adddepthwise = ops::BiasAdd(s.WithOpName("bias_add_depthwise"),
+                                          depthwiseconv, biasdepthwise);
+
+    ops::Identity fetch = [&]() -> ops::Identity {
+      auto activate = s.WithOpName("activation");
+      auto fetch = s.WithOpName("fetch");
+      auto sigmoid_depthwise =
+          ops::Sigmoid(s.WithOpName("sigmoid_depthwise"), bias_adddepthwise);
+      return ops::Identity(
+          fetch, ops::Mul(activate, bias_adddepthwise, sigmoid_depthwise));
+    }();
+
+    auto input_t = GenerateTensorWithSetRandom<DTYPE>({1, 32, 32, 16});
+    auto filter_t = GenerateTensorWithSetRandom<DTYPE>({1, 1, 16, 96});
+    auto bias_t = GenerateTensorWithSetRandom<DTYPE>({96});
+    auto filterdepthwise_t = GenerateTensorWithSetRandom<DTYPE>({3, 3, 96, 1});
+    auto biasdepthwise_t = GenerateTensorWithSetRandom<DTYPE>({96});
+
+    GrapplerItem item;
+    item.fetch = {"fetch"};
+    item.feed = {{"input", input_t},
+                 {"filter", filter_t},
+                 {"bias", bias_t},
+                 {"filter_depthwise", filterdepthwise_t},
+                 {"bias_depthwise", biasdepthwise_t}};
+    TF_CHECK_OK(s.ToGraphDef(&item.graph));
+
+    for (int i = 0; i < item.graph.node_size(); ++i) {
+      item.graph.mutable_node(i)->set_device("/device:CPU:0");
+    }
+
+    Remapper optimizer(RewriterConfig::AGGRESSIVE);
+    GraphDef output;
+    TF_CHECK_OK(optimizer.Optimize(nullptr, item, &output));
+
+    int found = 0;
+    for (const NodeDef& node : output.node()) {
+      if (node.name() != "activation") continue;
+
+      EXPECT_EQ(node.op(), "_FusedConv2D");
+      ASSERT_EQ(node.input_size(), 5);
+      EXPECT_EQ(node.input(0), "input");
+      EXPECT_EQ(node.input(1), "filter");
+      EXPECT_EQ(node.attr().at("num_args").i(), 3);
+      EXPECT_EQ(node.input(2), "bias");
+      EXPECT_EQ(node.input(3), "filter_depthwise");
+      EXPECT_EQ(node.input(4), "bias_depthwise");
+      const auto fused_ops = node.attr().at("fused_ops").list().s();
+      ASSERT_EQ(fused_ops.size(), 5);
+      EXPECT_EQ(fused_ops[0], "BiasAdd");
+      EXPECT_EQ(fused_ops[1], "_MklSwish");
+      found++;
+    }
+    EXPECT_EQ(found, 1);
+    auto tensors = EvaluateNodes(output, item.fetch, item.feed);
+    ASSERT_EQ(tensors.size(), 1);
+    auto tensors_expected = EvaluateNodes(item.graph, item.fetch, item.feed);
+    ASSERT_EQ(tensors_expected.size(), 1);
+
+    float atol = 1e-6, rtol = 1e-4;
+    if (DTYPE == DT_BFLOAT16) {
+      atol = 1e-2;
+      rtol = 1e-2;
+    }
+    test::ExpectClose(tensors[0], tensors_expected[0], atol, rtol);
+  }
+};
+
+TEST_F(MklRemapperConv1x1BiasAddSwishDepthwiseBiasAddSwishTest, F32) {
+  RunTest<DT_FLOAT>();
+}
+
 }  // namespace grappler
 }  // namespace tensorflow
 #endif  // INTEL_MKL && ENABLE_MKL

@@ -2260,6 +2260,141 @@ bool FindMklLayerNorm(RemapperContext* ctx, int node_index,
   return found_op_type_match;
 }
 
+bool Findconv1x1Depthwise(RemapperContext* ctx, int node_index,
+                          std::map<string, int>* matched_nodes_map,
+                          std::set<int>* remove_node_indices,
+                          string* activation) {
+  // fusion is enabled only with oneDNN library.
+  if (!IsMKLEnabled()) return false;
+  using utils::MatchingDirection;
+  using utils::NodeStatus;
+  // clang-format off
+
+  utils::OpTypePattern conv2d1x1depthwiseswishwithbiasAdd_pattern{ "Mul", "depthwise_activation", NodeStatus::kReplace,
+    {
+      { "Sigmoid", "sigmoid", NodeStatus::kRemove,
+        {
+          { "BiasAdd", "depthwisebiasadd", NodeStatus::kRemove,
+            {
+              { "DepthwiseConv2dNative", "depthwiseconv2d", NodeStatus::kRemove,
+                {
+                  {"Mul", "conv1x1mul", NodeStatus::kRemove,
+                    {
+                      {"Sigmoid", "conv1x1sigmoid", NodeStatus::kRemove,
+                          {
+                            { "BiasAdd", "conv1x1biasadd", NodeStatus::kRemove,
+                              {
+                                { "Conv2D", "conv2d1x1", NodeStatus::kRemove},
+                                { "*", "conv2d1x1biasadd_const", NodeStatus::kRemain}
+                              }
+                            }
+                          }
+                      },
+                      { "BiasAdd", "conv1x1biasadd", NodeStatus::kRemove}
+                    }
+                  },
+                  {"*", "depthwisefilter", NodeStatus::kRemain}
+                }
+              },
+              { "*", "depthwisebiasadd_const", NodeStatus::kRemain}              
+            }
+          }
+        }
+      },
+      { "BiasAdd", "depthwisebiasadd", NodeStatus::kRemove}
+    }
+  };
+
+  // clang-format on
+  // check for data types
+  auto* mul_node_def = ctx->graph_view.GetNode(node_index)->node();
+
+  if (!HasDataType(mul_node_def, DT_FLOAT) &&
+      !HasDataType(mul_node_def, DT_BFLOAT16))
+    return false;
+  if (!NodeIsOnCpu(mul_node_def)) return false;
+  // Check first if the swish pattern is present
+  bool found_op_type_match = false;
+  utils::SubGraphMatcher<MatchingDirection::kFollowInputs> graph_matcher(
+      &(ctx->graph_view));
+  matched_nodes_map->clear();
+  remove_node_indices->clear();
+  // TODO
+  // Add batchnorm pattern as well
+  found_op_type_match =
+      graph_matcher.GetMatchedNodes(conv2d1x1depthwiseswishwithbiasAdd_pattern,
+                                    {}, ctx->graph_view.GetNode(node_index),
+                                    matched_nodes_map, remove_node_indices);
+  // Check if the Conv2d to be fused is CPU compatible
+  // TODO: shape inference is expensive, make use of shape inf run at begining
+  // of remapper
+  if (found_op_type_match) {
+    *activation = "_MklSwish";
+    if (!ctx->inferred_graph_properties) {
+      Status s = ctx->graph_properties.InferStatically(
+          /*assume_valid_feeds=*/true,
+          /*aggressive_shape_inference=*/false,
+          /*include_input_tensor_values=*/true,
+          /*include_output_tensor_values=*/false);
+      if (!s.ok()) return false;
+      ctx->inferred_graph_properties = true;
+    }
+
+    NodeDef* conv2d1x1_node =
+        ctx->graph_view.GetNode(matched_nodes_map->at("conv2d1x1"))->node();
+
+    if (!IsCpuCompatibleConv2D(*ctx, conv2d1x1_node)) return false;
+
+    // Check if conv filter is 1x1
+    const auto& input_props =
+        ctx->graph_properties.GetInputProperties(conv2d1x1_node->name());
+
+    if (input_props.size() < 2) return false;
+    const TensorShapeProto& filter_shape = input_props[1].shape();
+    bool is_1x1_conv = Rank(filter_shape) == 4 &&          //
+                       IsKnown(filter_shape.dim(0)) &&     //
+                       IsKnown(filter_shape.dim(1)) &&     //
+                       filter_shape.dim(0).size() == 1 &&  //
+                       filter_shape.dim(1).size() == 1;
+    if (!is_1x1_conv) return false;
+
+    NodeDef* depthwiseconv2d_node =
+        ctx->graph_view.GetNode(matched_nodes_map->at("depthwiseconv2d"))
+            ->node();
+    if (!IsCpuCompatibleDepthwiseConv2dNative(depthwiseconv2d_node))
+      return false;
+
+    const auto& depthwise_input_props =
+        ctx->graph_properties.GetInputProperties(depthwiseconv2d_node->name());
+    if (depthwise_input_props.size() < 2) return false;
+    // oneDNN only supports squared dpethwise fusion
+    // TODO: Add support for filter shapes other than 3x3
+    const TensorShapeProto& dw_filter_shape = depthwise_input_props[1].shape();
+    bool is_valid_dw_conv =
+        Rank(dw_filter_shape) == 4 &&       //
+        IsKnown(dw_filter_shape.dim(0)) &&  //
+        IsKnown(dw_filter_shape.dim(1)) &&
+        (dw_filter_shape.dim(0).size() == dw_filter_shape.dim(1).size()) &&
+        ((dw_filter_shape.dim(0).size() == 3 &&
+          dw_filter_shape.dim(1).size() == 3));
+    if (!is_valid_dw_conv) return false;
+
+    // Only symmetric strides are supported
+    // Current supported strides are 1 and 2
+    std::vector<int32> strides;
+    TF_CHECK_OK(GetNodeAttr(*depthwiseconv2d_node, "strides", &strides));
+    if ((strides[1] != strides[2]) || ((strides[1] != 1 && strides[1] != 2))) {
+      return false;
+    }
+
+    string padding_type;
+    TF_CHECK_OK(GetNodeAttr(*depthwiseconv2d_node, "padding", &padding_type));
+    if (padding_type != "SAME") return false;
+  }
+
+  return found_op_type_match;
+}
+
 bool FindFusedBatchNorm(const RemapperContext& ctx, int node_index,
                         FusedBatchNorm* matched) {
   const auto* node_view = ctx.graph_view.GetNode(node_index);
@@ -3745,6 +3880,68 @@ Status ReplaceMulMaximumWithLeakyRelu(
   TF_RETURN_IF_ERROR(mutation->Apply());
 
   (*invalidated_nodes)[matched_nodes_map.at("max_to_leakyrelu")] = true;
+
+  for (const auto& node_index : remove_node_indices) {
+    (*nodes_to_delete)[node_index] = true;
+  }
+
+  return OkStatus();
+}
+
+Status FuseConv2D1X1Depthwise(RemapperContext* ctx,
+                              const std::map<string, int>& matched_nodes_map,
+                              const std::set<int>& remove_node_indices,
+                              std::vector<bool>* invalidated_nodes,
+                              std::vector<bool>* nodes_to_delete,
+                              string& activation) {
+  const GraphDef* graph = ctx->graph_view.graph();
+  const NodeDef* act_node =
+      ctx->graph_view.GetNode(matched_nodes_map.at("depthwise_activation"))
+          ->node();
+  const NodeDef* conv2d1x1 =
+      ctx->graph_view.GetNode(matched_nodes_map.at("conv2d1x1"))->node();
+
+  NodeDef fused_op;
+  fused_op.set_name(act_node->name());
+  fused_op.set_op(kFusedConv2D);
+  fused_op.set_device(act_node->device());
+  fused_op.add_input(conv2d1x1->input(0));
+  fused_op.add_input(conv2d1x1->input(1));
+  // TODO: Fusing only for biasAdd pattern
+
+  auto* bias_conv1x1_node =
+      ctx->graph_view.GetNode(matched_nodes_map.at("conv1x1biasadd"))->node();
+  fused_op.add_input(bias_conv1x1_node->input(1));
+  auto* depthwiseconv_node =
+      ctx->graph_view.GetNode(matched_nodes_map.at("depthwiseconv2d"))->node();
+  fused_op.add_input(depthwiseconv_node->input(1));
+  auto* depthwiseconv_biasAdd_node =
+      ctx->graph_view.GetNode(matched_nodes_map.at("depthwisebiasadd"))->node();
+  fused_op.add_input(depthwiseconv_biasAdd_node->input(1));
+  CopyConv2DAttributes(*conv2d1x1, &fused_op);
+
+  const auto& depthwise_input_props =
+      ctx->graph_properties.GetInputProperties(depthwiseconv_node->name());
+  auto dw_filter_size = depthwise_input_props[1].shape().dim(0).size();
+
+  std::vector<int32> strides;
+  TF_CHECK_OK(GetNodeAttr(*depthwiseconv_node, "strides", &strides));
+
+  auto* attr = fused_op.mutable_attr();
+  SetAttrValue(dw_filter_size, &(*attr)["fuseddepthwise_filtersize"]);
+  SetAttrValue(strides[1], &(*attr)["fuseddepthwise_stride"]);
+  SetFusedOpAttributes(
+      &fused_op,
+      {"BiasAdd", activation, "DepthwiseConv2dNative", "BiasAdd", activation},
+      3);
+
+  utils::Mutation* mutation = ctx->graph_view.GetMutationBuilder();
+  Status status;
+  mutation->AddNode(std::move(fused_op), &status);
+  TF_RETURN_IF_ERROR(status);
+  TF_RETURN_IF_ERROR(mutation->Apply());
+
+  (*invalidated_nodes)[matched_nodes_map.at("depthwise_activation")] = true;
 
   for (const auto& node_index : remove_node_indices) {
     (*nodes_to_delete)[node_index] = true;
@@ -5324,6 +5521,20 @@ Status Remapper::Optimize(Cluster* cluster, const GrapplerItem& item,
         TF_RETURN_IF_ERROR(ReplaceMulMaximumWithLeakyRelu(
             &ctx, mulmax_matched_nodes_map, mulmax_remove_node_indices,
             &invalidated_nodes, &nodes_to_delete, alpha));
+        continue;
+      }
+
+      // Remap conv1x1 + depthwise pattern, fuse them into the FusedConv2d.
+      std::map<string, int> conv1x1depthwise_matched_nodes_map;
+      std::set<int> conv1x1depthwise_remove_node_indices;
+      string separable_conv_activation;
+      if (Findconv1x1Depthwise(&ctx, i, &conv1x1depthwise_matched_nodes_map,
+                               &conv1x1depthwise_remove_node_indices,
+                               &separable_conv_activation)) {
+        TF_RETURN_IF_ERROR(FuseConv2D1X1Depthwise(
+            &ctx, conv1x1depthwise_matched_nodes_map,
+            conv1x1depthwise_remove_node_indices, &invalidated_nodes,
+            &nodes_to_delete, separable_conv_activation));
         continue;
       }
 

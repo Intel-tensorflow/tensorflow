@@ -1818,6 +1818,9 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
             fused_ops == std::vector<string>{"BiasAdd", "LeakyRelu"} ||
             fused_ops == std::vector<string>{"BiasAdd", "Add", "LeakyRelu"} ||
             fused_ops == std::vector<string>{"BiasAdd", "_MklSwish"} ||
+            fused_ops == std::vector<string>{"BiasAdd", "_MklSwish",
+                                             "DepthwiseConv2dNative", "BiasAdd",
+                                             "_MklSwish"} ||                        
             fused_ops == std::vector<string>{"FusedBatchNorm"} ||
             fused_ops == std::vector<string>{"FusedBatchNorm", "_MklSwish"} ||
             fused_ops == std::vector<string>{"FusedBatchNorm", "Relu"} ||
