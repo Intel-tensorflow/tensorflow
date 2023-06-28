@@ -2663,6 +2663,18 @@ Status FusedQuantizedConvShape(InferenceContext* c, int num_dims) {
   return OkStatus();
 }
 
+Status FusedQuantizedDeconvShape(InferenceContext* c) {
+  std::vector<string> fused_ops;
+  TF_RETURN_IF_ERROR(c->GetAttr("fused_ops", &fused_ops));
+  bool fused_requantize = std::find(fused_ops.begin(), fused_ops.end(),
+                                    "Requantize") != fused_ops.end();
+  if (fused_requantize) {
+    c->set_output(1, c->Scalar());
+    c->set_output(2, c->Scalar());
+  }
+  return OkStatus();
+}
+
 Status FusedQuantizedConv2DShape(InferenceContext* c) {
   TF_RETURN_IF_ERROR(shape_inference::Conv2DShapeImpl(c, true));
   TF_RETURN_IF_ERROR(FusedQuantizedConvShape(c, 4));
@@ -2678,6 +2690,21 @@ Status FusedQuantizedDepthwiseConv2D(InferenceContext* c) {
 Status FusedQuantizedConv3DShape(InferenceContext* c) {
   TF_RETURN_IF_ERROR(shape_inference::Conv3DShapeImpl(c, true));
   TF_RETURN_IF_ERROR(FusedQuantizedConvShape(c, 5));
+  return OkStatus();
+}
+
+Status FusedQuantizedDeconv2DShape(InferenceContext* c) {
+  TF_RETURN_IF_ERROR(shape_inference::Conv2DBackpropInputShape(c));
+  TF_RETURN_IF_ERROR(FusedQuantizedDeconvShape(c));
+  return OkStatus();
+}
+
+Status FusedQuantizedDeconv3DShape(InferenceContext* c) {
+  ShapeHandle s;
+  TF_RETURN_IF_ERROR(c->MakeShapeFromShapeTensor(0, &s));
+  TF_RETURN_IF_ERROR(c->WithRank(s, 5, &s));
+  c->set_output(0, s);
+  TF_RETURN_IF_ERROR(FusedQuantizedDeconvShape(c));
   return OkStatus();
 }
 

@@ -271,6 +271,10 @@ tf_cc_test_mkl(
 
 tf_mkl_kernel_library(
     name = "mkl_deconv_op",
+    hdrs = [
+        "mkl_kernel_util.h",
+        "mkl_quantized_conv_ops.h",
+    ],
     prefix = "mkl_deconv_op",
     deps = [
         "@com_google_absl//absl/strings",
