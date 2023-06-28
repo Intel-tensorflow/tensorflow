@@ -497,6 +497,40 @@ tf_cc_test_mkl(
     ] + MKL_TEST_DEPS,
 )
 
+tf_mkl_kernel_library(
+     name = "mkl_gru_ops",
+     srcs = [
+         "mkl_gru_ops.cc",
+     ],
+     hdrs = [
+         "mkl_rnn_ops.h",
+         "mkl_ops_utils.h",
+     ],
+     deps = MKL_DEPS
+)
+tf_cc_test_mkl(
+     name = "mkl_rnn_ops_test",
+     size = "small",
+     srcs = ["mkl_rnn_ops_test.cc"],
+     linkstatic = 1,  # Fixes dyld error on MacOS.
+     deps = [
+         ":mkl_gru_ops",
+         ":mkl_matmul_op",
+         "//tensorflow/cc:cc_ops_internal",
+         "//tensorflow/core:direct_session",
+         "//tensorflow/core/graph:mkl_graph_util",
+         "//tensorflow/core/kernels:matmul_op",
+         "//tensorflow/core/kernels:bias_op",
+         "//tensorflow/core:array_ops_op_lib",
+         "//tensorflow/core:math_ops_op_lib",
+         "//tensorflow/core:nn_ops_op_lib",
+         "//tensorflow/core/kernels:quantization_utils",
+         "//tensorflow/core/kernels:quantized_ops",
+         "//tensorflow/core:tensorflow",
+     ] + MKL_TEST_DEPS,
+)
+
+
 tf_cc_test_mkl(
     name = "mkl_fused_ops_test",
     size = "small",

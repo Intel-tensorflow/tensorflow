@@ -4764,6 +4764,426 @@ Status AddDilatedConvNode(RemapperContext* ctx,
 
   return OkStatus();
 }
+
+/*-------------------------------------------------------------------
+   GenPatternFusion :used as base class for GRU/AUGRU fusions
+---------------------------------------------------------------------*/
+namespace gru_scope {
+using OpPattern = utils::OpTypePattern;
+using NodeStatus = utils::NodeStatus;
+using InputPair = std::vector<std::pair<std::string, int>>;
+const NodeStatus Remove = NodeStatus::kRemove;
+const NodeStatus Remain = NodeStatus::kRemain;
+const NodeStatus Replace = NodeStatus::kReplace;
+
+struct GenPatternFusion {
+  std::map<string, int> matched_nodes;
+  std::set<int> remove_indices;
+  std::vector<OpPattern> NodesWithType;
+  RemapperContext* ctx;
+  OpPattern* rootNode;
+
+  struct ParentChild {
+    std::pair<OpPattern*, OpPattern*> pc_pair;
+    int maxfanout;
+    ParentChild(OpPattern* p1, OpPattern* p2, int mfanout)
+        : pc_pair(p1, p2), maxfanout(mfanout) {}
+  };
+  std::vector<ParentChild> ParentChildValidationPairs;
+
+ public:
+  GenPatternFusion() {}
+  GenPatternFusion(RemapperContext* _ctx) : ctx(_ctx), rootNode(nullptr) {}
+  /*-----------------------------------------------------------------
+    Get node with name from matched nodes
+  -------------------------------------------------------------------*/
+  inline NodeDef* GetNodeDef(string& name) {
+    auto node_id = matched_nodes.at(name);  // AddV2
+    NodeDef* node = ctx->graph_view.GetNode(node_id)->node();
+    return node;
+  }
+  /*-------------------------------------------------------------------
+    generic fn to check for valid types of a node
+  ---------------------------------------------------------------------*/
+  inline bool validType(NodeDef* fused_node,
+                        std::vector<DataType>& valid_types) {
+    DataType node_type = GetDataTypeFromAttr(*fused_node, "T");
+    bool valid_type = (std::find(valid_types.begin(), valid_types.end(),
+                                 node_type) != valid_types.end());
+    return valid_type;
+  }
+
+  /*-------------------------------------------------------------------
+    generic fn to find a pattern
+  ---------------------------------------------------------------------*/
+  inline bool FindPattern(const OpPattern& pattern, int node_index) {
+    const utils::MatchingDirection FollowInputs =
+        utils::MatchingDirection::kFollowInputs;
+    using GraphMatcher = typename utils::SubGraphMatcher<FollowInputs>;
+    GraphMatcher graph_matcher(&ctx->graph_view);
+    auto* node = ctx->graph_view.GetNode(node_index);
+    bool found_match = graph_matcher.GetMatchedNodes(
+        pattern, ctx->nodes_to_preserve, node, &matched_nodes, &remove_indices);
+    return found_match;
+  }
+  inline bool FindPattern(int node_index) {
+    if (rootNode) {
+      return FindPattern(*rootNode, node_index);
+    }
+    return false;
+  }
+  /*-------------------------------------------------------------------
+    Validate Type of all nodes with types
+  ---------------------------------------------------------------------*/
+  inline bool ValidTypesForMatchedNodes(std::vector<DataType>& valid_types) {
+    bool valid = true;
+    for (int i = 0; i < NodesWithType.size(); ++i) {
+      NodeDef* nd = GetNodeDef(NodesWithType[i].label);
+      if (!validType(nd, valid_types)) {
+        valid = false;
+        DataType node_type = GetDataTypeFromAttr(*nd, "T");
+        break;
+      }
+    }
+    return valid;
+  }
+  /*-------------------------------------------------------------------
+    generic Check between two nodes
+  ---------------------------------------------------------------------*/
+  // Returns true if at most one fanout reads output at port 0 (output used
+  // once).
+  inline bool HasNFanoutAtPort0(const utils::MutableNodeView& node_view,
+                                int N) {
+    return node_view.GetRegularFanout(0).size() == N;
+  }
+  inline bool validForFusion(int parent_index, int child_index, int maxfout) {
+    const auto* parent = ctx->graph_view.GetNode(parent_index);
+    const auto* child = ctx->graph_view.GetNode(child_index);
+    return (HasNFanoutAtPort0(*child, maxfout) &&
+            HaveSameDataType(parent->node(), child->node()) &&
+            !IsInPreserveSet(*ctx, child->node()));
+  }
+  /*-------------------------------------------------------------------
+    generic Check between two nodes
+  ---------------------------------------------------------------------*/
+  inline bool validateParentChildPairs() {
+    bool valid = true;
+    for (int i = 0; i < ParentChildValidationPairs.size(); ++i) {
+      auto pc = ParentChildValidationPairs[i];
+      auto parent = pc.pc_pair.first;
+      auto child = pc.pc_pair.second;
+      int pindex = matched_nodes.at(parent->label);
+      int cindex = matched_nodes.at(child->label);
+      valid &= validForFusion(pindex, cindex, pc.maxfanout);
+    }
+    return valid;
+  }
+  /*-------------------------------------------------------------------
+    AddFusionInputs from mathed nodes
+  ---------------------------------------------------------------------*/
+  inline void AddFusionInputs(NodeDef& fused_op, InputPair& labels_inps) {
+    const GraphDef* graph = ctx->graph_view.graph();
+    int i = 0;
+    for (const auto& label_inp : labels_inps) {
+      int index = matched_nodes.at(label_inp.first);
+      const NodeDef& inp_node = graph->node(index);
+      fused_op.add_input(inp_node.input(label_inp.second));
+    }
+  }
+  /*-------------------------------------------------------------------
+    AddNodesToDelete
+  ---------------------------------------------------------------------*/
+  inline void AddNodesToDelete(std::vector<bool>* nodes_to_delete) {
+    for (const auto& node_idx : remove_indices) {
+      auto* node = ctx->graph_view.GetNode(node_idx);
+      (*nodes_to_delete)[node_idx] = true;
+    }
+  }
+  /*-------------------------------------------------------------------
+    Copy all attributes from orig_node to fused_node
+  ---------------------------------------------------------------------*/
+  inline void copyFusionAttrs(NodeDef& fused_op, const NodeDef& orig_node,
+                              std::vector<std::string>& attr_names) {
+    auto* attr = fused_op.mutable_attr();
+    auto& src_attr = orig_node.attr();
+    for (int i = 0; i < attr_names.size(); ++i) {
+      (*attr)[attr_names[i]] = src_attr.at(attr_names[i]);
+    }
+  }
+  /*-------------------------------------------------------------------
+
+  ---------------------------------------------------------------------*/
+  inline Status AddOp(std::string& replace_node_label,
+                      std::string fused_op_name, InputPair& inp_labels,
+                      std::vector<std::string>& attrs,
+                      std::vector<bool>* invalidated_nodes,
+                      std::vector<bool>* nodes_to_delete, NodeDef& fused_op) {
+    int op_index = matched_nodes.at(replace_node_label);
+    if (!op_index) {
+      return Status(absl::StatusCode::kInvalidArgument,
+                    "Node with specified label not found");
+    }
+    const GraphDef* graph = ctx->graph_view.graph();
+    const NodeDef output = graph->node(op_index);
+
+    fused_op.set_name(output.name());
+    fused_op.set_device(output.device());
+    AddFusionInputs(fused_op, inp_labels);
+    fused_op.set_op(fused_op_name);
+    copyFusionAttrs(fused_op, output, attrs);
+
+    utils::Mutation* mutation = ctx->graph_view.GetMutationBuilder();
+    Status status;
+    mutation->AddNode(std::move(fused_op), &status);
+    TF_RETURN_IF_ERROR(status);
+    TF_RETURN_IF_ERROR(mutation->Apply());
+
+    (*invalidated_nodes)[op_index] = true;
+    AddNodesToDelete(nodes_to_delete);
+
+    // fused_node = &fused_op;
+    return OkStatus();
+  }
+};
+/*-------------------------------------------------------------------
+   Genric MatmuBiasAd Activation Pattern for matching
+---------------------------------------------------------------------*/
+struct MatMulBiasAct {
+  OpPattern mm_param, Matmul, bias_data, bias, act;
+
+ public:
+  MatMulBiasAct() = default;
+  MatMulBiasAct(const MatMulBiasAct&) = default;
+  MatMulBiasAct(std::string name, std::string activation, OpPattern& inp,
+                NodeStatus last_node_status) {
+    create(name, activation, inp, last_node_status);
+  }
+  void create(std::string name, std::string activation, OpPattern& inp,
+              NodeStatus last_node_status) {
+    mm_param = {"*", name + "/mm_param", Remain};
+    Matmul = {"MatMul", name + "/mm", Remove, {inp, mm_param}};
+    bias_data = {"*", name + "/bias_data", Remain};
+    bias = {"BiasAdd", name + "/bias", Remove, {Matmul, bias_data}};
+    act = {activation, name + "/activation", last_node_status, {bias}};
+  }
+};
+/*-------------------------------------------------------------------*/
+struct MatmulBiasActivation : public GenPatternFusion {
+  MatMulBiasAct Mmba;
+
+ public:
+  MatmulBiasActivation(RemapperContext* _ctx, std::string name,
+                       std::string activation, OpPattern& inp,
+                       NodeStatus last_node_status)
+      : GenPatternFusion(_ctx), Mmba(name, activation, inp, last_node_status) {
+    NodesWithType = {Mmba.Matmul, Mmba.bias, Mmba.act};
+    ParentChild p1(&Mmba.Matmul, &Mmba.bias, 1), p2(&Mmba.bias, &Mmba.act, 1);
+    ParentChildValidationPairs = {p1, p2};
+  }
+};
+/*-------------------------------------------------------------------
+   GRUCell PatternMatcher:
+---------------------------------------------------------------------*/
+class GRUCellPatternMatcher : public GenPatternFusion {
+  OpPattern Switch, Axis, Ident, TArrV3, Concat;
+  OpPattern Const, Split, Mul, Concat1;
+  OpPattern Const1, Sub1, Mul2, Mul1, AddV2, Split_d;
+  OpPattern Attn, Attn_in, Split_x, Sub_att, ConstA;
+  OpPattern GRU_pattern;
+  // MatmulBiasActivation ru_gates, c_gate;
+  MatMulBiasAct ru_gates, c_gate;
+  InputPair inp_labels;
+
+ public:
+  /*-------------------------------------------------
+  // GRUCell & AUGRU Cell Supported. Do not know the
+  // right pattern for vanilla GRU Cell
+  ----------------------------------------------------*/
+  GRUCellPatternMatcher(RemapperContext* _ctx, bool augru = false)
+      : GenPatternFusion(_ctx) {
+    // Switch = {"Switch", "switch", Remain};
+    // Ident  = {"Identity", "identity", Remain};
+    // TArrV3 = {"TensorArrayReadV3", "tarV3", Remain};
+    Axis = {"*", "concat_axis", Remain};
+    Ident = {"*", "identity", Remain};
+    TArrV3 = {"*", "tarV3", Remain};
+    Concat = {"ConcatV2", "concat_gru", Remove, {TArrV3, Ident, Axis}};
+
+    ru_gates.create("ru_gates", "Sigmoid", Concat, Remove);
+
+    Const = {"*", "Const_split", Remain};
+    Split = {"Split", "ru_split", Remove, {Const, ru_gates.act}};
+    Mul = {"Mul", "lbrmul", Remove, {Split, Ident}};
+    Concat1 = {"ConcatV2", "concat1", Remove, {TArrV3, Mul, Axis}};
+
+    c_gate.create("c_gate", "Tanh", Concat1, Remove);
+
+    Split_x = {"Split", "ru_split", Remove, {Const, ru_gates.act}};
+
+    if (augru) {
+      Attn_in = {"*", "attn_in", Remain};
+      ConstA = {"*", "attn_1.0", Remain};
+      Sub_att = {"Sub", "attn_sub", Remove, {ConstA, Attn_in}};
+      Attn = {"Mul", "au_atten", Remove, {Split_x, Sub_att}};
+      Split_d = Attn;
+    } else {
+      Split_d = Split_x;
+    }
+
+    Const1 = {"*", "Const_1", Remain, {}};
+    Sub1 = {"Sub", "ns_sub1", Remove, {Const1, Split_d}};
+    Mul2 = {"Mul", "ns_mul2", Remove, {Split_d, Ident}};
+    Mul1 = {"Mul", "ns_mul1", Remove, {Sub1, c_gate.act}};
+    AddV2 = {"AddV2", "output", Replace, {Mul2, Mul1}};
+
+    GRU_pattern = AddV2;
+    NodesWithType = {AddV2, Mul1, Mul2, Sub1, Concat1, Mul, Split, Concat};
+    rootNode = &GRU_pattern;
+    ParentChild pc1(&AddV2, &Mul1, 1), pc2(&AddV2, &Mul2, 1);
+    ParentChildValidationPairs = {pc1, pc2};
+    // VLOG(2)<<"---------------------------------\n"
+    //         <<GRU_pattern.DebugString()
+    //         <<"\n-------------------------\n";
+    if (!augru) {
+      inp_labels = {
+          {Concat.label, 0},           // x
+          {Concat.label, 1},           // h_prev
+          {ru_gates.Matmul.label, 1},  // w_ru
+          {c_gate.Matmul.label, 1},    // w_c
+          {ru_gates.bias.label, 1},    // b_ru
+          {c_gate.bias.label, 1},      // b_c
+      };
+    } else {
+      inp_labels = {
+          {Concat.label, 0},           // x
+          {Concat.label, 1},           // h_prev
+          {Sub_att.label, 1},          // au_x
+          {ru_gates.Matmul.label, 1},  // w_ru
+          {c_gate.Matmul.label, 1},    // w_c
+          {ru_gates.bias.label, 1},    // b_ru
+          {c_gate.bias.label, 1},      // b_c
+      };
+    }
+  }
+  /*---------------------------------------------------------
+  ----------------------------------------------------------*/
+  inline bool CheckValidGraph(std::vector<DataType>& valid_dtypes) {
+    bool rval =
+        ValidTypesForMatchedNodes(valid_dtypes) && validateParentChildPairs();
+    return rval;
+  }
+
+  /*--------------------------------------------------------
+  ----------------------------------------------------------*/
+  inline bool FindValidatePattern(int index,
+                                  std::vector<DataType>& valid_dtypes) {
+    bool found =
+        FindPattern(GRU_pattern, index) && CheckValidGraph(valid_dtypes);
+    return found;
+  }
+  /*--------------------------------------------------------
+  ----------------------------------------------------------*/
+  inline Status ChangeFanoutPort(std::string& out_node, int new_pid) {
+    // GRUBlock cell output is the last index
+    int node_index = matched_nodes.at(out_node);
+    const auto* output = ctx->graph_view.GetNode(node_index);
+    const auto& fouts = output->GetRegularFanout(0);
+    if (fouts.size() == 0) {
+      return OkStatus();
+    }
+    // auto node_fanouts = ctx->graph_view.GetFanouts(gru_node, true);
+    // const auto& gru_h_prev= gru_fanouts[0];
+    utils::Mutation* mutation = ctx->graph_view.GetMutationBuilder();
+    std::string out_name = output->node()->name();
+    for (int i = 0; i < fouts.size(); ++i) {
+      auto fnode = fouts[i].node_view();
+      int m_indx = -1;
+      utils::MutableNodeView* cur_fin = nullptr;
+      for (int j = 0; j < fnode->NumRegularFanins(); ++j) {
+        auto fin = fnode->GetRegularFanin(j).node_view();
+        if (fin == output) {
+          m_indx = j;
+          cur_fin = fin;
+          break;
+        }
+      }
+      DCHECK((m_indx >= 0));
+      mutation->AddOrUpdateRegularFanin(fnode, m_indx, {out_name, new_pid});
+    }
+    Status status;
+    TF_RETURN_IF_ERROR(status);
+    TF_RETURN_IF_ERROR(mutation->Apply());
+    return OkStatus();
+  }
+  /*--------------------------------------------------------
+  ----------------------------------------------------------*/
+  inline Status AddGRUCellOp(std::vector<bool>* invalidated_nodes,
+                             std::vector<bool>* nodes_to_delete,
+                             std::string Opname, bool lbr = false,
+                             bool train = false) {
+    using namespace std;
+    vector<string> attrs = {"T"};
+    NodeDef gru_op;
+
+    // Changing input port names for fanouts of AddV2
+    // Only the fourth output is h_new in defn :(
+    Status status = ChangeFanoutPort(AddV2.label, 3);
+    TF_RETURN_IF_ERROR(status);
+    status = AddOp(AddV2.label, Opname, inp_labels, attrs, invalidated_nodes,
+                   nodes_to_delete, gru_op);
+    TF_RETURN_IF_ERROR(status);
+    VLOG(1) << Opname << " OP Fusion Added!" << std::endl;
+    auto* attr = gru_op.mutable_attr();
+    SetAttrValue(lbr, &(*attr)["lbr"]);
+    SetAttrValue(train, &(*attr)["training"]);
+    return status;
+  }
+  inline bool MatchAddOp(int root_node_index,
+                         std::vector<bool>* invalidated_nodes,
+                         std::vector<bool>* nodes_to_delete,
+                         std::string OpName) {
+    Status status;
+    std::vector<DataType> valid_dtypes = {DT_FLOAT, DT_BFLOAT16};
+    bool rval = false;
+    bool matched = FindValidatePattern(root_node_index, valid_dtypes);
+    if (matched) {
+      status = AddGRUCellOp(invalidated_nodes, nodes_to_delete, OpName);
+      rval = (status == OkStatus());
+      VLOG(1) << OpName << " fused :" << std::endl;
+      return rval;
+    }
+    return false;
+  }
+  /*--------------------------------------------------------
+   * Static fn to call from Optimizer
+  ----------------------------------------------------------*/
+  static bool CheckFusePattern(RemapperContext& _ctx, int root_node_index,
+                               std::vector<bool>* invalidated_nodes,
+                               std::vector<bool>* nodes_to_delete) {
+    auto* node = _ctx.graph_view.GetNode(root_node_index);
+    bool rval = false;
+    std::string root_op_node("AddV2");
+    if (node->node()->op() == root_op_node) {
+      VLOG(2) << "GRU/AUGRU Pattern Node :" << node->node()->name() << ":"
+              << node->node()->op() << std::endl;
+      GRUCellPatternMatcher Gru(&_ctx);
+      GRUCellPatternMatcher Augru(&_ctx, true);
+      rval = Gru.MatchAddOp(root_node_index, invalidated_nodes, nodes_to_delete,
+                            "GRUBlockCell") ||
+             Augru.MatchAddOp(root_node_index, invalidated_nodes,
+                              nodes_to_delete, "AUGRUBlockCell");
+    }
+    return rval;
+  }
+};
+bool CheckFuseGRUPatterns(RemapperContext& _ctx, int root_node_index,
+                          std::vector<bool>* invalidated_nodes,
+                          std::vector<bool>* nodes_to_delete) {
+  return GRUCellPatternMatcher::CheckFusePattern(
+      _ctx, root_node_index, invalidated_nodes, nodes_to_delete);
+}
+}  // namespace gru_scope
+
 }  // namespace
 
 Status Remapper::Optimize(Cluster* cluster, const GrapplerItem& item,
@@ -4816,6 +5236,13 @@ Status Remapper::Optimize(Cluster* cluster, const GrapplerItem& item,
     std::set<int> remove_node_indices;
 
     if (IsMKLEnabled()) {
+      // First Check for complex patterns like GRU & AUGRU
+      // Since it contain other patterns like Matmul+Bias+Activation
+      if (gru_scope::CheckFuseGRUPatterns(ctx, i, &invalidated_nodes,
+                                          &nodes_to_delete)) {
+        continue;
+      }
+
       // Remap Conv2D+BiasAdd+Add+relu into the _FusedConv2D.
       // or Remap Conv3D+BiasAdd+Add+relu into _FusedConv3D
       if (FindContractionWithBiasAndAddActivation(

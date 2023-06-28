@@ -2090,6 +2090,67 @@ operation.
 expected to invoke these operators.
 )doc");
 
+REGISTER_OP("MklGRU")
+    .Attr("T: {float, bfloat16}")
+    .Attr("lbr: bool = false")
+    .Attr("training: bool = false")
+    .Attr("TimeDim: int >= 1")
+    .Attr("x_format: string = 'TNC'")
+    .Input("x: T")
+    .Input("h_prev: T")
+    .Input("w_ru: T")
+    .Input("w_c: T")
+    .Input("b_ru: T")
+    .Input("b_c: T")
+    .Output("h_out: T")
+    .Output("h_n: T")  // output of last gru cell
+    .SetShapeFn([](InferenceContext* c) {
+      ShapeHandle x, h_prev;
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 3, &x));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 2, &h_prev));
+
+      DimensionHandle time_dim = c->Dim(x, 0);
+      DimensionHandle batch_size = c->Dim(x, 1);
+      DimensionHandle cell_size = c->Dim(x, 2);
+      std::vector<DimensionHandle> dims1 = {time_dim, batch_size, cell_size};
+      std::vector<DimensionHandle> dims2 = {batch_size, cell_size};
+      c->set_output(0, c->MakeShape(dims1));
+      c->set_output(1, c->MakeShape(dims2));
+      return OkStatus();
+    });
+
+REGISTER_OP("MklAUGRU")
+    .Attr("T: {float, bfloat16}")
+    .Attr("lbr: bool = false")
+    .Attr("training: bool = false")
+    .Attr("TimeDim: int >= 1")
+    .Attr("x_format: string = 'TNC'")
+    .Attr("au_format: string = 'TNC'")
+    .Input("x: T")
+    .Input("h_prev: T")
+    .Input("au_x: T")
+    .Input("w_ru: T")
+    .Input("w_c: T")
+    .Input("b_ru: T")
+    .Input("b_c: T")
+    .Output("h_out: T")
+    .Output("h_n: T")  // output of last gru cell
+    .SetShapeFn([](InferenceContext* c) {
+      ShapeHandle x, h_prev, attn;
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 3, &x));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 2, &h_prev));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(2), 3, &attn));
+
+      DimensionHandle time_dim = c->Dim(x, 0);
+      DimensionHandle batch_size = c->Dim(x, 1);
+      DimensionHandle cell_size = c->Dim(x, 2);
+      std::vector<DimensionHandle> dims1 = {time_dim, batch_size, cell_size};
+      std::vector<DimensionHandle> dims2 = {batch_size, cell_size};
+      c->set_output(0, c->MakeShape(dims1));
+      c->set_output(1, c->MakeShape(dims2));
+      return OkStatus();
+    });
+
 }  // namespace tensorflow
 
 #endif  // INTEL_MKL
