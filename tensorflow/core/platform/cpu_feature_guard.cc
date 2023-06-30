@@ -105,6 +105,12 @@ class CPUFeatureGuard {
 #ifdef __AVXVNNI__
     CheckFeatureOrDie(CPUFeature::AVX_VNNI, "AVX_VNNI");
 #endif  // __AVXVNNI__
+#ifdef __AVXVNNIINT8__
+    CheckFeatureOrDie(CPUFeature::AVX_VNNI_INT8, "AVX_VNNI_INT8");
+#endif  // __AVXVNNIINT8__
+#ifdef __AVXNECONVERT__
+    CheckFeatureOrDie(CPUFeature::AVX_NE_CONVERT, "AVX_NE_CONVERT");
+#endif  // __AVXNECONVERT__
 #ifdef __AMXTILE__
     CheckFeatureOrDie(CPUFeature::AMX_TILE, "AMX_TILE");
 #endif  // __AMXTILE__
@@ -173,6 +179,14 @@ void InfoAboutUnusedCPUFeatures() {
     CheckIfFeatureUnused(CPUFeature::AVX_VNNI, "AVX_VNNI",
                          missing_instructions);
 #endif  // __AVXVNNI__
+#ifndef __AVXVNNIINT8__
+    CheckIfFeatureUnused(CPUFeature::AVX_VNNI_INT8, "AVX_VNNI_INT8",
+                         missing_instructions);
+#endif  // __AVXVNNIINT8__
+#ifndef __AVXNECONVERT__
+    CheckIfFeatureUnused(CPUFeature::AVX_NE_CONVERT, "AVX_NE_CONVERT",
+                         missing_instructions);
+#endif  // __AVXNECONVERT__
 #ifndef __AMXTILE__
     CheckIfFeatureUnused(CPUFeature::AMX_TILE, "AMX_TILE",
                          missing_instructions);

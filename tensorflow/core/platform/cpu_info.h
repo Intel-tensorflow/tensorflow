@@ -48,6 +48,8 @@ using tsl::port::AVX512PF;
 using tsl::port::AVX512VBMI;
 using tsl::port::AVX512VL;
 using tsl::port::AVX_VNNI;
+using tsl::port::AVX_VNNI_INT8;
+using tsl::port::AVX_NE_CONVERT;
 using tsl::port::BMI1;
 using tsl::port::BMI2;
 using tsl::port::CMOV;

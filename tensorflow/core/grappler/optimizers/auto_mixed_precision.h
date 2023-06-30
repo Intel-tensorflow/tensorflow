@@ -32,9 +32,10 @@ static bool HasCpuFP16Support() {
 #ifdef INTEL_MKL
 #ifdef __linux__
   // Check if the CPU supports FP16
-  if (port::TestCPUFeature(port::CPUFeature::AVX512BW) &&
+  if ((port::TestCPUFeature(port::CPUFeature::AVX512BW) &&
       port::TestCPUFeature(port::CPUFeature::AVX512_FP16) ||
-      (port::TestCPUFeature(port::CPUFeature::AMX_FP16))) {
+      port::TestCPUFeature(port::CPUFeature::AMX_FP16)) ||
+      port::TestCPUFeature(port::CPUFeature::AVX_NE_CONVERT)) {
     VLOG(2) << "CPU supports FP16\n";
     return true;
   } else {
