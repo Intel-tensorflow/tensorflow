@@ -243,6 +243,9 @@ class GRUForwardOp : public OpKernel{
  public:
   explicit GRUForwardOp(OpKernelConstruction *ctx) : OpKernel(ctx) {
     gru_inf = new MklGenericOp<Device, GRUInfContext>(ctx);
+    if (std::is_same<T, float>::value) {
+      (void)SetFPMathMode();
+    }
   }
   ~GRUForwardOp() {
     if (gru_inf) delete gru_inf;

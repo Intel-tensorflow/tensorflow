@@ -215,6 +215,8 @@ struct GRUWeights {
       if (w_cache_tensor.flat<float>().size() != dst_desc.get_size()) {
         TensorShape tf_shape = MklDnnDimsToTFShape(dst_desc.get_dims());
         long dsize = dst_desc.get_size();
+	//Make sure that unsigned long to long is not creating -ve nos
+	DCHECK(dsize >= 0);
         OP_REQUIRES_OK(
             ctx, ctx->allocate_temp(
                      DataTypeToEnum<T>::v(),
@@ -234,6 +236,8 @@ struct GRUWeights {
       if (w_icache_tensor.flat<float>().size() != dst_desc.get_size()) {
         TensorShape tf_shape = MklDnnDimsToTFShape(dst_desc.get_dims());
         long dsize = dst_desc.get_size();
+	//Make sure that unsigned long to long is not creating -ve nos
+	DCHECK(dsize >= 0);
         OP_REQUIRES_OK(
             ctx, ctx->allocate_temp(
                      DataTypeToEnum<T>::v(),
