@@ -58,7 +58,7 @@ struct MklPoolingParams {
                    memory::dims filter_dims, memory::dims strides,
                    memory::dims padding_left, memory::dims padding_right,
                    dnnl::algorithm alg_kind, dnnl::prop_kind prop_kind,
-                   memory::format_tag src_format, memory::desc src_md,
+                   memory::format_tag src_format, memory::desc& src_md,
                    bool native_format)
       : src_dims(src_dims),
         dst_dims(dst_dims),
@@ -113,7 +113,6 @@ class MklPoolingFwdPrimitive : public MklPrimitive {
     memory::format_tag ws_fmt;
 
     // Workspace shape.
-    memory::dims ws_dims;
     memory::data_type ws_dt;
     size_t ws_size;
 
@@ -141,6 +140,8 @@ class MklPoolingFwdPrimitive : public MklPrimitive {
         : src_fmt(memory::format_tag::any),
           dst_fmt(memory::format_tag::any),
           ws_fmt(memory::format_tag::any),
+          ws_dt(memory::data_type::u8),
+          ws_size(0),
           ws_mem(nullptr),
           src_mem(nullptr),
           dst_mem(nullptr),
@@ -259,7 +260,6 @@ class MklPoolingBwdPrimitive : public MklPrimitive {
     memory::format_tag ws_fmt;
 
     // Workspace attribute.
-    dnnl::memory::dims ws_dims;
     dnnl::memory::data_type ws_dt;
 
     // oneDNN memory.
@@ -288,6 +288,7 @@ class MklPoolingBwdPrimitive : public MklPrimitive {
         : diff_src_fmt(memory::format_tag::any),
           diff_dst_fmt(memory::format_tag::any),
           ws_fmt(memory::format_tag::any),
+          ws_dt(memory::data_type::u8),
           ws_mem(nullptr),
           diff_src_mem(nullptr),
           diff_dst_mem(nullptr),

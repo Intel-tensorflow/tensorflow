@@ -1121,8 +1121,8 @@ class MklConvOp : public OpKernel {
     params.dtypes.append(typeid(Tbias).name());
     params.dtypes.append(typeid(Toutput).name());
 
-    bool is_quantized_input = std::is_same<Tinput, quint8>::value ||
-                              std::is_same<Tinput, qint8>::value;
+    const bool is_quantized_input = std::is_same<Tinput, quint8>::value ||
+                                    std::is_same<Tinput, qint8>::value;
     if (!is_quantized_input) {
       // Add fusions as post ops
       // NOTE: Fusion of BiasAdd is handled directly inside MklConvOp by
@@ -1191,8 +1191,8 @@ class MklConvOp : public OpKernel {
       output_tf_shape = output_mkl_shape->GetTfShape();
     }
 
-    bool is_quantized_input = std::is_same<Tinput, quint8>::value ||
-                              std::is_same<Tinput, qint8>::value;
+    const bool is_quantized_input = std::is_same<Tinput, quint8>::value ||
+                                    std::is_same<Tinput, qint8>::value;
     if (fuse_add_ && !is_quantized_input) {
       const Tensor& add_tensor = MklGetInput(context, input_index_add_);
       MklDnnShape add_mkl_shape;

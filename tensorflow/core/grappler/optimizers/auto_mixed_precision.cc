@@ -2238,7 +2238,7 @@ Status AutoMixedPrecisionImpl::ChangeTypeAttrsAndAddCasts(
 
       // If the fanouts require a different data type from the output of the
       // current node, insert a Cast op.
-      for (auto output_port : output_ports) {
+      for (auto& output_port : output_ports) {
         VLOG(2) << "Cast to required data type at fanout of node "
                 << output_port.node->name() << ":" << output_port.port_id;
         TF_RETURN_IF_ERROR(InsertCastNodeAtFanout(allow_set, src_is_allow,
