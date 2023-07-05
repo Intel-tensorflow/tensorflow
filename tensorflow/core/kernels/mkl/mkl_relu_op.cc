@@ -50,7 +50,7 @@ class MklEltwiseFwdParams {
   float alpha;
   float beta;
 
-  MklEltwiseFwdParams(memory::dims src_dims, memory::desc src_md,
+  MklEltwiseFwdParams(memory::dims src_dims, memory::desc& src_md,
                       algorithm alg_kind, float alpha, float beta)
       : src_dims(src_dims),
         src_md(src_md),

@@ -55,7 +55,7 @@ struct MklBatchNormFwdParams {
 
   MklBatchNormFwdParams(const memory::dims& src_dims, int depth, float eps,
                         bool training, TensorFormat data_format,
-                        memory::desc src_md,
+                        memory::desc& src_md,
                         FusedBNActivationMode activation_mode)
       : src_dims(src_dims),
         depth(depth),
@@ -400,8 +400,8 @@ struct MklBatchNormBwdParams {
 
   MklBatchNormBwdParams(memory::dims src_dims, memory::dims diff_dst_dims,
                         int depth, float eps, bool training,
-                        TensorFormat data_format, memory::desc src_md,
-                        memory::desc diff_dst_md)
+                        TensorFormat data_format, memory::desc& src_md,
+                        memory::desc& diff_dst_md)
       : src_dims(src_dims),
         diff_dst_dims(diff_dst_dims),
         depth(depth),
@@ -526,7 +526,8 @@ class MklFusedBatchNormBwdPrimitive : public MklPrimitive {
     std::vector<std::unordered_map<int, memory>> net_args;
 
     BatchNormBwdContext()
-        : src_mem(nullptr),
+        : flags(0),
+          src_mem(nullptr),
           mean_mem(nullptr),
           variance_mem(nullptr),
           diff_dst_mem(nullptr),
@@ -553,13 +554,9 @@ class MklFusedBatchNormBwdPrimitive : public MklPrimitive {
     auto diff_weights_desc = weights_desc;
 
     // Forward batch-normalization descriptor and primitive descriptor.
-    // Adding this back due to type difference with context.flags
-    auto bn_flags = bwdParams.training
-                        ? dnnl::normalization_flags::use_scale_shift
-                        : (dnnl::normalization_flags::use_scale_shift |
-                           dnnl::normalization_flags::use_global_stats);
     auto fwd_desc = batch_normalization_forward::desc(
-        prop_kind::forward_training, src_md, bwdParams.eps, bn_flags);
+        prop_kind::forward_training, src_md, bwdParams.eps,
+        static_cast<dnnl::normalization_flags>(context_.flags));
     auto fwd_pd = BatchNormFwdPd(fwd_desc, cpu_engine_);
 
     // Backward batch-normalization primitive.
@@ -568,7 +565,8 @@ class MklFusedBatchNormBwdPrimitive : public MklPrimitive {
     //   2. on bwd propagation, mean and variance are considered as constants.
     //      Thus, reduce the amount of MKL computation.
     auto bwd_desc = batch_normalization_backward::desc(
-        prop_kind::backward, diff_dst_md, src_md, bwdParams.eps, bn_flags);
+        prop_kind::backward, diff_dst_md, src_md, bwdParams.eps,
+        static_cast<dnnl::normalization_flags>(context_.flags));
     context_.bwd_pd.reset(new BatchNormBwdPd(bwd_desc, cpu_engine_, fwd_pd));
 
     // Create memory primitives.

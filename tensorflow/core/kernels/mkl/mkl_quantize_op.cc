@@ -80,8 +80,8 @@ struct MklReorderWithScaleFwdParams {
   PostOpParam post_op_params;
 
 #ifndef ENABLE_ONEDNN_V3
-  MklReorderWithScaleFwdParams(memory::dims src_dims, memory::desc src_md,
-                               memory::desc dst_md)
+  MklReorderWithScaleFwdParams(memory::dims src_dims, memory::desc& src_md,
+                               memory::desc& dst_md)
       : src_dims(src_dims), src_md(src_md), dst_md(dst_md) {}
 #else
   MklReorderWithScaleFwdParams(memory::dims src_dims, memory::desc src_md,
