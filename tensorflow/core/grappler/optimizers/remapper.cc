@@ -3409,8 +3409,8 @@ Status AddBatchNormNodes(RemapperContext* ctx, const FusedBatchNorm& matched) {
   variance_plus_epsilon.set_op("Add");
   (*variance_plus_epsilon.mutable_attr())["T"].set_type(dtype);
   variance_plus_epsilon.set_device(fused_node.device());
-  *variance_plus_epsilon.add_input() = variance;
-  *variance_plus_epsilon.add_input() = variance_epsilon_name;
+  *variance_plus_epsilon.add_input() = std::move(variance);
+  *variance_plus_epsilon.add_input() = std::move(variance_epsilon_name);
   mutation->AddNode(std::move(variance_plus_epsilon), &status);
   TF_RETURN_IF_ERROR(status);
 
@@ -3430,8 +3430,8 @@ Status AddBatchNormNodes(RemapperContext* ctx, const FusedBatchNorm& matched) {
   scaled.set_op("Mul");
   scaled.set_device(fused_node.device());
   (*scaled.mutable_attr())["T"].set_type(dtype);
-  *scaled.add_input() = inv_name;
-  *scaled.add_input() = scale;
+  *scaled.add_input() = std::move(inv_name);
+  *scaled.add_input() = std::move(scale);
   mutation->AddNode(std::move(scaled), &status);
   TF_RETURN_IF_ERROR(status);
 
@@ -3441,8 +3441,8 @@ Status AddBatchNormNodes(RemapperContext* ctx, const FusedBatchNorm& matched) {
   a.set_op("Mul");
   a.set_device(fused_node.device());
   (*a.mutable_attr())["T"].set_type(dtype);
-  *a.add_input() = x;
-  *a.add_input() = scaled_name;
+  *a.add_input() = std::move(x);
+  *a.add_input() = std::move(scaled_name);
   mutation->AddNode(std::move(a), &status);
   TF_RETURN_IF_ERROR(status);
 
@@ -3452,8 +3452,8 @@ Status AddBatchNormNodes(RemapperContext* ctx, const FusedBatchNorm& matched) {
   b.set_op("Mul");
   b.set_device(fused_node.device());
   (*b.mutable_attr())["T"].set_type(dtype);
-  *b.add_input() = mean;
-  *b.add_input() = scaled_name;
+  *b.add_input() = std::move(mean);
+  *b.add_input() = std::move(scaled_name);
   mutation->AddNode(std::move(b), &status);
   TF_RETURN_IF_ERROR(status);
 
@@ -3463,8 +3463,8 @@ Status AddBatchNormNodes(RemapperContext* ctx, const FusedBatchNorm& matched) {
   c.set_op("Sub");
   c.set_device(fused_node.device());
   (*c.mutable_attr())["T"].set_type(dtype);
-  *c.add_input() = offset;
-  *c.add_input() = b_name;
+  *c.add_input() = std::move(offset);
+  *c.add_input() = std::move(b_name);
   mutation->AddNode(std::move(c), &status);
   TF_RETURN_IF_ERROR(status);
 

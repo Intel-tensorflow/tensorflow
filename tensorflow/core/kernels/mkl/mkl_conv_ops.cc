@@ -102,15 +102,15 @@ struct MklConvFwdParams {
                    memory::dims padding_left, memory::dims padding_right,
                    memory::dims fuse_bn_dims, MklTensorFormat tf_fmt,
                    bool native_format)
-      : src_dims(src_dims),
-        filter_dims(filter_dims),
-        bias_dims(bias_dims),
-        dst_dims(dst_dims),
-        strides(strides),
-        dilations(dilations),
-        padding_left(padding_left),
-        padding_right(padding_right),
-        fuse_bn_dims(fuse_bn_dims),
+      : src_dims(std::move(src_dims)),
+        filter_dims(std::move(filter_dims)),
+        bias_dims(std::move(bias_dims)),
+        dst_dims(std::move(dst_dims)),
+        strides(std::move(strides)),
+        dilations(std::move(dilations)),
+        padding_left(std::move(padding_left)),
+        padding_right(std::move(padding_right)),
+        fuse_bn_dims(std::move(fuse_bn_dims)),
         tf_fmt(tf_fmt),
         native_format(native_format) {}
 };
@@ -142,7 +142,7 @@ class MklConvFwdPrimitive : public MklPrimitive {
                const Tbias* bias_data, const Toutput* dst_data,
                std::shared_ptr<stream> fwd_stream, void* sp_data = nullptr) {
     Execute(src_data, filter_data, bias_data, dst_data, nullptr, nullptr,
-            nullptr, nullptr, fwd_stream, sp_data);
+            nullptr, nullptr, std::move(fwd_stream), sp_data);
   }
 
   void Execute(const Tinput* src_data, const Tfilter* filter_data,
@@ -238,7 +238,7 @@ class MklConvFwdPrimitive : public MklPrimitive {
                const Toutput* dst_data, std::shared_ptr<stream> fwd_stream,
                void* sp_data) {
     Execute(src_data, filter_data, nullptr, dst_data, nullptr, nullptr, nullptr,
-            nullptr, fwd_stream, sp_data);
+            nullptr, std::move(fwd_stream), sp_data);
   }
 
   std::shared_ptr<ConvFwdPd> GetPrimitiveDesc() const {
@@ -415,7 +415,7 @@ class MklConvFwdPrimitive : public MklPrimitive {
                  (post_op_param.name == "fuse_bn"));
         }
       }
-      post_ops_attr.set_post_ops(post_ops);
+      post_ops_attr.set_post_ops(std::move(post_ops));
     }
 #ifndef ENABLE_ONEDNN_V3
     context_.fwd_pd.reset(
@@ -869,9 +869,11 @@ class MklConvOp : public OpKernel {
       }
 
       MklConvFwdParams convFwdDims(
-          src_dims, filter_dims, fuse_biasadd_ ? bias_dims : NONE_DIMS,
-          dst_dims_mkl_order, strides, dilations, padding_left, padding_right,
-          fuse_bn_dims, tf_fmt, native_format);
+          std::move(src_dims), std::move(filter_dims),
+          fuse_biasadd_ ? std::move(bias_dims) : NONE_DIMS, dst_dims_mkl_order,
+          std::move(strides), std::move(dilations), std::move(padding_left),
+          std::move(padding_right), std::move(fuse_bn_dims), tf_fmt,
+          native_format);
 
       // TODO(intel-tf): Extend the basic parameters for data types and fusions
       this->ExtendConvFwdParams(context, convFwdDims);
@@ -955,7 +957,7 @@ class MklConvOp : public OpKernel {
         Tbias* bias_data =
             this->GetBiasHandle(context, conv_fwd_pd, bias_tensor);
         conv_fwd->Execute(src_data, filter_data, bias_data, dst_data,
-                          fwd_cpu_stream, scratch_pad.Get());
+                          std::move(fwd_cpu_stream), scratch_pad.Get());
       } else if (fuse_bn_) {
         const Tensor& bn_scale_tensor =
             MklGetInput(context, kInputIndex_BN_Scale);
@@ -980,10 +982,11 @@ class MklConvOp : public OpKernel {
                              bn_rsqrt_data);
         conv_fwd->Execute(src_data, filter_data, nullptr, dst_data,
                           bn_scale_data, bn_mean_data, bn_offset_data,
-                          bn_rsqrt_data, fwd_cpu_stream, scratch_pad.Get());
-      } else {
-        conv_fwd->Execute(src_data, filter_data, dst_data, fwd_cpu_stream,
+                          bn_rsqrt_data, std::move(fwd_cpu_stream),
                           scratch_pad.Get());
+      } else {
+        conv_fwd->Execute(src_data, filter_data, dst_data,
+                          std::move(fwd_cpu_stream), scratch_pad.Get());
       }
 
       // Delete primitive since it is not cached.
@@ -1759,7 +1762,7 @@ class MklQuantizedConvOp
                     "either new API or old API, got both."));
 
     if (fused_ops_attr.size() > 0) {
-      fused_ops_ = fused_ops_attr;
+      fused_ops_ = std::move(fused_ops_attr);
     } else if (num_fused_ops > 0) {
       for (int i = 0; i < num_fused_ops; ++i) {
         fused_ops_.push_back(legacy_fused_ops[i]);
@@ -2026,7 +2029,8 @@ class MklQuantizedConvOp
       param_key.AddAsKey<const float*>(min_filter);
       param_key.AddAsKey<const float*>(max_filter);
       params.post_op_params[post_op_to_idx_["output_scale"]] = {
-          "output_scale", dnnl::algorithm::undef, scales, param_key.GetKey()};
+          "output_scale", dnnl::algorithm::undef, std::move(scales),
+          param_key.GetKey()};
     }
 
     if (this->get_fuse_add()) {

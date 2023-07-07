@@ -110,7 +110,8 @@ void MklPoolingFwdPrimitive<T>::Execute(const T* src_data, T* dst_data,
     context_.ws_mem->set_data_handle(ws_data);
   }
 #endif  // !ENABLE_ONEDNN_OPENMP
-  execute_primitives(context_.fwd_primitives, fwd_stream, context_.net_args);
+  execute_primitives(context_.fwd_primitives, std::move(fwd_stream),
+                     context_.net_args);
 
   // Set back data handle.
   context_.src_mem->set_data_handle(DummyData);
@@ -211,7 +212,8 @@ void MklPoolingBwdPrimitive<T>::Execute(const T* diff_dst_data,
   }
 #endif  // !ENABLE_ONEDNN_OPENMP
 
-  execute_primitives(context_.bwd_primitives, bwd_stream, context_.net_args);
+  execute_primitives(context_.bwd_primitives, std::move(bwd_stream),
+                     context_.net_args);
 
   // Set back data handle.
   context_.diff_dst_mem->set_data_handle(DummyData);

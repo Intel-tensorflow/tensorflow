@@ -46,7 +46,7 @@ class MklSoftmaxParams {
   int aarch64_counter;
 #endif
   MklSoftmaxParams(memory::dims src_dims, memory::format_tag src_fmt, int axis)
-      : src_dims(src_dims), src_fmt(src_fmt), axis(axis) {}
+      : src_dims(std::move(src_dims)), src_fmt(src_fmt), axis(axis) {}
 };
 
 template <typename T>
@@ -79,7 +79,7 @@ class MklSoftmaxPrimitive : public MklPrimitive {
 #endif  // !ENABLE_ONEDNN_OPENMP
 
     DCHECK_EQ(context_.fwd_primitives.size(), context_.fwd_net_args.size());
-    execute_primitives(context_.fwd_primitives, fwd_cpu_stream,
+    execute_primitives(context_.fwd_primitives, std::move(fwd_cpu_stream),
                        context_.fwd_net_args);
 
     // After execution, set data handle back.
@@ -256,7 +256,7 @@ class MklSoftmaxOp : public OpKernel {
       // Get a softmax fwd primitive from primitive pool.
       auto src_dims = TFShapeToMklDnnDims(src_shape);
       int axis = input_dims - 1;
-      MklSoftmaxParams fwdParams(src_dims, src_fmt, axis);
+      MklSoftmaxParams fwdParams(std::move(src_dims), src_fmt, axis);
 #ifdef DNNL_AARCH64_USE_ACL
       // ACL does not support reuse of primitives with different data.
       // For softmax, the previous approach (PR #47775) of using Tensor
@@ -278,7 +278,7 @@ class MklSoftmaxOp : public OpKernel {
       std::shared_ptr<stream> fwd_cpu_stream;
 
       fwd_cpu_stream.reset(CreateStream(&eigen_tp, softmax_fwd->GetEngine()));
-      softmax_fwd->Execute(src_data, dst_data, fwd_cpu_stream);
+      softmax_fwd->Execute(src_data, dst_data, std::move(fwd_cpu_stream));
     } catch (dnnl::error& e) {
       string error_msg = "Status: " + std::to_string(e.status) +
                          ", message: " + string(e.message) + ", in file " +

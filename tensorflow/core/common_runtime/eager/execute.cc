@@ -671,7 +671,7 @@ Status BuildWrappedOpName(EagerOperation* op, const OpDef& opdef,
   // runtime but currently there is no way to do it so we incur the cost of
   // creating extra FunctionDefs.
   absl::StrAppend(&fname, "_device_", op->DeviceName());
-  *name = fname;
+  *name = std::move(fname);
   return OkStatus();
 }
 

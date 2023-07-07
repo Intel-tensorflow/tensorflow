@@ -82,7 +82,7 @@ struct MklReorderWithScaleFwdParams {
 #ifndef ENABLE_ONEDNN_V3
   MklReorderWithScaleFwdParams(memory::dims src_dims, memory::desc& src_md,
                                memory::desc& dst_md)
-      : src_dims(src_dims), src_md(src_md), dst_md(dst_md) {}
+      : src_dims(std::move(src_dims)), src_md(src_md), dst_md(dst_md) {}
 #else
   MklReorderWithScaleFwdParams(memory::dims src_dims, memory::desc src_md,
                                memory::desc dst_md, memory::desc scale_md)
@@ -554,7 +554,7 @@ class MklQuantizeV2Op : public OpKernel {
     scale_tensor.flat<float>()(0) = scale_factor;
     scale.SetUsrMem(scale_md, &scale_tensor);
 #else
-    MklReorderWithScaleFwdParams fwdParams(src_dims, src_md, dst_md);
+    MklReorderWithScaleFwdParams fwdParams(std::move(src_dims), src_md, dst_md);
     fwdParams.dtypes.append(typeid(T).name());
     fwdParams.post_op_params.name = "scale";
     fwdParams.post_op_params.param.push_back(scale_factor);
@@ -571,7 +571,7 @@ class MklQuantizeV2Op : public OpKernel {
 #ifdef ENABLE_ONEDNN_V3
                           scale.GetUsrMemDataHandle(),
 #endif  // ENABLE_ONEDNN_V3
-                          cpu_stream);
+                          std::move(cpu_stream));
 
     output_min_tensor->scalar<float>()() = min_range;
     output_max_tensor->scalar<float>()() = max_range;

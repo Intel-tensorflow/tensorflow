@@ -204,13 +204,14 @@ void ThreadPoolDevice::ComputeAsync(AsyncOpKernel* op_kernel,
   if (should_log_inputs_and_outputs) {
     LogInputs(op_kernel, context);
     AsyncOpKernel::DoneCallback parent_done = done;
-    done = [this, parent_done, op_kernel, context]() {
+    done =
+        [ this, parent_done = std::move(parent_done), op_kernel, context ]() {
       LogOutputs(op_kernel, context);
       parent_done();
     };
   }
 
-  op_kernel->ComputeAsync(context, done);
+  op_kernel->ComputeAsync(context, std::move(done));
 }
 
 void ThreadPoolDevice::LogInputs(OpKernel* op_kernel,

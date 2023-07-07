@@ -59,16 +59,16 @@ struct MklConvBwdFilterParams {
                          MklTensorFormat tf_fmt, bool native_format,
                          memory::dims dilations, memory::dims padding_left,
                          memory::dims padding_right)
-      : src_dims(src_dims),
-        diff_filter_dims(diff_filter_dims),
-        diff_bias_dims(diff_bias_dims),
-        diff_dst_dims(diff_dst_dims),
-        strides(strides),
+      : src_dims(std::move(src_dims)),
+        diff_filter_dims(std::move(diff_filter_dims)),
+        diff_bias_dims(std::move(diff_bias_dims)),
+        diff_dst_dims(std::move(diff_dst_dims)),
+        strides(std::move(strides)),
         tf_fmt(tf_fmt),
         native_format(native_format),
-        dilations(dilations),
-        padding_left(padding_left),
-        padding_right(padding_right) {}
+        dilations(std::move(dilations)),
+        padding_left(std::move(padding_left)),
+        padding_right(std::move(padding_right)) {}
 };
 
 template <typename T>
@@ -122,7 +122,8 @@ class MklConvBwdFilterPrimitive : public MklPrimitive {
     context_.diff_dst_mem->set_data_handle(
         static_cast<void*>(const_cast<T*>(diff_dst_data)));
 #endif  // !ENABLE_ONEDNN_OPENMP
-    execute_primitives(context_.bwd_filter_primitives, bwd_filter_stream,
+    execute_primitives(context_.bwd_filter_primitives,
+                       std::move(bwd_filter_stream),
                        context_.bwd_filter_primitives_args);
 
     context_.src_mem->set_data_handle(DummyData);
@@ -141,7 +142,7 @@ class MklConvBwdFilterPrimitive : public MklPrimitive {
                const T* diff_dst_data,
                std::shared_ptr<stream> bwd_filter_stream) {
     Execute(src_data, diff_filter_data, nullptr, diff_dst_data,
-            bwd_filter_stream);
+            std::move(bwd_filter_stream));
   }
 
   std::shared_ptr<ConvBwdFilterPd> GetPrimitiveDesc() const {
@@ -509,8 +510,10 @@ class MklConvCustomBackpropFilterOp
       // 0 in oneDNN.
       for (int i = 0; i < dilations.size(); ++i) --dilations[i];
       MklConvBwdFilterParams convBwdFilterDims(
-          fwd_src_dims, fwd_filter_dims, diff_bias_dims, diff_dst_dims, strides,
-          tf_fmt, native_format, dilations, padding_left, padding_right);
+          fwd_src_dims, fwd_filter_dims, std::move(diff_bias_dims),
+          std::move(diff_dst_dims), std::move(strides), tf_fmt, native_format,
+          std::move(dilations), std::move(padding_left),
+          std::move(padding_right));
 
       // oneDNN allocates large buffers when a conv gradient filter primitive
       // is created. So we don't cache conv backward primitives when the env
@@ -661,10 +664,10 @@ class MklConvCustomBackpropFilterOp
         T* diff_bias_data =
             static_cast<T*>(const_cast<T*>(diff_bias_tensor->flat<T>().data()));
         conv_bwd_filter->Execute(src_data, diff_filter_data, diff_bias_data,
-                                 diff_dst_data, bwd_cpu_stream);
+                                 diff_dst_data, std::move(bwd_cpu_stream));
       } else {
         conv_bwd_filter->Execute(src_data, diff_filter_data, diff_dst_data,
-                                 bwd_cpu_stream);
+                                 std::move(bwd_cpu_stream));
       }
 
       // Reorder diff_filter back to Tensorflow layout if necessary.

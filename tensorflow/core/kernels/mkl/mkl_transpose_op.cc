@@ -92,14 +92,15 @@ Status MKLTransposeND(OpKernelContext* context, const Tensor& in_tensor,
     std::vector<MemoryArgsMap> net_args;
     net_args.push_back(
         {{DNNL_ARG_FROM, *in.GetUsrMem()}, {DNNL_ARG_TO, *out.GetUsrMem()}});
-    execute_primitives(net, transpose_stream, net_args);
+    execute_primitives(net, std::move(transpose_stream), net_args);
 
     return OkStatus();
   } catch (dnnl::error& e) {
     string error_msg = "Status: " + std::to_string(e.status) +
                        ", message: " + std::string(e.message) + ", in file " +
                        std::string(__FILE__) + ":" + std::to_string(__LINE__);
-    return errors::Aborted("Operation received an exception:", error_msg);
+    return errors::Aborted("Operation received an exception:",
+                           std::move(error_msg));
   }
 }
 

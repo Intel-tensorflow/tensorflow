@@ -42,7 +42,7 @@ class MklFusedMishOp
     void* src_buf =
         static_cast<void*>(const_cast<T*>(src_tensor.flat<T>().data()));
 
-    TensorShape dst_shape = src_shape;
+    TensorShape dst_shape = std::move(src_shape);
     OP_REQUIRES_OK(context, context->allocate_output(
                                 GetTensorDataIndex(0, context->num_outputs()),
                                 dst_shape, &dst_tensor));

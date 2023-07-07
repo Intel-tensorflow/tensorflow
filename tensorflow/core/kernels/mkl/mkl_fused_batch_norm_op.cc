@@ -129,7 +129,8 @@ class MklFusedBatchNormFwdPrimitive : public MklPrimitive {
 #endif  // !ENABLE_ONEDNN_OPENMP
 
     // Execute batch-normalization forward primitives.
-    execute_primitives(context_.fwd_primitives, fwd_stream, context_.net_args);
+    execute_primitives(context_.fwd_primitives, std::move(fwd_stream),
+                       context_.net_args);
 
     context_.src_mem->set_data_handle(DummyData);
     context_.dst_mem->set_data_handle(DummyData);
@@ -402,8 +403,8 @@ struct MklBatchNormBwdParams {
                         int depth, float eps, bool training,
                         TensorFormat data_format, memory::desc& src_md,
                         memory::desc& diff_dst_md)
-      : src_dims(src_dims),
-        diff_dst_dims(diff_dst_dims),
+      : src_dims(std::move(src_dims)),
+        diff_dst_dims(std::move(diff_dst_dims)),
         depth(depth),
         eps(eps),
         training(training),
@@ -482,7 +483,8 @@ class MklFusedBatchNormBwdPrimitive : public MklPrimitive {
 #endif  // !ENABLE_ONEDNN_OPENMP
     // Execute backward batch-normalization primitives.
     DCHECK_EQ(context_.bwd_primitives.size(), context_.net_args.size());
-    execute_primitives(context_.bwd_primitives, bwd_stream, context_.net_args);
+    execute_primitives(context_.bwd_primitives, std::move(bwd_stream),
+                       context_.net_args);
 
     // After execution, set data handle back to DummyData.
     context_.src_mem->set_data_handle(DummyData);
@@ -783,8 +785,9 @@ class MklFusedBatchNormOp : public OpKernel {
       if (tf_shape_src.num_elements() == 0) {
         size_t workspace_bytes = 0;
         workspace_tf_shape.AddDim(workspace_bytes);
-        HandleEmptyInput(context, tf_shape_src, workspace_tf_shape,
-                         scale_tensor.shape(), &dst_tensor);
+        HandleEmptyInput(context, std::move(tf_shape_src),
+                         std::move(workspace_tf_shape), scale_tensor.shape(),
+                         &dst_tensor);
         return;
       }
 
@@ -848,10 +851,10 @@ class MklFusedBatchNormOp : public OpKernel {
         size_t workspace_bytes = workspace_md.get_size();
         workspace_tf_shape.AddDim(workspace_bytes);
 
-        AllocateTFOutputs(context, scale_tensor.shape(), workspace_tf_shape,
-                          &batch_mean_tensor, &batch_variance_tensor,
-                          &saved_mean_tensor, &saved_variance_tensor,
-                          &reserved_space_tensor);
+        AllocateTFOutputs(context, scale_tensor.shape(),
+                          std::move(workspace_tf_shape), &batch_mean_tensor,
+                          &batch_variance_tensor, &saved_mean_tensor,
+                          &saved_variance_tensor, &reserved_space_tensor);
         if (reserved_space) {
           wksp.SetUsrMem(workspace_md, reserved_space_tensor);
           ws_data = static_cast<U*>(wksp.GetOpMem().get_data_handle());
@@ -860,10 +863,10 @@ class MklFusedBatchNormOp : public OpKernel {
         // There is actually no workspace tensor out, so we make a dummy one.
         size_t workspace_bytes = 0;
         workspace_tf_shape.AddDim(workspace_bytes);
-        AllocateTFOutputs(context, scale_tensor.shape(), workspace_tf_shape,
-                          &batch_mean_tensor, &batch_variance_tensor,
-                          &saved_mean_tensor, &saved_variance_tensor,
-                          &reserved_space_tensor);
+        AllocateTFOutputs(context, scale_tensor.shape(),
+                          std::move(workspace_tf_shape), &batch_mean_tensor,
+                          &batch_variance_tensor, &saved_mean_tensor,
+                          &saved_variance_tensor, &reserved_space_tensor);
       }
 
       if (is_training_)
@@ -929,7 +932,7 @@ class MklFusedBatchNormOp : public OpKernel {
 
       fwd_cpu_stream.reset(CreateStream(&eigen_tp, bn_fwd->GetEngine()));
       bn_fwd->Execute(src_data, weights_op_data, dst_data, mean_op_data,
-                      variance_op_data, fwd_cpu_stream, ws_data);
+                      variance_op_data, std::move(fwd_cpu_stream), ws_data);
       float adjust_factor = 1.0;
       if (is_training_) {
         size_t orig_size = src_dims[0] * src_dims[2] * src_dims[3];
@@ -1016,19 +1019,17 @@ class MklFusedBatchNormOp : public OpKernel {
     Tensor* saved_mean_tensor = nullptr;
     Tensor* saved_variance_tensor = nullptr;
     Tensor* reserved_space_tensor = nullptr;
-    AllocateTFOutputs(context, tf_shape_scale, workspace_tf_shape,
-                      &batch_mean_tensor, &batch_variance_tensor,
-                      &saved_mean_tensor, &saved_variance_tensor,
-                      &reserved_space_tensor);
+    AllocateTFOutputs(context, std::move(tf_shape_scale),
+                      std::move(workspace_tf_shape), &batch_mean_tensor,
+                      &batch_variance_tensor, &saved_mean_tensor,
+                      &saved_variance_tensor, &reserved_space_tensor);
   }
 
-  void AllocateTFOutputs(OpKernelContext* context, TensorShape tf_shape_scale,
-                         TensorShape workspace_tf_shape,
-                         Tensor** batch_mean_tensor,
-                         Tensor** batch_variance_tensor,
-                         Tensor** saved_mean_tensor,
-                         Tensor** saved_variance_tensor,
-                         Tensor** reserved_space_tensor) {
+  void AllocateTFOutputs(
+      OpKernelContext* context, const TensorShape& tf_shape_scale,
+      const TensorShape& workspace_tf_shape, Tensor** batch_mean_tensor,
+      Tensor** batch_variance_tensor, Tensor** saved_mean_tensor,
+      Tensor** saved_variance_tensor, Tensor** reserved_space_tensor) {
     DCHECK(batch_mean_tensor);
     DCHECK(batch_variance_tensor);
     DCHECK(saved_mean_tensor);
@@ -1094,9 +1095,10 @@ class MklFusedBatchNormOp : public OpKernel {
 
       MklDnnShape mkl_shape_reserved_space;
       mkl_shape_reserved_space.SetMklTensor(false);
-      AllocateOutputSetMklShape(context, kReservedSpaceIndex,
-                                reserved_space_tensor, workspace_tf_shape,
-                                mkl_shape_reserved_space, native_format);
+      AllocateOutputSetMklShape(
+          context, kReservedSpaceIndex, reserved_space_tensor,
+          std::move(workspace_tf_shape), std::move(mkl_shape_reserved_space),
+          native_format);
       DCHECK((*reserved_space_tensor) != nullptr);
     }
   }
@@ -1215,7 +1217,7 @@ class MklFusedBatchNormGradOp : public OpKernel {
       Tensor* diff_src_tensor = nullptr;
       if (tf_shape_src.num_elements() == 0 ||
           tf_shape_diff_dst.num_elements() == 0) {
-        HandleEmptyInput(context, tf_shape_src, scale_tensor.shape(),
+        HandleEmptyInput(context, std::move(tf_shape_src), scale_tensor.shape(),
                          &diff_src_tensor);
         return;
       }
@@ -1307,9 +1309,9 @@ class MklFusedBatchNormGradOp : public OpKernel {
 
       diff_weights.AllocateBuffer(2 * depth_ * sizeof(U));
 
-      MklBatchNormBwdParams bwdParams(src_dims, diff_dst_dims, depth_, epsilon_,
-                                      is_training_, tensor_format_, src_md,
-                                      diff_dst_md);
+      MklBatchNormBwdParams bwdParams(src_dims, std::move(diff_dst_dims),
+                                      depth_, epsilon_, is_training_,
+                                      tensor_format_, src_md, diff_dst_md);
       MklDnnThreadPool eigen_tp(context);
       MklFusedBatchNormBwdPrimitive<T, U>* bn_bwd =
           MklFusedBatchNormBwdPrimitiveFactory<T, U>::Get(bwdParams);
@@ -1368,7 +1370,7 @@ class MklFusedBatchNormGradOp : public OpKernel {
       bwd_cpu_stream.reset(CreateStream(&eigen_tp, bn_bwd->GetEngine()));
       bn_bwd->Execute(src_data, mean_data, variance_data, diff_dst_data,
                       weights_data, diff_src_data, diff_weights_data,
-                      res_space_data, bwd_cpu_stream);
+                      res_space_data, std::move(bwd_cpu_stream));
       // Allocate output TF tensors diff_scale and diff_shift.
       Tensor* diff_scale_tensor = nullptr;
       Tensor* diff_shift_tensor = nullptr;
@@ -1406,27 +1408,29 @@ class MklFusedBatchNormGradOp : public OpKernel {
     depth_ = static_cast<int>(GetTensorDim(input, tensor_format_, 'C'));
   }
 
-  void HandleEmptyInput(OpKernelContext* context, TensorShape tf_shape_src,
-                        TensorShape tf_shape_scale_shift,
+  void HandleEmptyInput(OpKernelContext* context,
+                        const TensorShape& tf_shape_src,
+                        const TensorShape& tf_shape_scale_shift,
                         Tensor** diff_src_tensor) {
     const size_t kDiffSrcIndex = 0;
 
     MklDnnShape dnn_shape_diff_src;
     dnn_shape_diff_src.SetMklTensor(false);
     AllocateOutputSetMklShape(context, kDiffSrcIndex, diff_src_tensor,
-                              tf_shape_src, dnn_shape_diff_src, native_format);
+                              std::move(tf_shape_src),
+                              std::move(dnn_shape_diff_src), native_format);
     auto diff_src_data = (*diff_src_tensor)->flat<T>().data();
     std::fill_n(diff_src_data, (*diff_src_tensor)->shape().num_elements(),
                 static_cast<T>(0));
 
     Tensor* diff_scale_tensor = nullptr;
     Tensor* diff_shift_tensor = nullptr;
-    AllocateTFOutputs(context, tf_shape_scale_shift, &diff_scale_tensor,
-                      &diff_shift_tensor);
+    AllocateTFOutputs(context, std::move(tf_shape_scale_shift),
+                      &diff_scale_tensor, &diff_shift_tensor);
   }
 
   void AllocateTFOutputs(OpKernelContext* context,
-                         TensorShape tf_shape_scale_shift,
+                         const TensorShape& tf_shape_scale_shift,
                          Tensor** diff_scale_tensor,
                          Tensor** diff_shift_tensor) {
     DCHECK(diff_scale_tensor);
@@ -1441,8 +1445,8 @@ class MklFusedBatchNormGradOp : public OpKernel {
     MklDnnShape mkl_shape_diff_scale;
     mkl_shape_diff_scale.SetMklTensor(false);
     AllocateOutputSetMklShape(context, kDiffScaleIndex, diff_scale_tensor,
-                              tf_shape_scale_shift, mkl_shape_diff_scale,
-                              native_format);
+                              tf_shape_scale_shift,
+                              std::move(mkl_shape_diff_scale), native_format);
     DCHECK(*diff_scale_tensor);
 
     auto diff_scale_data = (*diff_scale_tensor)->flat<U>().data();
@@ -1452,8 +1456,8 @@ class MklFusedBatchNormGradOp : public OpKernel {
     MklDnnShape mkl_shape_diff_shift;
     mkl_shape_diff_shift.SetMklTensor(false);
     AllocateOutputSetMklShape(context, kDiffShiftIndex, diff_shift_tensor,
-                              tf_shape_scale_shift, mkl_shape_diff_shift,
-                              native_format);
+                              std::move(tf_shape_scale_shift),
+                              std::move(mkl_shape_diff_shift), native_format);
     DCHECK(*diff_shift_tensor);
 
     auto diff_shift_data = (*diff_shift_tensor)->flat<U>().data();
