@@ -52,7 +52,7 @@ class MklEltwiseFwdParams {
 
   MklEltwiseFwdParams(memory::dims src_dims, memory::desc& src_md,
                       algorithm alg_kind, float alpha, float beta)
-      : src_dims(src_dims),
+      : src_dims(std::move(src_dims)),
         src_md(src_md),
         alg_kind(alg_kind),
         alpha(alpha),
@@ -92,7 +92,7 @@ class MklEltwiseFwdPrimitive : public MklPrimitive {
 #endif  // !ENABLE_ONEDNN_OPENMP
     DCHECK_EQ(context_.fwd_primitives.size(),
               context_.fwd_primitives_args.size());
-    execute_primitives(context_.fwd_primitives, fwd_stream,
+    execute_primitives(context_.fwd_primitives, std::move(fwd_stream),
                        context_.fwd_primitives_args);
 
     // After execution, set data handle back.
@@ -278,7 +278,7 @@ class MklEltwiseBwdPrimitive : public MklPrimitive {
 #endif  // !ENABLE_ONEDNN_OPENMP
     DCHECK_EQ(context_.bwd_primitives.size(),
               context_.bwd_primitives_args.size());
-    execute_primitives(context_.bwd_primitives, bwd_stream,
+    execute_primitives(context_.bwd_primitives, std::move(bwd_stream),
                        context_.bwd_primitives_args);
 
     // after execution, set data handle back
@@ -474,8 +474,8 @@ class MklReluOpBase : public OpKernel {
         src_md = MklDnnData<T>::CreateBlockedMemDesc(src_dims, src_strides);
       }
       // Try to get an eltwise forward primitive from caching pool
-      MklEltwiseFwdParams<T> fwdParams(src_dims, src_md, alg_kind, alpha_,
-                                       beta_);
+      MklEltwiseFwdParams<T> fwdParams(std::move(src_dims), src_md, alg_kind,
+                                       alpha_, beta_);
       MklDnnThreadPool eigen_tp(context);
       MklEltwiseFwdPrimitive<T>* eltwise_fwd =
           MklEltwiseFwdPrimitiveFactory<T>::Get(fwdParams);
@@ -537,7 +537,7 @@ class MklReluOpBase : public OpKernel {
       T* dst_data = dst_tensor->flat<T>().data();
 
       // execute eltwise
-      eltwise_fwd->Execute(src_data, dst_data, fwd_cpu_stream);
+      eltwise_fwd->Execute(src_data, dst_data, std::move(fwd_cpu_stream));
     } catch (dnnl::error& e) {
       string error_msg = "Status: " + std::to_string(e.status) +
                          ", message: " + string(e.message) + ", in file " +
@@ -742,7 +742,7 @@ class MklReluGradOpBase : public OpKernel {
 
       // execute eltwise bwd
       eltwise_bwd->Execute(src_data, diff_dst_data, diff_src_data,
-                           bwd_cpu_stream);
+                           std::move(bwd_cpu_stream));
     } catch (dnnl::error& e) {
       string error_msg = "Status: " + std::to_string(e.status) +
                          ", message: " + string(e.message) + ", in file " +

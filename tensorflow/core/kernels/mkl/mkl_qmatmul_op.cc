@@ -147,7 +147,7 @@ class MklDnnQuantizedMatMulOp : public MklDnnMatMulOpBase<Tweight, Toutput> {
     } else {
       context->CtxFailure(errors::InvalidArgument(
           "Quantization mode must be either MIN_FIRST or SCALED, but received ",
-          mode_string));
+          std::move(mode_string)));
     }
     this->is_weight_const_ = false;
     if (context->HasAttr("is_weight_const")) {
@@ -225,8 +225,9 @@ class MklDnnQuantizedMatMulOp : public MklDnnMatMulOpBase<Tweight, Toutput> {
           matmul_fwd = nullptr;
       memory::dims bias_dims = {static_cast<int>(bias_tensor.dim_size(0))};
 
-      MklDnnMatMulFwdParams matmul_fwd_dims(src_dims, weight_dims, bias_dims,
-                                            dst_dims_mkl_order);
+      MklDnnMatMulFwdParams matmul_fwd_dims(
+          std::move(src_dims), std::move(weight_dims), std::move(bias_dims),
+          dst_dims_mkl_order);
 
       // Extend the basic parameters for data types and fusions.
       this->ExtendMklDnnMatMulFwdParams(context, matmul_fwd_dims);
@@ -302,7 +303,7 @@ class MklDnnQuantizedMatMulOp : public MklDnnMatMulOpBase<Tweight, Toutput> {
       Tbias* bias_data = this->GetBiasHandle(
           context, matmul_fwd_pd, bias_tensor, weight_tensor, cpu_stream);
       matmul_fwd->Execute(src_data, weight_data, bias_data, dst_data,
-                          scratch_pad.Get(), cpu_stream);
+                          scratch_pad.Get(), std::move(cpu_stream));
     } catch (dnnl::error& e) {
       string error_msg = tensorflow::strings::StrCat(
           "Status: ", e.status, ", message: ", string(e.message), ", in file ",
@@ -434,7 +435,8 @@ class MklDnnQuantizedMatMulOp : public MklDnnMatMulOpBase<Tweight, Toutput> {
       }
       std::vector<float> output_scale;
       output_scale.push_back(scale);
-      params.post_op_params.push_back({"output_scale", output_scale});
+      params.post_op_params.push_back(
+          {"output_scale", std::move(output_scale)});
     }
   }
 

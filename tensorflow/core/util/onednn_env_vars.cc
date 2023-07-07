@@ -61,7 +61,7 @@ std::string FPMathModeSetting() {
     return setting;
   }();
 
-  return math_mode_setting;
+  return std::move(math_mode_setting);
 }
 }  // namespace tensorflow
 #endif  // INTEL_MKL

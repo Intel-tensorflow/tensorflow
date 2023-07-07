@@ -871,7 +871,7 @@ struct UserScratchPad {
     size_t allocate_size = (spad_size + sizeof(T) - 1) / sizeof(T);
     TensorShape tf_shape;
     tf_shape.AddDim(allocate_size);
-    AllocTmpBuffer<T>(context, &scratch_pad_, tf_shape);
+    AllocTmpBuffer<T>(context, &scratch_pad_, std::move(tf_shape));
     allocated_ = true;
   }
   inline void* Get() {
@@ -1498,7 +1498,7 @@ class MklDnnData {
   /// Set function for data buffer of user memory primitive.
   inline void SetUsrMemDataHandle(const Tensor* tensor,
                                   std::shared_ptr<stream> t_stream = nullptr) {
-    SetUsrMemDataHandle(GetTensorBuffer(tensor), t_stream);
+    SetUsrMemDataHandle(GetTensorBuffer(tensor), std::move(t_stream));
   }
 
   /// allocate function for data buffer
@@ -1608,7 +1608,7 @@ class MklDnnData {
       std::vector<MemoryArgsMap> net_args;
       net_args.push_back(
           {{DNNL_ARG_FROM, *user_memory_}, {DNNL_ARG_TO, *reorder_memory_}});
-      execute_primitives(net, cpu_stream, net_args);
+      execute_primitives(net, std::move(cpu_stream), net_args);
       return true;
     }
     return false;
@@ -1675,7 +1675,7 @@ class MklDnnData {
       std::vector<MemoryArgsMap> net_args;
       net_args.push_back(
           {{DNNL_ARG_FROM, *user_memory_}, {DNNL_ARG_TO, *reorder_memory_}});
-      execute_primitives(net, cpu_stream, net_args);
+      execute_primitives(net, std::move(cpu_stream), net_args);
       return true;
     }
     return false;
@@ -1781,7 +1781,7 @@ class MklDnnData {
     } else {
       cpu_stream.reset(CreateStream(nullptr, prim->GetEngine()));
     }
-    execute_primitives(net, cpu_stream, net_args);
+    execute_primitives(net, std::move(cpu_stream), net_args);
   }
 };
 

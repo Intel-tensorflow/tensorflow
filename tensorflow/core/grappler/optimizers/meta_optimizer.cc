@@ -966,7 +966,8 @@ Status MetaOptimizer::RunOptimizer(
         optimized_graph_function_library.release());
   }
 
-  OptimizerResult optimizer_result{optimizer->name(), message, status};
+  OptimizerResult optimizer_result{optimizer->name(), std::move(message),
+                                   status};
   optimization_result->results.push_back(optimizer_result);
 
   if (!status.ok()) {

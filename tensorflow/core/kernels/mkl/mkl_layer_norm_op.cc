@@ -79,7 +79,7 @@ class MklLayerNormOp : public OpKernel {
       memory::dims scale_shift_dims = {
           2, static_cast<dnnl_dim_t>(num_elements_scale)};
       auto scale_shift_md =
-          memory::desc(static_cast<memory::dims>(scale_shift_dims),
+          memory::desc(static_cast<memory::dims>(std::move(scale_shift_dims)),
                        MklDnnType<float>(), memory::format_tag::nc);
       Tensor scale_shift_tensor;
       int64_t tensor_shape = scale_shift_md.get_size() / sizeof(float);

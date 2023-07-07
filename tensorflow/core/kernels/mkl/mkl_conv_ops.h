@@ -150,7 +150,7 @@ class MklDnnConvUtil {
       input_sizes[MklDnnDims::Dim_C] = input_depth;
       input_sizes[MklDnnDims::Dim_H] = input_rows;
       input_sizes[MklDnnDims::Dim_W] = input_cols;
-      *input_dims = input_sizes;
+      *input_dims = std::move(input_sizes);
     } else if (strides_.size() == 5) {  // NCDHW format for Conv3D
       // Input planes/third-dimension
       int64 input_planes_raw = GetTensorDim(input_shape, data_format_, '0');
@@ -174,7 +174,7 @@ class MklDnnConvUtil {
       input_sizes[MklDnnDims3D::Dim3d_D] = input_planes;
       input_sizes[MklDnnDims3D::Dim3d_H] = input_rows;
       input_sizes[MklDnnDims3D::Dim3d_W] = input_cols;
-      *input_dims = input_sizes;
+      *input_dims = std::move(input_sizes);
     }
 #undef CHECK_BOUNDS
   }
@@ -244,7 +244,7 @@ class MklDnnConvUtil {
         filter_sizes[MKL_GROUP_FILTER_DIM_I] = 1;
         filter_sizes[MKL_GROUP_FILTER_DIM_H] = filter_rows;
         filter_sizes[MKL_GROUP_FILTER_DIM_W] = filter_cols;
-        *filter_dims = filter_sizes;
+        *filter_dims = std::move(filter_sizes);
       } else if (*is_grouped_convolution) {
         // TODO(intel-tf): Directly set filter_dims. Same for other places.
         std::vector<memory::dim> filter_sizes(5, -1);
@@ -253,14 +253,14 @@ class MklDnnConvUtil {
         filter_sizes[MKL_GROUP_FILTER_DIM_I] = filter_in_depth;
         filter_sizes[MKL_GROUP_FILTER_DIM_H] = filter_rows;
         filter_sizes[MKL_GROUP_FILTER_DIM_W] = filter_cols;
-        *filter_dims = filter_sizes;
+        *filter_dims = std::move(filter_sizes);
       } else {
         std::vector<memory::dim> filter_sizes(4, -1);
         filter_sizes[MklDnnDims::Dim_O] = filter_out_depth;
         filter_sizes[MklDnnDims::Dim_I] = filter_in_depth;
         filter_sizes[MklDnnDims::Dim_H] = filter_rows;
         filter_sizes[MklDnnDims::Dim_W] = filter_cols;
-        *filter_dims = filter_sizes;
+        *filter_dims = std::move(filter_sizes);
       }
     } else {  // Conv3D
       OP_REQUIRES(context_, input_depth == filter_shape.dim_size(3),
@@ -534,7 +534,7 @@ class MklDnnConvUtil {
       output_sizes[MklDnnDims::Dim_C] = out_depth;
       output_sizes[MklDnnDims::Dim_H] = static_cast<int>(out_rows);
       output_sizes[MklDnnDims::Dim_W] = static_cast<int>(out_cols);
-      *output_dims_mkl_order = output_sizes;
+      *output_dims_mkl_order = std::move(output_sizes);
     } else {
       std::vector<memory::dim> output_sizes(5, -1);
       output_sizes[MklDnnDims3D::Dim3d_N] = out_batch;
@@ -542,7 +542,7 @@ class MklDnnConvUtil {
       output_sizes[MklDnnDims3D::Dim3d_D] = static_cast<int>(out_planes);
       output_sizes[MklDnnDims3D::Dim3d_H] = static_cast<int>(out_rows);
       output_sizes[MklDnnDims3D::Dim3d_W] = static_cast<int>(out_cols);
-      *output_dims_mkl_order = output_sizes;
+      *output_dims_mkl_order = std::move(output_sizes);
     }
   }
 

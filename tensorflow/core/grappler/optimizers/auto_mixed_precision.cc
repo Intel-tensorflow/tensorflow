@@ -1044,7 +1044,7 @@ class AutoMixedPrecisionImpl {
         nodes_to_preserve_(nodes_to_preserve),
         graph_(graph),
         function_library_(OpRegistry::Global(), graph->library()),
-        id_(id),
+        id_(std::move(id)),
         graph_view_(graph),
         cuda_version_(GetCudaVersion(devices_)),
         cudnn_version_(GetCudnnVersion(devices_)),

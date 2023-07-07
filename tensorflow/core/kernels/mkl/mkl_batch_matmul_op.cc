@@ -305,7 +305,7 @@ class FusedBatchMatMulMkl
       if (this->fused_ops_.at(0) == "Mul") {
         memory::dims mul_dims(params.c_dims.size(), 1);
         params.post_op_params.push_back(
-            {"mul", {}, mul_dims, data_type, format_tag});
+            {"mul", {}, std::move(mul_dims), data_type, format_tag});
       } else {
         OP_REQUIRES(ctx, false,
                     errors::InvalidArgument(
@@ -321,7 +321,7 @@ class FusedBatchMatMulMkl
         memory::dims add_dims = {add_shape.dim_size(0), add_shape.dim_size(1),
                                  add_shape.dim_size(2), add_shape.dim_size(3)};
         params.post_op_params.push_back(
-            {"add", {}, add_dims, data_type, format_tag});
+            {"add", {}, std::move(add_dims), data_type, format_tag});
       } else {
         OP_REQUIRES(ctx, false,
                     errors::InvalidArgument(

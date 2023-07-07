@@ -128,7 +128,7 @@ class MklFusedMatMulOp : public MklDnnMatMulOpBase<T, T> {
 
     // Set weight format `any` for primitive as per oneDNN recommendation.
     MklDnnMatMulFwdParams matmul_params(
-        src_dims, weight_dims, bias_dims, dst_dims, src_format,
+        src_dims, weight_dims, std::move(bias_dims), dst_dims, src_format,
         (this->is_weight_const_) ? memory::format_tag::any : weight_format,
         memory::format_tag::nc, this->is_weight_const_);
     // Extend the basic parameters for data types and fusions.
@@ -269,7 +269,7 @@ class MklFusedMatMulOp : public MklDnnMatMulOpBase<T, T> {
 
       // Execute fused matmul op.
       matmul_prim->Execute(src_data, weight_data, bias_data, dst_data,
-                           scratch_pad.Get(), cpu_stream);
+                           scratch_pad.Get(), std::move(cpu_stream));
     } catch (dnnl::error& e) {
       string error_msg = "Status: " + std::to_string(e.status) +
                          ", message: " + string(e.message) + ", in file " +

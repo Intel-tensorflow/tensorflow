@@ -67,15 +67,15 @@ struct MklConvBwdInputParams {
                         MklTensorFormat tf_fmt, bool native_format,
                         memory::dims dilations, memory::dims padding_left,
                         memory::dims padding_right)
-      : diff_src_dims(diff_src_dims),
-        filter_dims(filter_dims),
-        diff_dst_dims(diff_dst_dims),
-        strides(strides),
+      : diff_src_dims(std::move(diff_src_dims)),
+        filter_dims(std::move(filter_dims)),
+        diff_dst_dims(std::move(diff_dst_dims)),
+        strides(std::move(strides)),
         tf_fmt(tf_fmt),
         native_format(native_format),
-        dilations(dilations),
-        padding_left(padding_left),
-        padding_right(padding_right) {}
+        dilations(std::move(dilations)),
+        padding_left(std::move(padding_left)),
+        padding_right(std::move(padding_right)) {}
 };
 
 template <typename T>
@@ -119,7 +119,8 @@ class MklConvBwdInputPrimitive : public MklPrimitive {
     context_.diff_dst_mem->set_data_handle(
         static_cast<T*>(const_cast<T*>(diff_dst_data)));
 #endif  // !ENABLE_ONEDNN_OPENMP && !ENABLE_ONEDNN_V3
-    execute_primitives(context_.bwd_input_primitives, bwd_input_stream,
+    execute_primitives(context_.bwd_input_primitives,
+                       std::move(bwd_input_stream),
                        context_.bwd_input_primitives_args);
 
     // Set data handle back to DummyData.
@@ -457,8 +458,9 @@ class MklConvCustomBackpropInputOp
       // 0 in MKL-DNN.
       for (int i = 0; i < dilations.size(); ++i) --dilations[i];
       MklConvBwdInputParams convBwdInputDims(
-          fwd_src_dims, fwd_filter_dims, diff_dst_dims, strides, tf_fmt,
-          native_format, dilations, padding_left, padding_right);
+          fwd_src_dims, fwd_filter_dims, std::move(diff_dst_dims), strides,
+          tf_fmt, native_format, std::move(dilations), std::move(padding_left),
+          std::move(padding_right));
 
       // We don't cache those primitives if the environment variable
       // TF_MKL_OPTIMIZE_PRIMITIVE_MEMUSE is true and if primitive descriptor
@@ -466,9 +468,10 @@ class MklConvCustomBackpropInputOp
       // in the following cases
       //   1. Legacy CPU without AVX512/AVX2, or
       //   2. 1x1 convolution with stride != 1
-      bool do_not_cache = MklPrimitiveFactory<T>::IsPrimitiveMemOptEnabled() &&
-                          (MklPrimitiveFactory<T>::IsLegacyPlatform() ||
-                           IsConv1x1StrideNot1(fwd_filter_dims, strides));
+      bool do_not_cache =
+          MklPrimitiveFactory<T>::IsPrimitiveMemOptEnabled() &&
+          (MklPrimitiveFactory<T>::IsLegacyPlatform() ||
+           IsConv1x1StrideNot1(fwd_filter_dims, std::move(strides)));
 
       MklDnnThreadPool eigen_tp(context);
       MklConvBwdInputPrimitive<T>* conv_bwd_input =
@@ -528,7 +531,7 @@ class MklConvCustomBackpropInputOp
           CreateStream(&eigen_tp, conv_bwd_input->GetEngine()));
       // Execute conv bwd input primitive.
       conv_bwd_input->Execute(diff_src_data, filter_data, diff_dst_data,
-                              bwd_cpu_stream);
+                              std::move(bwd_cpu_stream));
 
       // Delete primitive since it is not cached.
       if (do_not_cache) {

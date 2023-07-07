@@ -78,10 +78,10 @@ struct MklDnnMatMulFwdParams {
       memory::format_tag weight_format = memory::format_tag::any,
       memory::format_tag dst_format = memory::format_tag::any,
       bool const_weight = false)
-      : src_dims(src_dims),
-        weight_dims(weight_dims),
-        bias_dims(bias_dims),
-        dst_dims(dst_dims),
+      : src_dims(std::move(src_dims)),
+        weight_dims(std::move(weight_dims)),
+        bias_dims(std::move(bias_dims)),
+        dst_dims(std::move(dst_dims)),
         src_format(src_format),
         weight_format(weight_format),
         dst_format(dst_format),
@@ -146,7 +146,8 @@ class MklDnnMatMulFwdPrimitive : public MklPrimitive {
     context_.sp_mem->set_data_handle(sp_data);
 #endif  // !ENABLE_ONEDNN_OPENMP
 
-    execute_primitives(context_.fwd_primitives, fwd_stream, context_.net_args);
+    execute_primitives(context_.fwd_primitives, std::move(fwd_stream),
+                       context_.net_args);
 
     // After execution, set data handle back
     context_.src_mem->set_data_handle(DummyData);
@@ -306,7 +307,7 @@ class MklDnnMatMulFwdPrimitive : public MklPrimitive {
                  (post_op_param.name == "output_scale"));
         }
       }
-      post_ops_attr.set_post_ops(post_ops);
+      post_ops_attr.set_post_ops(std::move(post_ops));
       context_.fwd_pd.reset(new inner_product_forward::primitive_desc(
           *context_.fwd_desc, post_ops_attr, cpu_engine_));
     } else {
@@ -593,13 +594,13 @@ struct MklMatMulParams {
   MklMatMulParams(string prefix, memory::dims a_dims, memory::dims b_dims,
                   memory::dims c_dims, memory::dims a_strides,
                   memory::dims b_strides, memory::dims c_strides)
-      : prefix(prefix),
-        a_dims(a_dims),
-        b_dims(b_dims),
-        c_dims(c_dims),
-        a_strides(a_strides),
-        b_strides(b_strides),
-        c_strides(c_strides) {}
+      : prefix(std::move(prefix)),
+        a_dims(std::move(a_dims)),
+        b_dims(std::move(b_dims)),
+        c_dims(std::move(c_dims)),
+        a_strides(std::move(a_strides)),
+        b_strides(std::move(b_strides)),
+        c_strides(std::move(c_strides)) {}
 };
 
 template <typename Tlhs, typename Trhs, typename Toutput>
@@ -646,7 +647,8 @@ class MklMatMulPrimitive : public MklPrimitive {
     if (mul_data != nullptr) context_.mul_mem->set_data_handle(mul_data);
     if (add_data != nullptr) context_.add_mem->set_data_handle(add_data);
 #endif  // !ENABLE_ONEDNN_OPENMP
-    execute_primitives(context_.matmul_primitives, stream, context_.net_args);
+    execute_primitives(context_.matmul_primitives, std::move(stream),
+                       context_.net_args);
 
     // After execution, set data handle back
     context_.a_mem->set_data_handle(DummyData);
@@ -745,7 +747,7 @@ class MklMatMulPrimitive : public MklPrimitive {
           DCHECK((post_op_param.name == "output_scale"));
         }
       }
-      post_ops_attr.set_post_ops(post_ops);
+      post_ops_attr.set_post_ops(std::move(post_ops));
     }
     post_ops_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
     context_.prim_desc.reset(
@@ -894,8 +896,9 @@ void dnnl_gemm(char transa, char transb, int64_t m, int64_t n, int64_t k,
   DCHECK_EQ(alpha, 1.0f);
   DCHECK_EQ(beta, 0.f);
 
-  MklMatMulParams params("dnnl_gemm", a_dims, b_dims, c_dims, a_strides,
-                         b_strides, c_strides);
+  MklMatMulParams params("dnnl_gemm", std::move(a_dims), std::move(b_dims),
+                         std::move(c_dims), std::move(a_strides),
+                         std::move(b_strides), std::move(c_strides));
   auto st = ExecuteSingleThreadedGemm(m, n, k, sizeof(T));
   MklDnnThreadPool eigen_tp(ctx, st ? 1 : -1);
   MklMatMulPrimitive<T, T, T>* matmul_prim =

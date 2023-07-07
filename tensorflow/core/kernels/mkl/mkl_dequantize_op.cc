@@ -173,7 +173,7 @@ class MklDequantizeOp : public OpKernel {
            {DNNL_ARG_TO, *dst.GetUsrMem()},
            {DNNL_ARG_ATTR_SCALES | DNNL_ARG_SRC, scale_mem}});
 #endif  // !ENABLE_ONEDNN_V3
-      execute_primitives(net, reorder_stream, reorder_net_args);
+      execute_primitives(net, std::move(reorder_stream), reorder_net_args);
     } catch (dnnl::error& e) {
       string error_msg = "Status: " + std::to_string(e.status) +
                          ", message: " + string(e.message) + ", in file " +

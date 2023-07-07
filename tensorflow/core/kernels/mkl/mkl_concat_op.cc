@@ -264,12 +264,12 @@ struct MklConcatFwdParams {
   MklConcatFwdParams(std::vector<memory::dims>& src_dims_pt,
                      memory::dims dst_dims, int num_inputs, int concat_dims,
                      memory::format_tag mkl_common_format)
-      : dst_dims(dst_dims),
+      : dst_dims(std::move(dst_dims)),
         num_inputs(num_inputs),
         concat_dims(concat_dims),
         mkl_common_format(mkl_common_format) {
     for (int k = 0; k < num_inputs; ++k) {
-      src_dims.push_back(src_dims_pt[k]);
+      src_dims.push_back(std::move(src_dims_pt[k]));
     }
   }
 };
@@ -320,7 +320,7 @@ class MklConcatFwdPrimitive : public MklPrimitive {
       context_.data_mem[i] = *context_.data_mem_shdptr[i];
     }
 
-    execute_primitives(context_.fwd_primitives, fwd_stream,
+    execute_primitives(context_.fwd_primitives, std::move(fwd_stream),
                        context_.fwd_primitives_args);
 
     // After exec, set data handle back
@@ -827,7 +827,7 @@ class MklConcatOp : public OpKernel {
           dst.SetUsrMemDataHandle(dst_tensor, fwd_cpu_stream);
           // Execute concat
           concat_fwd->Execute(srcs_mem, dst.GetOpMem(), concat_fwd_dims,
-                              fwd_cpu_stream);
+                              std::move(fwd_cpu_stream));
         }
 
         // For quantized concat, min and max outputs are also computed.

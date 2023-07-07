@@ -110,9 +110,9 @@ class MklAvgPoolingOp : public MklPoolingForwardOpBase<T> {
         pooling_prop_kind = prop_kind::forward_training;
 
       MklPoolingParams fwdParams(
-          src_dims, output_dims_mkl_order, filter_dims, strides, padding_left,
-          padding_right, dnnl::algorithm::pooling_avg_exclude_padding,
-          pooling_prop_kind,
+          std::move(src_dims), output_dims_mkl_order, std::move(filter_dims),
+          std::move(strides), std::move(padding_left), std::move(padding_right),
+          dnnl::algorithm::pooling_avg_exclude_padding, pooling_prop_kind,
           static_cast<memory::format_tag>(this->data_format_mkldnn_), input_md,
           this->native_format_);
       MklDnnThreadPool eigen_tp(context);
@@ -120,7 +120,7 @@ class MklAvgPoolingOp : public MklPoolingForwardOpBase<T> {
 
       // Allocate output tensor.
       this->AllocateOutputTensor(context, *(pooling_fwd->GetPoolingFwdPd()),
-                                 output_dims_mkl_order,
+                                 std::move(output_dims_mkl_order),
                                  this->tensor_format_mkldnn_, &output_tensor);
       DCHECK(output_tensor);
       OP_REQUIRES_OK(context, context->status());
@@ -131,7 +131,8 @@ class MklAvgPoolingOp : public MklPoolingForwardOpBase<T> {
       std::shared_ptr<stream> fwd_cpu_stream;
       fwd_cpu_stream.reset(CreateStream(&eigen_tp, pooling_fwd->GetEngine()));
       // Execute pooling op.
-      pooling_fwd->Execute(src_data, dst_data, nullptr, fwd_cpu_stream);
+      pooling_fwd->Execute(src_data, dst_data, nullptr,
+                           std::move(fwd_cpu_stream));
 
       // Pass min, max from input to output.
       if (int8_forward_inference) {
@@ -316,8 +317,9 @@ class MklAvgPoolingGradOp : public MklPoolingBackwardOpBase<T> {
       // Pass prop_kind::forward_training to create a forward primitive
       // that is used in the backward pass.
       MklPoolingParams bwdParams(
-          orig_input_dims_mkl_order, output_dims_mkl_order, filter_dims,
-          strides, padding_left, padding_right,
+          std::move(orig_input_dims_mkl_order),
+          std::move(output_dims_mkl_order), std::move(filter_dims),
+          std::move(strides), std::move(padding_left), std::move(padding_right),
           dnnl::algorithm::pooling_avg_exclude_padding,
           prop_kind::forward_training,
           static_cast<memory::format_tag>(this->data_format_mkldnn_), src_md,
@@ -350,7 +352,7 @@ class MklAvgPoolingGradOp : public MklPoolingBackwardOpBase<T> {
 
       // Execute pooling op.
       pooling_bwd->Execute(diff_dst_data, diff_src_data, nullptr,
-                           bwd_cpu_stream);
+                           std::move(bwd_cpu_stream));
     } catch (dnnl::error& e) {
       string error_msg = "Status: " + std::to_string(e.status) +
                          ", message: " + string(e.message) + ", in file " +

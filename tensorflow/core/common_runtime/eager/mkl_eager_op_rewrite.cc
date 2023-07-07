@@ -79,7 +79,7 @@ REGISTER_REWRITE(EagerOpRewriteRegistry::POST_PLACEMENT, 10000,
 
 // Constructor
 MklEagerOpRewrite::MklEagerOpRewrite(string name, string file, string line)
-    : EagerOpRewrite(name, file, line) {
+    : EagerOpRewrite(std::move(name), std::move(file), std::move(line)) {
   InsertMKLEagerOps({"AvgPool", AlwaysRewrite, CreateGenericMklOp});
   InsertMKLEagerOps({"AvgPoolGrad", AlwaysRewrite, CreateGenericMklOp});
   InsertMKLEagerOps({"AvgPool3D", AlwaysRewrite, CreateGenericMklOp});
