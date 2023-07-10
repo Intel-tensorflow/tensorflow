@@ -2076,8 +2076,9 @@ bool FindMklLayerNorm(RemapperContext* ctx, int node_index,
   // clang-format on
   using utils::MatchingDirection;
   using utils::NodeStatus;
+  int pattern = 0;
   // clang-format off
-  utils::OpTypePattern layer_norm_pattern =
+  utils::OpTypePattern layer_norm_pattern_1 =
     {"AddV2", "output", NodeStatus::kReplace,
       {
         {"*", "beta", NodeStatus::kRemain},
@@ -2087,7 +2088,7 @@ bool FindMklLayerNorm(RemapperContext* ctx, int node_index,
               {
                 {"FusedBatchNormV3", "fused_batch_norm", NodeStatus::kRemove,
                   {
-                    {"Reshape", "pre_reshape", NodeStatus::kRemove,
+                    {"Reshape", "processed_input", NodeStatus::kRemove,
                       {
                         {"*", "input", NodeStatus::kRemain},
                         {"*", "pre_shape", NodeStatus::kRemain}
@@ -2116,6 +2117,54 @@ bool FindMklLayerNorm(RemapperContext* ctx, int node_index,
           }
         }
       }
+    };
+
+  // Some models uses different layer norm pattern, this is another variation
+  // of layernorm pattern
+  utils::OpTypePattern layer_norm_pattern_2 =
+    {"AddV2", "output", NodeStatus::kReplace,
+      {
+        {"*", "beta", NodeStatus::kRemain},
+        {"Mul", "mul", NodeStatus::kRemove,
+          {
+            {"Sub", "processed_input", NodeStatus::kRemove,
+              {
+                {"*", "input", NodeStatus::kRemain},
+                {"Mean", "mean", NodeStatus::kRemove,
+                  {
+                    {"*", "input", NodeStatus::kRemain},
+                    {"*", "indices_mean", NodeStatus::kRemain}
+                  }
+                }
+              }
+            },
+            {"Mul", "scale", NodeStatus::kRemove,
+              {
+                {"Rsqrt", "rqsrt", NodeStatus::kRemove,
+                   {
+                     {"AddV2", "add_epsilon", NodeStatus::kRemove,
+                       {
+                         {"Mean", "mean_square", NodeStatus::kRemove,
+                           {
+                             {"Square", "square", NodeStatus::kRemove,
+                               {
+                                 {"Sub", "sub_mean", NodeStatus::kRemove}
+                               }
+                             },
+                             {"*", "indices_var", NodeStatus::kRemain}
+                           }
+                         },
+                         {"Const", "epsilon", NodeStatus::kRemain}
+                       }
+                     }
+                   }
+                 },
+                {"*", "gamma", NodeStatus::kRemain}
+              }
+            }
+          }
+        }
+      }
     };  // clang-format on
 
   utils::SubGraphMatcher<MatchingDirection::kFollowInputs> graph_matcher(
@@ -2123,17 +2172,29 @@ bool FindMklLayerNorm(RemapperContext* ctx, int node_index,
   bool found_op_type_match = false;
   matched_nodes_map->clear();
   remove_node_indices->clear();
-  found_op_type_match =
-      graph_matcher.GetMatchedNodes(layer_norm_pattern, ctx->nodes_to_preserve,
-                                    ctx->graph_view.GetNode(node_index),
-                                    matched_nodes_map, remove_node_indices);
+  found_op_type_match = graph_matcher.GetMatchedNodes(
+      layer_norm_pattern_1, ctx->nodes_to_preserve,
+      ctx->graph_view.GetNode(node_index), matched_nodes_map,
+      remove_node_indices);
+  if (found_op_type_match) pattern = 1;
   // If Keras api based layer-norm is not found, check if custom layer-norm is
-  // present in the graph
+  // present in the graph, for example mlperf transformer model uses a custom
+  // implmentation of layer-norm.
+  if (!found_op_type_match) {
+    matched_nodes_map->clear();
+    remove_node_indices->clear();
+    found_op_type_match = graph_matcher.GetMatchedNodes(
+        layer_norm_pattern_2, ctx->nodes_to_preserve,
+        ctx->graph_view.GetNode(node_index), matched_nodes_map,
+        remove_node_indices);
+    if (found_op_type_match) pattern = 2;
+  }
   if (!found_op_type_match) {
     matched_nodes_map->clear();
     remove_node_indices->clear();
     found_op_type_match = IsCommonNormPattern(
         ctx, node_index, matched_nodes_map, remove_node_indices);
+    if (found_op_type_match) pattern = 3;
   }
 
   // Additional check for LayerNorm
@@ -2174,68 +2235,75 @@ bool FindMklLayerNorm(RemapperContext* ctx, int node_index,
       } else {
         return false;
       }
-      auto* pre_reshape_node =
-          ctx->graph_view.GetNode(matched_nodes_map->at("pre_reshape"))->node();
+    } else {
+      if (pattern == 3) {
+        // Make sure the custom pattern conforms to layer-norm semantics by
+        // checking the reduction axis
+        NodeDef* mean1_node =
+            ctx->graph_view.GetNode(matched_nodes_map->at("mean1"))->node();
+        bool keep_dims = false;
+        if (!mean1_node ||
+            !TryGetNodeAttr(*mean1_node, "keep_dims", &keep_dims) || !keep_dims)
+          return false;
+        // Get the reduction axes for mean node to check if the
+        // mean computation complies with layer normalization
+        // i.e the axis count should be 1 and the reduction axis
+        // should be the last axis
+        NodeDef* mean_axis_node =
+            ctx->graph_view.GetNode(matched_nodes_map->at("r_indices1"))
+                ->node();
+        if (!mean_axis_node) {
+          VLOG(0) << "Unable to find reduction axis node";
+          return false;
+        }
+        Tensor mean_axis_tensor;
+        if (!mean_axis_tensor.FromProto(
+                mean_axis_node->attr().at("value").tensor())) {
+          return false;
+        }
+        DataType dtype = mean_axis_tensor.dtype();
+        if (dtype != DT_INT32 && dtype != DT_INT64) return false;
+
+        int expected_axis_count = 1;
+        if (mean_axis_tensor.NumElements() != expected_axis_count) return false;
+
+        NodeDef* input_node =
+            ctx->graph_view.GetNode(matched_nodes_map->at("input"))->node();
+        auto input_node_props =
+            ctx->graph_properties.GetOutputProperties(input_node->name());
+        int rank = Rank(input_node_props[0].shape());
+        if (dtype == DT_INT32) {
+          if (static_cast<int32>(rank - 1) != mean_axis_tensor.flat<int32>()(0))
+            return false;
+        } else {
+          if (static_cast<int64>(rank - 1) != mean_axis_tensor.flat<int64>()(0))
+            return false;
+        }
+        auto* gamma_node =
+            ctx->graph_view.GetNode(matched_nodes_map->at("gamma"))->node();
+        auto* beta_node =
+            ctx->graph_view.GetNode(matched_nodes_map->at("beta"))->node();
+        input_node_names->clear();
+        input_node_names->resize(3);
+        input_node_names->at(0) = mean1_node->input(0);
+        input_node_names->at(1) = gamma_node->name();
+        input_node_names->at(2) = beta_node->name();
+      }
+    }
+    if (pattern == 1 || pattern == 2) {
+      input_node_names->clear();
+      input_node_names->resize(3);
+      auto* processed_input_node =
+          ctx->graph_view.GetNode(matched_nodes_map->at("processed_input"))
+              ->node();
       auto* scale_node =
           ctx->graph_view.GetNode(matched_nodes_map->at("gamma"))->node();
       auto* beta_node =
           ctx->graph_view.GetNode(matched_nodes_map->at("beta"))->node();
       input_node_names->clear();
       input_node_names->resize(3);
-      input_node_names->at(0) = pre_reshape_node->input(0);
+      input_node_names->at(0) = processed_input_node->input(0);
       input_node_names->at(1) = scale_node->name();
-      input_node_names->at(2) = beta_node->name();
-
-    } else {
-      // Make sure the custom pattern conforms to layer-norm semantics by
-      // checking the reduction axis
-      NodeDef* mean1_node =
-          ctx->graph_view.GetNode(matched_nodes_map->at("mean1"))->node();
-      bool keep_dims = false;
-      if (!mean1_node ||
-          !TryGetNodeAttr(*mean1_node, "keep_dims", &keep_dims) || !keep_dims)
-        return false;
-      // Get the reduction axes for mean node to check if the
-      // mean computation complies with layer normalization
-      // i.e the axis count should be 1 and the reduction axis
-      // should be the last axis
-      NodeDef* mean_axis_node =
-          ctx->graph_view.GetNode(matched_nodes_map->at("r_indices1"))->node();
-      if (!mean_axis_node) {
-        VLOG(1) << "Unable to find reduction axis node";
-        return false;
-      }
-      Tensor mean_axis_tensor;
-      if (!mean_axis_tensor.FromProto(
-              mean_axis_node->attr().at("value").tensor())) {
-        return false;
-      }
-      DataType dtype = mean_axis_tensor.dtype();
-      if (dtype != DT_INT32 && dtype != DT_INT64) return false;
-
-      int expected_axis_count = 1;
-      if (mean_axis_tensor.NumElements() != expected_axis_count) return false;
-
-      NodeDef* input_node =
-          ctx->graph_view.GetNode(matched_nodes_map->at("input"))->node();
-      auto input_node_props =
-          ctx->graph_properties.GetOutputProperties(input_node->name());
-      int rank = Rank(input_node_props[0].shape());
-      if (dtype == DT_INT32) {
-        if (static_cast<int32>(rank - 1) != mean_axis_tensor.flat<int32>()(0))
-          return false;
-      } else {
-        if (static_cast<int64>(rank - 1) != mean_axis_tensor.flat<int64>()(0))
-          return false;
-      }
-      auto* gamma_node =
-          ctx->graph_view.GetNode(matched_nodes_map->at("gamma"))->node();
-      auto* beta_node =
-          ctx->graph_view.GetNode(matched_nodes_map->at("beta"))->node();
-      input_node_names->clear();
-      input_node_names->resize(3);
-      input_node_names->at(0) = mean1_node->input(0);
-      input_node_names->at(1) = gamma_node->name();
       input_node_names->at(2) = beta_node->name();
     }
 
@@ -3826,6 +3894,8 @@ Status AddMklLayerNorm(RemapperContext* ctx,
                        std::vector<bool>* invalidated_nodes,
                        std::vector<bool>* nodes_to_delete,
                        const float epsilon) {
+  auto* beta_node =
+      ctx->graph_view.GetNode(matched_nodes_map.at("beta"))->node();
   auto* output_node =
       ctx->graph_view.GetNode(matched_nodes_map.at("output"))->node();
 
