@@ -223,10 +223,12 @@ void PjRtDevice_DeviceToDeviceCopy(
 
   // The device id should match the local_hardware_id in
   // tensorflow/compiler/xla/pjrt/pjrt_client.h.
-  const int pjrt_dst_device_id = 
-                      tsl::GetDeviceIdFromDeviceParsedName(
-                          dst->parsed_name(), DeviceType(dst->device_type())).value();
-  xla::PjRtDevice * pjrt_dst_device = (*pjrt_dst_client)->LookupAddressableDevice(pjrt_dst_device_id).value();
+  const int pjrt_dst_device_id =
+      tsl::GetDeviceIdFromDeviceParsedName(dst->parsed_name(),
+                                           DeviceType(dst->device_type()))
+          .value();
+  xla::PjRtDevice* pjrt_dst_device =
+      (*pjrt_dst_client)->LookupAddressableDevice(pjrt_dst_device_id).value();
 
   StatusOr<std::unique_ptr<xla::PjRtBuffer>> buffer_or =
       src_device_buffer->CopyToDevice(pjrt_dst_device);
@@ -236,8 +238,9 @@ void PjRtDevice_DeviceToDeviceCopy(
   }
 
   xla::PjRtBuffer* pjrt_buffer = (*buffer_or).get();
-  
-  if (static_cast<PjRtDeviceContext*>(recv_dev_context)->use_pjrt_tensor_buffer()) {
+
+  if (static_cast<PjRtDeviceContext*>(recv_dev_context)
+          ->use_pjrt_tensor_buffer()) {
     // Copy the newly created tensor with PjRtTensorBuffer to output device
     // tensor.
     //
