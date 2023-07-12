@@ -243,8 +243,6 @@ class MklReorderWithScalePrimitiveFactory : public MklPrimitiveFactory<T> {
       DCHECK_EQ(fwdParams.post_op_params.param.size(), 1);
       key_creator.AddAsKey(fwdParams.post_op_params.name);
       key_creator.AddAsKey(fwdParams.post_op_params.param[0]);
-    } else {
-      return string("not_a_key");
     }
 
     return key_creator.GetKey();
@@ -308,6 +306,20 @@ class MklQuantizeV2Op : public OpKernel {
     OP_REQUIRES_OK(ctx, ctx->GetAttr("axis", &axis_));
     OP_REQUIRES_OK(
         ctx, ctx->GetAttr("ensure_minimum_range", &ensure_minimum_range_));
+    if (ctx->HasAttr("dtype")) {
+      OP_REQUIRES_OK(ctx, ctx->GetAttr("dtype", &dtype_));
+      if (dtype_ == DT_BFLOAT16) {
+        OP_REQUIRES(
+            ctx,
+            ctx->input_type(0) == DT_BFLOAT16 &&
+                (mode_ == QUANTIZE_MODE_MIN_FIRST ||
+                 mode_ == QUANTIZE_MODE_SCALED),
+            errors::InvalidArgument("Input type bfloat16 is supported only "
+                                    "with MIN_FIRST and SCLAED modes"));
+      }
+    } else {
+      dtype_ = DT_FLOAT;
+    }
   }
 
   void ComputeScalar(OpKernelContext* ctx, float min_range, float max_range) {
@@ -583,18 +595,22 @@ class MklQuantizeV2Op : public OpKernel {
   int round_mode_;
   int axis_;
   bool narrow_range_;
+  DataType dtype_;
 };
 
 #define REGISTER_QUANTIZE(src_type, dst_type)            \
   REGISTER_KERNEL_BUILDER(                               \
       Name("_MklQuantizeV2")                             \
           .Device(DEVICE_CPU)                            \
+          .TypeConstraint<src_type>("dtype")             \
           .TypeConstraint<dst_type>("T")                 \
           .Label(mkl_op_registry::kMklQuantizedOpLabel), \
       MklQuantizeV2Op<CPUDevice, dst_type, src_type, true>)
 
 REGISTER_QUANTIZE(float, qint8);
 REGISTER_QUANTIZE(float, quint8);
+REGISTER_QUANTIZE(bfloat16, qint8);
+REGISTER_QUANTIZE(bfloat16, quint8);
 #undef REGISTER_QUANTIZE
 
 #undef SET_MKL_LAYOUT
