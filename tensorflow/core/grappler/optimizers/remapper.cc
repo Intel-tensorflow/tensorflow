@@ -3442,7 +3442,7 @@ Status AddBatchNormNodes(RemapperContext* ctx, const FusedBatchNorm& matched) {
   a.set_device(fused_node.device());
   (*a.mutable_attr())["T"].set_type(dtype);
   *a.add_input() = std::move(x);
-  *a.add_input() = std::move(scaled_name);
+  *a.add_input() = scaled_name;
   mutation->AddNode(std::move(a), &status);
   TF_RETURN_IF_ERROR(status);
 
