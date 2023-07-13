@@ -288,7 +288,7 @@ class MklDnnConvUtil {
       filter_sizes[MklDnnDims3D::Dim3d_D] = filter_planes;
       filter_sizes[MklDnnDims3D::Dim3d_H] = filter_rows;
       filter_sizes[MklDnnDims3D::Dim3d_W] = filter_cols;
-      *filter_dims = filter_sizes;
+      *filter_dims = std::move(filter_sizes);
     }
   }
 
