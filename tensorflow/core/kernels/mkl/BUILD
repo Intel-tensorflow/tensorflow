@@ -390,6 +390,13 @@ tf_mkl_kernel_library(
 )
 
 tf_mkl_kernel_library(
+    name = "mkl_fused_gelu_op",
+    hdrs = ["mkl_eltwise_activation_base_op.h"],
+    prefix = "mkl_fused_gelu",
+    deps = MKL_DEPS,
+)
+
+tf_mkl_kernel_library(
     name = "mkl_softmax_op",
     prefix = "mkl_softmax",
     deps = [

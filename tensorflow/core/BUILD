@@ -644,6 +644,7 @@ cc_library(
         "//tensorflow/core/kernels/mkl:mkl_softmax_op",
         "//tensorflow/core/kernels/mkl:mkl_swish_op",
         "//tensorflow/core/kernels/mkl:mkl_fused_mish_op",
+        "//tensorflow/core/kernels/mkl:mkl_fused_gelu_op",
         "//tensorflow/core/kernels/mkl:mkl_transpose_op",
         "//tensorflow/core/kernels/mkl:mkl_batch_matmul_op",
         "//tensorflow/core/kernels/mkl:mkl_einsum_op",

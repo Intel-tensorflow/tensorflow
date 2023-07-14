@@ -2026,6 +2026,19 @@ oneDNN version of the Mish operator. Uses oneDNN APIs to implement Mish operator
 to invoke these operators.
 )doc");
 
+REGISTER_OP("_MklNativeGelu")
+    .Input("features: T")
+    .Output("activations: T")
+    .Attr("T: {float, bfloat16} = DT_FLOAT")
+    .SetShapeFn(shape_inference::UnchangedShape)
+    .Doc(R"doc(
+oneDNN version of the Gelu operator. Uses oneDNN APIs to implement Gelu operator that
+uses Erf.
+
+*NOTE*: Do not invoke this operator directly in Python. Graph rewrite pass is expected
+to invoke these operators.
+)doc");
+
 REGISTER_OP("_MklFusedBatchMatMulV2")
     .Input("x: T")
     .Input("y: T")
