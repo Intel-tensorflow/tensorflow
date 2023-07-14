@@ -43,7 +43,6 @@ void MklTestingUtil::RunMklQuantizeOp(const Tensor& input,
   Node* quantize_op;
   string round_mode =
       (mode == "SCALE") ? "HALF_TO_EVEN" : "HALF_AWAY_FROM_ZERO";
-
   TF_CHECK_OK(NodeBuilder("mkl_quantizeV2", "_MklQuantizeV2")
                   .Input(input_node)
                   .Input(min_node)

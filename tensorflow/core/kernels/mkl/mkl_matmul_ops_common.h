@@ -822,11 +822,14 @@ class MklMatMulPrimitive : public MklPrimitive {
     return context_.prim_desc->scratchpad_desc();
   }
   void Execute(const std::shared_ptr<stream>& stream, const Tlhs* a_data,
-               const Trhs* b_data, const Toutput* c_data, void* sp_data,
-               void* mul_data = nullptr, void* add_data = nullptr) {
+               const Trhs* b_data, const Toutput* c_data,
+               const MklMatMulParams& matmul_params, void* sp_data,
+               const std::vector<void*> binary_op_fusions_data = {}) {
 #ifdef DNNL_AARCH64_USE_ACL
     mutex_lock lock(primitive_execution_mu_);
 #endif
+    size_t num_post_ops_data = context_.post_ops_mem.size();
+    DCHECK(num_post_ops_data == binary_op_fusions_data.size());
 #if !defined(ENABLE_ONEDNN_OPENMP) && defined(ENABLE_ONEDNN_V2)
     context_.a_mem->set_data_handle(
         static_cast<void*>(const_cast<Tlhs*>(a_data)), *stream);
@@ -836,10 +839,9 @@ class MklMatMulPrimitive : public MklPrimitive {
         static_cast<void*>(const_cast<Toutput*>(c_data)), *stream);
     context_.sp_mem->set_data_handle(sp_data, *stream);
 
-    if (mul_data != nullptr)
-      context_.mul_mem->set_data_handle(mul_data, *stream);
-    if (add_data != nullptr)
-      context_.add_mem->set_data_handle(add_data, *stream);
+    for (int i = 0; i < num_post_ops_data; ++i)
+      context_.post_ops_mem[i]->set_data_handle(binary_op_fusions_data[i],
+                                                *stream);
 #else
     context_.a_mem->set_data_handle(
         static_cast<void*>(const_cast<Tlhs*>(a_data)));
@@ -848,8 +850,23 @@ class MklMatMulPrimitive : public MklPrimitive {
     context_.c_mem->set_data_handle(
         static_cast<void*>(const_cast<Toutput*>(c_data)));
     context_.sp_mem->set_data_handle(sp_data);
-    if (mul_data != nullptr) context_.mul_mem->set_data_handle(mul_data);
-    if (add_data != nullptr) context_.add_mem->set_data_handle(add_data);
+    for (int i = 0; i < num_post_ops_data; ++i)
+      context_.post_ops_mem[i]->set_data_handle(binary_op_fusions_data[i]);
+    auto const& post_op_params = matmul_params.post_op_params;
+    if (!post_op_params.empty()) {
+      for (auto const& post_op_param : post_op_params) {
+        if (post_op_param.name == "lhs_scale") {
+          context_.lhs_scale_mem->set_data_handle(static_cast<void*>(
+              const_cast<float*>(post_op_param.param.data())));
+        } else if (post_op_param.name == "rhs_scale") {
+          context_.rhs_scale_mem->set_data_handle(static_cast<void*>(
+              const_cast<float*>(post_op_param.param.data())));
+        } else if (post_op_param.name == "dst_scale") {
+          context_.dst_scale_mem->set_data_handle(static_cast<void*>(
+              const_cast<float*>(post_op_param.param.data())));
+        }
+      }
+    }
 #endif  // !ENABLE_ONEDNN_OPENMP && ENABLE_ONEDNN_V2
     execute_primitives(context_.matmul_primitives, stream, context_.net_args);
 
@@ -858,8 +875,8 @@ class MklMatMulPrimitive : public MklPrimitive {
     context_.b_mem->set_data_handle(DummyData);
     context_.c_mem->set_data_handle(DummyData);
     context_.sp_mem->set_data_handle(DummyData);
-    if (mul_data != nullptr) context_.mul_mem->set_data_handle(DummyData);
-    if (add_data != nullptr) context_.add_mem->set_data_handle(DummyData);
+    for (int i = 0; i < num_post_ops_data; ++i)
+      context_.post_ops_mem[i]->set_data_handle(DummyData);
   }
 
   std::shared_ptr<dnnl::matmul::primitive_desc> GetPrimitiveDesc() const {
@@ -873,9 +890,14 @@ class MklMatMulPrimitive : public MklPrimitive {
     std::shared_ptr<dnnl::memory> a_mem;
     std::shared_ptr<dnnl::memory> b_mem;
     std::shared_ptr<dnnl::memory> c_mem;
-    std::shared_ptr<dnnl::memory> mul_mem;
-    std::shared_ptr<dnnl::memory> add_mem;
     std::shared_ptr<dnnl::memory> sp_mem;
+
+    // Quantization scale related memory
+    std::shared_ptr<dnnl::memory> lhs_scale_mem;
+    std::shared_ptr<dnnl::memory> rhs_scale_mem;
+    std::shared_ptr<dnnl::memory> dst_scale_mem;
+
+    std::vector<std::shared_ptr<dnnl::memory>> post_ops_mem;
 
     // Descriptor and primitive-descriptor for MatMul.
 #ifdef ENABLE_ONEDNN_V2
@@ -887,8 +909,11 @@ class MklMatMulPrimitive : public MklPrimitive {
     std::shared_ptr<dnnl::memory::desc> a_md;
     std::shared_ptr<dnnl::memory::desc> b_md;
     std::shared_ptr<dnnl::memory::desc> c_md;
-    std::shared_ptr<dnnl::memory::desc> mul_md;
-    std::shared_ptr<dnnl::memory::desc> add_md;
+
+    // Quantization scale related memory descriptors
+    std::shared_ptr<dnnl::memory::desc> lhs_scale_md;
+    std::shared_ptr<dnnl::memory::desc> rhs_scale_md;
+    std::shared_ptr<dnnl::memory::desc> dst_scale_md;
 
     // MatMul primitive.
     std::vector<dnnl::primitive> matmul_primitives;
@@ -898,9 +923,10 @@ class MklMatMulPrimitive : public MklPrimitive {
         : a_mem(nullptr),
           b_mem(nullptr),
           c_mem(nullptr),
-          mul_mem(nullptr),
-          add_mem(nullptr),
           sp_mem(nullptr),
+          lhs_scale_mem(nullptr),
+          rhs_scale_mem(nullptr),
+          dst_scale_mem(nullptr),
 #ifdef ENABLE_ONEDNN_V2
           desc(nullptr),
 #endif  // ENABLE_ONEDNN_V2
@@ -908,8 +934,9 @@ class MklMatMulPrimitive : public MklPrimitive {
           a_md(nullptr),
           b_md(nullptr),
           c_md(nullptr),
-          mul_md(nullptr),
-          add_md(nullptr) {
+          lhs_scale_md(nullptr),
+          rhs_scale_md(nullptr),
+          dst_scale_md(nullptr) {
     }
   };
 
@@ -926,6 +953,17 @@ class MklMatMulPrimitive : public MklPrimitive {
     context_.c_md.reset(new memory::desc({params.c_dims}, MklDnnType<Toutput>(),
                                          params.c_strides));
 
+    // Create memory primitive based on dummy data.
+    context_.a_mem.reset(
+        new dnnl::memory(*context_.a_md, cpu_engine_, DummyData));
+    context_.b_mem.reset(
+        new dnnl::memory(*context_.b_md, cpu_engine_, DummyData));
+    context_.c_mem.reset(
+        new dnnl::memory(*context_.c_md, cpu_engine_, DummyData));
+    context_.net_args.push_back({{DNNL_ARG_SRC, *context_.a_mem},
+                                 {DNNL_ARG_WEIGHTS, *context_.b_mem},
+                                 {DNNL_ARG_DST, *context_.c_mem}});
+
     // Create matmul.
 #ifdef ENABLE_ONEDNN_V2
     context_.desc.reset(
@@ -936,28 +974,71 @@ class MklMatMulPrimitive : public MklPrimitive {
     auto const& post_op_params = params.post_op_params;
     dnnl::primitive_attr post_ops_attr;
     dnnl::post_ops post_ops;
+    std::unordered_map<string, bool> is_scale_set;
+    int binary_post_ops_count = 0;  // Keep track op binary fusions
     if (!post_op_params.empty()) {
       for (auto const& post_op_param : post_op_params) {
-        if (post_op_param.name == "output_scale") {
-#ifdef ENABLE_ONEDNN_V2
-          // TODO(intel-tf): Enable this for int8 when using oneDNN v3.x
-          DCHECK_EQ(post_op_param.param.size(), 1);
-          std::vector<float> scales;
-          scales.push_back(post_op_param.param[0]);
-          post_ops_attr.set_output_scales(0, scales);
-#endif  // ENABLE_ONEDNN_V2
+        if (post_op_param.name == "lhs_scale") {
+          is_scale_set.insert({"lhs", true});
+          post_ops_attr.set_scales_mask(DNNL_ARG_SRC, 0);
+          context_.lhs_scale_md.reset(new memory::desc({1}, MklDnnType<float>(),
+                                                       memory::format_tag::x));
+          context_.lhs_scale_mem.reset(
+              new memory(*context_.lhs_scale_md, cpu_engine_, DummyData));
+        } else if (post_op_param.name == "rhs_scale") {
+          is_scale_set.insert({"rhs", true});
+          post_ops_attr.set_scales_mask(DNNL_ARG_WEIGHTS, 0);
+          context_.rhs_scale_md.reset(new memory::desc({1}, MklDnnType<float>(),
+                                                       memory::format_tag::x));
+          context_.rhs_scale_mem.reset(
+              new memory(*context_.rhs_scale_md, cpu_engine_, DummyData));
+        } else if (post_op_param.name == "dst_scale") {
+          is_scale_set.insert({"dst", true});
+          post_ops_attr.set_scales_mask(DNNL_ARG_DST, 0);
+          context_.dst_scale_md.reset(new memory::desc({1}, MklDnnType<float>(),
+                                                       memory::format_tag::x));
+          context_.dst_scale_mem.reset(
+              new memory(*context_.dst_scale_md, cpu_engine_, DummyData));
+        } else if (post_op_param.name == "linear") {
+          DCHECK_EQ(post_op_param.param.size(), 3);
+          float op_scale = post_op_param.param[0];
+          float op_alpha = post_op_param.param[1];
+          float op_beta = post_op_param.param[2];
+          post_ops.append_eltwise(dnnl::algorithm::eltwise_linear, op_alpha,
+                                  op_beta);
         } else if (post_op_param.name == "mul") {
-          context_.mul_md.reset(new memory::desc({post_op_param.dims},
-                                                 post_op_param.data_type,
-                                                 post_op_param.format_tag));
-          post_ops.append_binary(dnnl::algorithm::binary_mul, *context_.mul_md);
+          auto operand_md =
+              memory::desc({post_op_param.dims}, post_op_param.data_type,
+                           post_op_param.format_tag);
+          post_ops.append_binary(dnnl::algorithm::binary_mul, operand_md);
+          auto operand_mem_ptr = std::make_shared<dnnl::memory>(
+              operand_md, cpu_engine_, DummyData);
+          context_.net_args[0].insert(
+              {DNNL_ARG_ATTR_MULTIPLE_POST_OP(binary_post_ops_count) |
+                   DNNL_ARG_SRC_1,
+               *operand_mem_ptr});
+          context_.post_ops_mem.push_back(std::move(operand_mem_ptr));
+          binary_post_ops_count++;
         } else if (post_op_param.name == "add") {
-          context_.add_md.reset(new memory::desc({post_op_param.dims},
-                                                 post_op_param.data_type,
-                                                 post_op_param.format_tag));
-          post_ops.append_binary(dnnl::algorithm::binary_add, *context_.add_md);
+          auto operand_md =
+              memory::desc({post_op_param.dims}, post_op_param.data_type,
+                           post_op_param.format_tag);
+          post_ops.append_binary(dnnl::algorithm::binary_add, operand_md);
+          auto operand_mem_ptr = std::make_shared<dnnl::memory>(
+              operand_md, cpu_engine_, DummyData);
+          context_.net_args[0].insert(
+              {DNNL_ARG_ATTR_MULTIPLE_POST_OP(binary_post_ops_count) |
+                   DNNL_ARG_SRC_1,
+               *operand_mem_ptr});
+          context_.post_ops_mem.push_back(std::move(operand_mem_ptr));
+          binary_post_ops_count++;
         } else {
-          DCHECK((post_op_param.name == "output_scale"));
+          DCHECK(((post_op_param.name == "lhs_scale") ||
+                  (post_op_param.name == "rhs_scale") ||
+                  (post_op_param.name == "dst_scale")));
+          DCHECK((post_op_param.name == "linear"));
+          DCHECK((post_op_param.name == "mul"));
+          DCHECK((post_op_param.name == "add"));
         }
       }
       post_ops_attr.set_post_ops(post_ops);
@@ -972,44 +1053,19 @@ class MklMatMulPrimitive : public MklPrimitive {
                                    *context_.c_md, post_ops_attr));
 #endif  // ENABLE_ONEDNN_V2
 
-    // Create memory primitive based on dummy data.
-    context_.a_mem.reset(
-        new dnnl::memory(*context_.a_md, cpu_engine_, DummyData));
-    context_.b_mem.reset(
-        new dnnl::memory(*context_.b_md, cpu_engine_, DummyData));
-    context_.c_mem.reset(
-        new dnnl::memory(*context_.c_md, cpu_engine_, DummyData));
     auto scratchpad_md = context_.prim_desc->scratchpad_desc();
     context_.sp_mem.reset(
         new dnnl::memory(scratchpad_md, cpu_engine_, DummyData));
+    context_.net_args[0].insert({DNNL_ARG_SCRATCHPAD, *context_.sp_mem});
+    if (is_scale_set["lhs"] && is_scale_set["rhs"] && is_scale_set["dst"]) {
+      context_.net_args[0].insert(
+          {{DNNL_ARG_ATTR_SCALES | DNNL_ARG_SRC, *context_.lhs_scale_mem},
+           {DNNL_ARG_ATTR_SCALES | DNNL_ARG_WEIGHTS, *context_.rhs_scale_mem},
+           {DNNL_ARG_ATTR_SCALES | DNNL_ARG_DST, *context_.dst_scale_mem}});
+    }
 
     // Create matmul primitive.
     matmul_primitive.reset(new dnnl::matmul(*context_.prim_desc));
-    context_.net_args.push_back({{DNNL_ARG_SRC, *context_.a_mem},
-                                 {DNNL_ARG_WEIGHTS, *context_.b_mem},
-                                 {DNNL_ARG_SCRATCHPAD, *context_.sp_mem},
-                                 {DNNL_ARG_DST, *context_.c_mem}});
-    if (!post_op_params.empty()) {
-      int count = 0;
-      for (auto const& post_op_param : post_op_params) {
-        if (post_op_param.name == "mul") {
-          context_.mul_mem.reset(
-              new dnnl::memory(*context_.mul_md, cpu_engine_, DummyData));
-          context_.net_args[0].insert(
-              {DNNL_ARG_ATTR_MULTIPLE_POST_OP(count) | DNNL_ARG_SRC_1,
-               *context_.mul_mem});
-          count++;
-        } else if (post_op_param.name == "add") {
-          context_.add_mem.reset(
-              new dnnl::memory(*context_.add_md, cpu_engine_, DummyData));
-          context_.net_args[0].insert(
-              {DNNL_ARG_ATTR_MULTIPLE_POST_OP(count) | DNNL_ARG_SRC_1,
-               *context_.add_mem});
-          count++;
-        }
-      }
-    }
-
     context_.matmul_primitives.push_back(*matmul_primitive);
     return;
   }
@@ -1070,10 +1126,17 @@ class MklMatMulPrimitiveFactory : public MklPrimitiveFactory<T> {
 
     // Generate keys for post-ops
     for (auto const& post_op_param : params.post_op_params) {
-      if (post_op_param.name == "output_scale") {
+      if (post_op_param.name == "lhs_scale" ||
+          post_op_param.name == "rhs_scale" ||
+          post_op_param.name == "dst_scale") {
         DCHECK_EQ(post_op_param.param.size(), 1);
         key_creator.AddAsKey(post_op_param.name);
         key_creator.AddAsKey(post_op_param.param[0]);
+      } else if (post_op_param.name == "linear") {
+        key_creator.AddAsKey(post_op_param.name);
+        key_creator.AddAsKey(post_op_param.param[0]);
+        key_creator.AddAsKey(post_op_param.param[1]);
+        key_creator.AddAsKey(post_op_param.param[2]);
       } else if (post_op_param.name == "mul" || post_op_param.name == "add") {
         key_creator.AddAsKey(post_op_param.name);
         key_creator.AddAsKey(post_op_param.dims);
@@ -1129,7 +1192,7 @@ void dnnl_gemm(char transa, char transb, int64_t m, int64_t n, int64_t k,
   std::shared_ptr<stream> cpu_stream;
 
   cpu_stream.reset(CreateStream(&eigen_tp, matmul_prim->GetEngine()));
-  matmul_prim->Execute(cpu_stream, a, b, c, scratch_pad.Get());
+  matmul_prim->Execute(cpu_stream, a, b, c, params, scratch_pad.Get());
 }
 
 }  // anonymous namespace
