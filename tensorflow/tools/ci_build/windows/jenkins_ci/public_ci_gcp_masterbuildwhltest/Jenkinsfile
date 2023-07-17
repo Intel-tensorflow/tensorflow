@@ -1,8 +1,7 @@
-
-//The tf-test-win2 pipeline
-static final ArrayList buildLabels = [ 'winh' ]
-static final String branchName = params.get('CHECKOUT_BRANCH', 'master')
-static final String python_version = params.get('PYTHON_VERSION', '38')
+static final ArrayList buildLabels   = [ 'winh' ]
+static final String branchName       = params.get('CHECKOUT_BRANCH', 'master')
+static final String python_version   = params.get('PYTHON_VERSION', '38')
+static final Boolean  isSetOneDNNEnv = params.get('IS_SET_ONEDNN_ENV', false)
 
 String strTFGithubLabel = "Intel community CI build - Windows CPU"
 String strCommitID = ""
@@ -81,14 +80,20 @@ buildLabels.each { l ->
                 // Build TensorFlow, create wheel, run unit tests
                 stage('Build') {
                     catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-                        withEnv(["WORKSPACE=$WORKSPACE","PYTHON_VERSION=$python_version"]) {
+                        buildParams = ["WORKSPACE=$WORKSPACE","PYTHON_VERSION=$python_version"]
+
+                        if(isSetOneDNNEnv){
+                            buildParams.add("TF_ENABLE_ONEDNN_OPTS=1")
+                        }
+
+                        withEnv(buildParams) {
                         
                             echo "----- Build TF Windows Wheels & Unit Tests -----"
                             bat'''
                                 echo Workspace is %WORKSPACE%
                                 cd %WORKSPACE%
                                 wget https://raw.githubusercontent.com/Intel-tensorflow/tensorflow/bani/win_ci_scripts/tensorflow/tools/ci_build/windows/cpu/pip/ci_run_build_test.sh -O ci_run_build_test.sh
-                                set NUMBER_OF_PROCESSORS=16
+                                set NUMBER_OF_PROCESSORS=64
                                 bash ./ci_run_build_test.sh
                             '''
                         }
@@ -115,7 +120,7 @@ buildLabels.each { l ->
                 
                 if (currentBuild.result == "FAILURE") {
                     stage('Notify'){
-                        sendmail('67c478aa.intel.onmicrosoft.com@amer.teams.ms;8238e57d.intel.onmicrosoft.com@amer.teams.ms', "$JOB_NAME - Build # $BUILD_NUMBER - Result: Failed", "Build URL: $BUILD_URL")   
+                        sendmail('erxin.shang@intel.com;67c478aa.intel.onmicrosoft.com@amer.teams.ms;8238e57d.intel.onmicrosoft.com@amer.teams.ms', "$JOB_NAME - Build # $BUILD_NUMBER - Result: Failed", "Build URL: $BUILD_URL")   
                     }
                 }
             }
