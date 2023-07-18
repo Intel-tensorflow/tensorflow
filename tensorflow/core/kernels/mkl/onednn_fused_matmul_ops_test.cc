@@ -732,7 +732,7 @@ REGISTER_TYPED_TEST_SUITE_P(FusedMatMulOpsTest, BiasAddGeluApproximate,
                             Quantized_BiasAddAdd);
 
 // TODO(intel-tf): Add bfloat16 to Types when PR#56613 is merged.
-using DataTypes = ::testing::Types<float>;
+using DataTypes = ::testing::Types<float, bfloat16>;
 
 INSTANTIATE_TYPED_TEST_SUITE_P(Test, FusedMatMulOpsTest, DataTypes);
 

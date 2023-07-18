@@ -609,6 +609,8 @@ class QuantizedFusedMatMulOp
     params.dtypes.append(typeid(Tbias).name());
     params.dtypes.append(typeid(Toutput).name());
 
+    params.input_quant_mode = input_quant_mode_;
+
     for (const auto& post_op_info : post_op_info_list_) {
       auto post_op_kind = post_op_info.post_op_kind;
       switch (post_op_kind) {
@@ -718,7 +720,9 @@ class QuantizedFusedMatMulOp
       std::shared_ptr<dnnl::inner_product_forward::primitive_desc>& matmul_pd,
       const Tensor& bias_tensor, Tensor* temp_scaled_bias_tensor,
       void** bias_data) override {
-    if (std::is_same<Tbias, float>::value && input_quant_mode_ == "SCALED") {
+    if ((std::is_same<Tbias, float>::value ||
+         std::is_same<Tbias, bfloat16>::value) &&
+        input_quant_mode_ == "SCALED") {
       return;
     } else {
       const float min_input = ctx->input(input_min_idx_).flat<float>()(0);
@@ -801,7 +805,7 @@ class QuantizedFusedMatMulOp
               // to float32.
               adjusted_bias[j] = static_cast<float>(input_bias[j]) / scales[j];
             } else {
-              // Bias is float32 but still needs to be compensated.
+              // Bias is float32 or bfloat16 but still needs to be compensated.
               adjusted_bias[j] = static_cast<float>(input_bias[j]) +
                                  ((sum * q_min_input) / scales[j]);
             }

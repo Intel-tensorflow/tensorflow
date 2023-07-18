@@ -101,6 +101,7 @@ struct MklDnnMatMulFwdParams {
     string partial_key = string("");
   };
   std::vector<PostOpParam> post_op_params;
+  string input_quant_mode;
 
   MklDnnMatMulFwdParams(
       memory::dims src_dims, memory::dims weight_dims, memory::dims bias_dims,
@@ -269,15 +270,22 @@ class MklDnnMatMulFwdPrimitive : public MklPrimitive {
                                            MklDnnType<Toutput>(),
                                            matmul_fwd_params.dst_format));
 
-    if (std::is_same<Tbias, qint32>::value) {
-      context_.bias_md.reset(new memory::desc({matmul_fwd_params.bias_dims},
-                                              MklDnnType<TSCALED_BIAS>(),
-                                              memory::format_tag::any));
+    memory::data_type bias_dt;
+    if (std::is_same<Tweight, qint8>::value) {
+      // For QuantizedMatMul, bias needs to be passed to oneDNN as float of
+      // bfloat16 (even if Tbias is qint32).
+      if (std::is_same<Tbias, bfloat16>::value &&
+          matmul_fwd_params.input_quant_mode == "SCALED") {
+        bias_dt = MklDnnType<bfloat16>();
+      } else {
+        bias_dt = MklDnnType<float>();
+      }
     } else {
-      context_.bias_md.reset(new memory::desc({matmul_fwd_params.bias_dims},
-                                              MklDnnType<Tbias>(),
-                                              memory::format_tag::any));
+      bias_dt = MklDnnType<Tbias>();
     }
+    context_.bias_md.reset(new memory::desc({matmul_fwd_params.bias_dims},
+                                            bias_dt, memory::format_tag::any));
+
     // Create an inner-product.
 #ifdef ENABLE_ONEDNN_V2
     context_.fwd_desc.reset(new inner_product_forward::desc(
