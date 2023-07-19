@@ -51,7 +51,7 @@ struct MklBatchMatMulHelper {
   std::unique_ptr<MklMatMulParams> CreateMatMulParams(
       string& prefix, const TensorShape& lhs_shape,
       const TensorShape& rhs_shape, const TensorShape& out_shape, bool& adj_x,
-      bool& adj_y) {
+      bool& adj_y, memory::dims& bias_dims) {
     const auto ndims_lhs = lhs_shape.dims();
     const auto ndims_rhs = rhs_shape.dims();
     const auto ndims_out = out_shape.dims();
@@ -99,8 +99,8 @@ struct MklBatchMatMulHelper {
     }
 
     return std::make_unique<MklMatMulParams>(prefix, lhs_dims, rhs_dims,
-                                             out_dims, lhs_strides, rhs_strides,
-                                             out_strides);
+                                             bias_dims, out_dims, lhs_strides,
+                                             rhs_strides, out_strides);
   }
 };
 

@@ -57,8 +57,8 @@ class MklTestingUtil {
   static void GetQuantizationTensors(const Tensor& input, Tensor* output,
                                      DataType out_type, const string mode,
                                      Tensor* min_tensor, Tensor* max_tensor) {
-    CHECK_EQ(min_tensor->dtype(), DT_FLOAT);
-    CHECK_EQ(max_tensor->dtype(), DT_FLOAT);
+    DCHECK_EQ(min_tensor->dtype(), DT_FLOAT);
+    DCHECK_EQ(max_tensor->dtype(), DT_FLOAT);
     T min;
     T max;
     ComputeMinMax<T>(input, &min, &max);
@@ -66,7 +66,7 @@ class MklTestingUtil {
     float adjusted_min = static_cast<float>(min);
     float adjusted_max = static_cast<float>(max);
     if (mode == "SCALED") {
-      CHECK_EQ(output->dtype(), DT_QINT8);
+      DCHECK_EQ(output->dtype(), DT_QINT8);
       float range = std::max(std::abs(adjusted_min), std::abs(adjusted_max));
       adjusted_min = -range;
       adjusted_max = range;

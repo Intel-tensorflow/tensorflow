@@ -1164,6 +1164,198 @@ class MklFusedBatchMatMul : public MklRemapperTest {
     }
     test::ExpectClose(tensors_expected[0], tensors[0], atol, rtol);
   }
+  template <typename T>
+  void VerifyBiasAddGeluFusion(bool adjx, bool adjy) {
+    using ::tensorflow::ops::Placeholder;
+    using normal_generator = Eigen::internal::NormalRandomGenerator<T>;
+
+    int b0 = 2;
+    int b1 = 2;
+    int m = 32;
+    int k = 16;
+    int n = 64;
+
+    tensorflow::Scope s = tensorflow::Scope::NewRootScope();
+
+    auto input_shape =
+        adjx ? TensorShape({b0, b1, k, m}) : TensorShape({b0, b1, m, k});
+    auto weight_shape =
+        adjy ? TensorShape({b0, b1, n, k}) : TensorShape({b0, b1, k, n});
+    auto bias_shape = TensorShape({n});
+
+    auto input_placeholder_shape = ops::Placeholder::Shape(input_shape);
+    auto weight_placeholder_shape = ops::Placeholder::Shape(weight_shape);
+    auto bias_add_placeholder_shape = ops::Placeholder::Shape({n});
+
+    auto input = Placeholder(s.WithOpName("input"), DataTypeToEnum<T>::v(),
+                             input_placeholder_shape);
+    auto weight = Placeholder(s.WithOpName("weight"), DataTypeToEnum<T>::v(),
+                              weight_placeholder_shape);
+    auto bias = Placeholder(s.WithOpName("bias"), DataTypeToEnum<T>::v(),
+                            bias_add_placeholder_shape);
+
+    auto batchmatmul =
+        ops::BatchMatMulV2(s.WithOpName("batchmatmul"), input, weight,
+                           ops::BatchMatMulV2::Attrs().AdjX(adjx).AdjY(adjy));
+    auto bias_add = ops::BiasAdd(s.WithOpName("bias_add"), batchmatmul, bias);
+
+    // Add Gelu with smaller ops
+    auto square_root_one_half_const =
+        ops::Const(s.WithOpName("square_root_one_half_const"), {0.707106f}, {});
+    auto bias_add_times_square_root_one_half =
+        ops::Mul(s.WithOpName("bias_add_times_square_root_one_half"), bias_add,
+                 square_root_one_half_const);
+    auto erf =
+        ops::Erf(s.WithOpName("erf"), bias_add_times_square_root_one_half);
+
+    auto one_const = ops::Const(s.WithOpName("one_const"), {1.0f}, {});
+    auto erf_plus_one = ops::AddV2(s.WithOpName("one_plus_erf"), erf, one_const);
+
+    auto one_half_const =
+        ops::Const(s.WithOpName("one_half_const"), {0.5f}, {});
+
+    auto erf_plus_one_times_one_half = ops::Mul(
+        s.WithOpName("erf_plus_one_times_one_half"), erf_plus_one, one_half_const);
+    auto gelu = ops::Mul(s.WithOpName("fusion_output"),
+                         erf_plus_one_times_one_half, bias_add);
+
+    auto fetch = ops::Identity(s.WithOpName("fetch"), gelu);
+
+    Tensor input_t = Tensor(DataTypeToEnum<T>::v(), input_shape);
+    Tensor weight_t = Tensor(DataTypeToEnum<T>::v(), weight_shape);
+    Tensor bias_t = Tensor(DataTypeToEnum<T>::v(), bias_shape);
+
+    input_t.flat<T>() =
+        input_t.flat<T>().template setRandom<normal_generator>();
+    weight_t.flat<T>() =
+        weight_t.flat<T>().template setRandom<normal_generator>();
+    bias_t.flat<T>() =
+        bias_t.flat<T>().template setRandom<normal_generator>();
+
+    GrapplerItem item;
+    item.fetch = {"fetch"};
+    item.feed = {{"input", input_t}, {"weight", weight_t}, {"bias", bias_t}};
+    TF_CHECK_OK(s.ToGraphDef(&item.graph));
+
+    // Place all nodes on CPU.
+    for (int i = 0; i < item.graph.node_size(); ++i) {
+      item.graph.mutable_node(i)->set_device("/device:CPU:0");
+    }
+
+    Remapper optimizer(RewriterConfig::ON);
+    GraphDef output;
+    TF_CHECK_OK(optimizer.Optimize(nullptr, item, &output));
+
+    int found = 0;
+    for (const NodeDef& node : output.node()) {
+      if (node.name() == "fusion_output") {
+        EXPECT_EQ("_MklFusedBatchMatMulV2", node.op());
+        ASSERT_GE(node.input_size(), 3);
+        EXPECT_EQ("input", node.input(0));
+        EXPECT_EQ("weight", node.input(1));
+        EXPECT_EQ("bias", node.input(2));
+        const auto fused_ops = node.attr().at("fused_ops").list().s();
+        EXPECT_EQ(2, fused_ops.size());
+        EXPECT_EQ(fused_ops[0], "BiasAdd");
+        EXPECT_EQ(fused_ops[1], "GeluExact");
+        found++;
+      }
+    }
+    EXPECT_EQ(1, found);
+
+      auto tensors_expected = EvaluateNodes(item.graph, item.fetch,
+      item.feed);
+      auto tensors = EvaluateNodes(output, item.fetch, item.feed);
+      float atol = 2e-6, rtol = 2e-6;
+      if (std::is_same<T, bfloat16>::value) {
+        atol = 1e-2;
+        rtol = 1e-2;
+      }
+      test::ExpectClose(tensors_expected[0], tensors[0], atol, rtol);
+  }
+
+  template <typename T>
+  void VerifyBiasAddFusion(bool adjx, bool adjy) {
+    using ::tensorflow::ops::Placeholder;
+    using normal_generator = Eigen::internal::NormalRandomGenerator<T>;
+    int b0 = 2;
+    int b1 = 2;
+    int m = 32;
+    int k = 16;
+    int n = 64;
+
+    tensorflow::Scope s = tensorflow::Scope::NewRootScope();
+
+    auto input_shape = adjx ? TensorShape({b1, k, m}) : TensorShape({b1, m, k});
+    auto weight_shape =
+        adjy ? TensorShape({b1, n, k}) : TensorShape({b1, k, n});
+
+    auto input_placeholder_shape = ops::Placeholder::Shape(input_shape);
+    auto weight_placeholder_shape = ops::Placeholder::Shape(weight_shape);
+    auto bias_add_placeholder_shape = ops::Placeholder::Shape({64});
+
+    auto input = Placeholder(s.WithOpName("input"), DataTypeToEnum<T>::v(),
+                             input_placeholder_shape);
+    auto weight = Placeholder(s.WithOpName("weight"), DataTypeToEnum<T>::v(),
+                              weight_placeholder_shape);
+    auto bias = Placeholder(s.WithOpName("bias"), DataTypeToEnum<T>::v(),
+                            bias_add_placeholder_shape);
+
+    auto batchmatmul =
+        ops::BatchMatMulV2(s.WithOpName("batchmatmul"), input, weight,
+                           ops::BatchMatMulV2::Attrs().AdjX(adjx).AdjY(adjy));
+    auto bias_add = ops::BiasAdd(s.WithOpName("bias_add"), batchmatmul, bias);
+
+    auto fetch = ops::Identity(s.WithOpName("fetch"), bias_add);
+
+    Tensor input_t = Tensor(DataTypeToEnum<T>::v(), input_shape);
+    Tensor weight_t = Tensor(DataTypeToEnum<T>::v(), weight_shape);
+
+    auto bias_t = GenerateTensorWithSetRandom<DT_FLOAT>({64});
+    input_t.flat<T>() =
+        input_t.flat<T>().template setRandom<normal_generator>();
+    weight_t.flat<T>() =
+        weight_t.flat<T>().template setRandom<normal_generator>();
+
+    GrapplerItem item;
+    item.fetch = {"fetch"};
+    item.feed = {{"input", input_t}, {"weight", weight_t}, {"bias", bias_t}};
+    TF_CHECK_OK(s.ToGraphDef(&item.graph));
+
+    // Place all nodes on CPU.
+    for (int i = 0; i < item.graph.node_size(); ++i) {
+      item.graph.mutable_node(i)->set_device("/device:CPU:0");
+    }
+
+    Remapper optimizer(RewriterConfig::ON);
+    GraphDef output;
+    TF_CHECK_OK(optimizer.Optimize(nullptr, item, &output));
+
+    int found = 0;
+    for (const NodeDef& node : output.node()) {
+      if (node.name() == "bias_add") {
+        EXPECT_EQ("_MklFusedBatchMatMulV2", node.op());
+        ASSERT_GE(node.input_size(), 3);
+        EXPECT_EQ("input", node.input(0));
+        EXPECT_EQ("weight", node.input(1));
+        EXPECT_EQ("bias", node.input(2));
+        const auto fused_ops = node.attr().at("fused_ops").list().s();
+        EXPECT_EQ(1, fused_ops.size());
+        EXPECT_EQ(fused_ops[0], "BiasAdd");
+        found++;
+      }
+    }
+    EXPECT_EQ(1, found);
+
+    auto tensors_expected = EvaluateNodes(item.graph, item.fetch, item.feed);
+    auto tensors = EvaluateNodes(output, item.fetch, item.feed);
+    float atol = 1e-6, rtol = 1e-6;
+    if (std::is_same<T, bfloat16>::value) {
+      atol = 1e-2;
+      rtol = 1e-2;
+    }
+    test::ExpectClose(tensors_expected[0], tensors[0], atol, rtol);
+  }
 };
 
 TEST_F(MklFusedBatchMatMul, MulAndAdd) {
@@ -1171,6 +1363,18 @@ TEST_F(MklFusedBatchMatMul, MulAndAdd) {
     for (const auto adjy : {false, true}) {
       this->VerifyFused<float>(adjx, adjy);
       this->VerifyFused<bfloat16>(adjx, adjy);
+    }
+}
+TEST_F(MklFusedBatchMatMul, BiasAndGelu) {
+    for (const auto adjx : {false, true})
+      for (const auto adjy : {false, true}) {
+        this->VerifyBiasAddGeluFusion<float>(adjx, adjy);
+        }
+}
+TEST_F(MklFusedBatchMatMul, Bias) {
+  for (const auto adjx : {false, true})
+    for (const auto adjy : {false, true}) {
+      this->VerifyBiasAddFusion<float>(adjx, adjy);
     }
 }
 

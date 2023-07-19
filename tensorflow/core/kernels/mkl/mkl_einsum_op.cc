@@ -109,13 +109,15 @@ struct MklEinsumHelper {
     // Compute parameters for DNNL matmul primitive.
     MklBatchMatMulHelper bmm;
     string prefix = "einsum";
-    auto params = bmm.CreateMatMulParams(prefix, lhs.shape(), rhs.shape(),
-                                         out_shape, trans_x, trans_y);
+    memory::dims bias_dims = NONE_DIMS;
+    auto params =
+        bmm.CreateMatMulParams(prefix, lhs.shape(), rhs.shape(), out_shape,
+                               trans_x, trans_y, bias_dims);
 
     // Create or retrieve matmul primitive from cache.
     MklDnnThreadPool eigen_tp(ctx);
-    MklMatMulPrimitive<T, T, T>* matmul_prim =
-        MklMatMulPrimitiveFactory<T, T, T, T>::Get(
+    MklMatMulPrimitive<T, T, T, T>* matmul_prim =
+        MklMatMulPrimitiveFactory<T, T, T, T, T>::Get(
             *params, false /* value for do_not_cache */);
 
     T* weight_data = const_cast<T*>(rhs.flat<T>().data());
@@ -168,7 +170,7 @@ struct MklEinsumHelper {
 
     cpu_stream.reset(CreateStream(&eigen_tp, matmul_prim->GetEngine()));
 
-    matmul_prim->Execute(cpu_stream, lhs.flat<T>().data(), weight_data,
+    matmul_prim->Execute(cpu_stream, lhs.flat<T>().data(), nullptr, weight_data,
                          output->flat<T>().data(), *params, scratch_pad.Get());
 
     Tensor output_reshaped;

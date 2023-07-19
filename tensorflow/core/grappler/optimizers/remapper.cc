@@ -1481,7 +1481,7 @@ bool IsMatchedMatMulBiasAddAndGeluExact(
         },  // Mul: "erf_plus_one_times_one_half"
         {"BiasAdd", "bias_add", NodeStatus::kRemove,
           {
-            {"MatMul", "matmul", NodeStatus::kRemove},
+            {"MatMul|BatchMatMulV2", "matmul", NodeStatus::kRemove},
             {"*", "bias", NodeStatus::kRemain}
           }
         }  // BiasAdd: "bias_add"
@@ -1557,7 +1557,8 @@ bool FindMatMulBiasAddAndGelu(RemapperContext* ctx, int node_index,
                               const Cluster* cluster,
                               std::map<string, int>* matched_nodes_map,
                               std::set<int>* remove_node_indices,
-                              bool* is_gelu_approximate) {
+                              bool* is_gelu_approximate,
+                              bool* is_batchmatmulv2) {
   // Gelu fusion is enabled with oneDNN or cublasLt or cuDNN library.
   if (!IsMKLEnabled() && !BlasLtMatmulEnabled() &&
       !RuntimeFusionEnabled(cluster))
@@ -1677,31 +1678,64 @@ bool FindMatMulBiasAddAndGelu(RemapperContext* ctx, int node_index,
         ctx->graph_view.GetNode(matched_nodes_map->at("matmul"))->node();
     DataType matmul_dtype = GetDataTypeFromAttr(*matmul_node, "T");
 
-    bool cpu_ok = IsMKLEnabled() && IsCpuCompatibleMatMul(*ctx, matmul_node);
-    // Currently, the fusion is not supported on CPU for transpose_a in the
-    // MatMul op.
-    cpu_ok = cpu_ok && matmul_node->attr().contains("transpose_a") &&
-             !matmul_node->attr().at("transpose_a").b();
+    // Check if MatMul or BatchMatMulV2
+    if (matmul_node->op() == "BatchMatMulV2") {
+      *is_batchmatmulv2 = true;
+    }
 
-    bool gpu_ok = NodeIsOnGpu(matmul_node) && RuntimeFusionEnabled(cluster) &&
-                  matmul_dtype == DT_HALF;
-    if (!cpu_ok && !gpu_ok) return false;
+    if (*is_batchmatmulv2) {
+      // This fusion is available if BatchMatMulV2 is 3D/4D and bias is 1D.
+      if (!ctx->inferred_graph_properties) {
+        Status s = ctx->graph_properties.InferStatically(
+            /*assume_valid_feeds=*/true,
+            /*aggressive_shape_inference=*/false,
+            /*include_input_tensor_values=*/false,
+            /*include_output_tensor_values=*/true);
+        if (!s.ok()) return false;
+        ctx->inferred_graph_properties = true;
+      }
 
-    // Check if the leading dims of input matrices are even numbers. The CuDNN
-    // runtime fusion kernels require 32-bit aligned data loading.
-    if (gpu_ok) {
-      const std::vector<OpInfo::TensorProperties>& input_props =
-          ctx->graph_properties.GetInputProperties(matmul_node->name());
-      const TensorShapeProto& a_shape =
-          !input_props.empty() ? input_props[0].shape() : TensorShapeProto();
-      const TensorShapeProto& b_shape =
-          !input_props.empty() ? input_props[1].shape() : TensorShapeProto();
-      bool valid_dims = Rank(a_shape) == 2 && Rank(b_shape) == 2 &&
-                        IsKnown(a_shape.dim(1)) &&         //
-                        IsKnown(b_shape.dim(1)) &&         //
-                        a_shape.dim(1).size() % 2 == 0 &&  //
-                        b_shape.dim(1).size() % 2 == 0;
-      if (!valid_dims) return false;
+      NodeDef* biasadd_node_def =
+          ctx->graph_view.GetNode(matched_nodes_map->at("bias"))->node();
+      auto biasadd_props =
+          ctx->graph_properties.GetOutputProperties(biasadd_node_def->name());
+      if (Rank(biasadd_props[0].shape()) != 1) return false;
+
+      if (!IsCpuCompatibleMatMul(*ctx, matmul_node)) return false;
+
+      auto batch_matmul_props =
+          ctx->graph_properties.GetOutputProperties(matmul_node->name());
+      if (Rank(batch_matmul_props[0].shape()) != 4 &&
+          Rank(batch_matmul_props[0].shape()) != 3) {
+        return false;
+      }
+    } else {
+      bool cpu_ok = IsMKLEnabled() && IsCpuCompatibleMatMul(*ctx, matmul_node);
+      // Currently, the fusion is not supported on CPU for transpose_a in the
+      // MatMul op.
+      cpu_ok = cpu_ok && matmul_node->attr().contains("transpose_a") &&
+              !matmul_node->attr().at("transpose_a").b();
+
+      bool gpu_ok = NodeIsOnGpu(matmul_node) && RuntimeFusionEnabled(cluster) &&
+                    matmul_dtype == DT_HALF;
+      if (!cpu_ok && !gpu_ok) return false;
+
+      // Check if the leading dims of input matrices are even numbers. The CuDNN
+      // runtime fusion kernels require 32-bit aligned data loading.
+      if (gpu_ok) {
+        const std::vector<OpInfo::TensorProperties>& input_props =
+            ctx->graph_properties.GetInputProperties(matmul_node->name());
+        const TensorShapeProto& a_shape =
+            !input_props.empty() ? input_props[0].shape() : TensorShapeProto();
+        const TensorShapeProto& b_shape =
+            !input_props.empty() ? input_props[1].shape() : TensorShapeProto();
+        bool valid_dims = Rank(a_shape) == 2 && Rank(b_shape) == 2 &&
+                          IsKnown(a_shape.dim(1)) &&         //
+                          IsKnown(b_shape.dim(1)) &&         //
+                          a_shape.dim(1).size() % 2 == 0 &&  //
+                          b_shape.dim(1).size() % 2 == 0;
+        if (!valid_dims) return false;
+      }
     }
 
     // Check if the matched constants have desired values.
@@ -2971,6 +3005,73 @@ bool FindTensorToHashBucket(const RemapperContext& ctx, int node_index,
   return true;
 }
 
+bool FindBatchMatMulBias(RemapperContext* ctx, int node_index,
+                         std::map<string, int>* matched_nodes_map,
+                         std::set<int>* remove_node_indices,
+                         std::vector<string>* input_node_names) {
+  if (!IsMKLEnabled()) return false;
+
+  using utils::MatchingDirection;
+  using utils::NodeStatus;
+
+  // clang-format off
+  utils::OpTypePattern fusion_pattern1 =
+    {"BiasAdd", "output", NodeStatus::kReplace,
+      {
+        {"BatchMatMulV2", "batch_matmul", NodeStatus::kRemove},
+        {"*", "bias", NodeStatus::kRemain}
+      }
+    };
+  // clang-format on
+
+  utils::SubGraphMatcher<MatchingDirection::kFollowInputs> graph_matcher(
+      &(ctx->graph_view));
+  bool found_op_type_match = false;
+  found_op_type_match =
+      graph_matcher.GetMatchedNodes(fusion_pattern1, ctx->nodes_to_preserve,
+                                    ctx->graph_view.GetNode(node_index),
+                                    matched_nodes_map, remove_node_indices);
+
+  if (!found_op_type_match) return false;
+  // This fusion is available if BatchMatMul is 3D/4D and bias is 1D.
+  if (!ctx->inferred_graph_properties) {
+    Status s = ctx->graph_properties.InferStatically(
+        /*assume_valid_feeds=*/true,
+        /*aggressive_shape_inference=*/false,
+        /*include_input_tensor_values=*/false,
+        /*include_output_tensor_values=*/true);
+    if (!s.ok()) return false;
+    ctx->inferred_graph_properties = true;
+  }
+  NodeDef* biasadd_node_def =
+      ctx->graph_view.GetNode(matched_nodes_map->at("bias"))->node();
+  auto biasadd_props =
+      ctx->graph_properties.GetOutputProperties(biasadd_node_def->name());
+  if (Rank(biasadd_props[0].shape()) != 1) return false;
+
+  NodeDef* batch_matmul_node_def =
+      ctx->graph_view.GetNode(matched_nodes_map->at("batch_matmul"))->node();
+  if (!IsCpuCompatibleMatMul(*ctx, batch_matmul_node_def)) return false;
+
+  auto batch_matmul_props =
+      ctx->graph_properties.GetOutputProperties(batch_matmul_node_def->name());
+  if (Rank(batch_matmul_props[0].shape()) != 4 &&
+      Rank(batch_matmul_props[0].shape()) != 3) {
+    return false;
+  }
+
+  NodeDef* bias_node_def =
+      ctx->graph_view.GetNode(matched_nodes_map->at("bias"))->node();
+
+  input_node_names->clear();
+  input_node_names->resize(3);
+
+  input_node_names->at(0) = batch_matmul_node_def->input(0);
+  input_node_names->at(1) = batch_matmul_node_def->input(1);
+  input_node_names->at(2) = bias_node_def->name();
+  return found_op_type_match;
+}
+
 bool FindFusedBatchMatMul(RemapperContext* ctx, int node_index,
                           std::map<string, int>* matched_nodes_map,
                           std::set<int>* remove_node_indices,
@@ -3971,7 +4072,7 @@ Status AddFusedMatMulBiasAddAndGelu(
     RemapperContext* ctx, const std::map<string, int>& matched_nodes_map,
     const std::set<int>& remove_node_indices,
     std::vector<bool>* invalidated_nodes, std::vector<bool>* nodes_to_delete,
-    bool with_reshape, bool is_gelu_approximate) {
+    bool with_reshape, bool is_gelu_approximate, bool is_batchmatmulv2) {
   auto* output_node =
       ctx->graph_view.GetNode(matched_nodes_map.at("output"))->node();
   auto* matmul_node =
@@ -3994,7 +4095,14 @@ Status AddFusedMatMulBiasAddAndGelu(
   } else {
     fused_node.add_input(bias_add_node->input(1));
   }
-  CopyMatMulAttributes(*matmul_node, &fused_node);
+  if (is_batchmatmulv2) {
+    fused_node.set_op("_MklFusedBatchMatMulV2");
+    CopyBatchMatMulAttributes(*matmul_node, &fused_node);
+  } else {
+    fused_node.set_op("_FusedMatMul");
+    CopyMatMulAttributes(*matmul_node, &fused_node);
+  }
+
   if (is_gelu_approximate)
     SetFusedOpAttributes(&fused_node, {"BiasAdd", "GeluApproximate"});
   else
@@ -4640,6 +4748,39 @@ Status AddFusedBatchMatMul(RemapperContext* ctx,
   return OkStatus();
 }
 
+Status AddBatchMatMulBias(RemapperContext* ctx,
+                          const std::map<string, int>& matched_nodes_map,
+                          const std::set<int>& remove_node_indices,
+                          const std::vector<string>& input_node_names,
+                          std::vector<bool>* invalidated_nodes,
+                          std::vector<bool>* nodes_to_delete) {
+  auto* output_node =
+      ctx->graph_view.GetNode(matched_nodes_map.at("output"))->node();
+  auto* batch_matmul_node =
+      ctx->graph_view.GetNode(matched_nodes_map.at("batch_matmul"))->node();
+
+  NodeDef fused_node;
+  fused_node.set_name(output_node->name());
+  fused_node.set_op("_MklFusedBatchMatMulV2");
+  fused_node.set_device(batch_matmul_node->device());
+  for (const auto& name : input_node_names) fused_node.add_input(name);
+
+  CopyBatchMatMulAttributes(*batch_matmul_node, &fused_node);
+  SetFusedOpAttributes(&fused_node, {"BiasAdd"}, /*num_args=*/1);
+
+  utils::Mutation* mutation = ctx->graph_view.GetMutationBuilder();
+  Status status;
+  mutation->AddNode(std::move(fused_node), &status);
+  TF_RETURN_IF_ERROR(status);
+  TF_RETURN_IF_ERROR(mutation->Apply());
+  (*invalidated_nodes)[matched_nodes_map.at("output")] = true;
+
+  for (const auto& node_idx : remove_node_indices) {
+    (*nodes_to_delete)[node_idx] = true;
+  }
+  return OkStatus();
+}
+
 // Helper function to get data of type T from a given tensor and
 // return them in a vector and casted to type U.
 // Note - use this function only when type cast is safe from T to U.
@@ -4755,6 +4896,7 @@ Status AddMklFusedInstanceNorm(RemapperContext* ctx,
   } else {
     (*invalidated_nodes)[matched_nodes_map->at("output")] = true;
   }
+
   for (const auto& node_idx : *remove_node_indices) {
     (*nodes_to_delete)[node_idx] = true;
   }
@@ -5685,12 +5827,13 @@ Status Remapper::Optimize(Cluster* cluster, const GrapplerItem& item,
     // Remap MatMul + BiasAdd + gelu-subgraph
     bool is_gelu_approximate = false;
     bool with_reshape;
+    bool is_batchmatmulv2 = false;
     if (FindMatMulBiasAddAndGelu(&ctx, i, cluster, &matched_nodes_map,
-                                 &remove_node_indices, &is_gelu_approximate)) {
+                                 &remove_node_indices, &is_gelu_approximate, &is_batchmatmulv2)) {
       with_reshape = false;
       TF_RETURN_IF_ERROR(AddFusedMatMulBiasAddAndGelu(
           &ctx, matched_nodes_map, remove_node_indices, &invalidated_nodes,
-          &nodes_to_delete, with_reshape, is_gelu_approximate));
+          &nodes_to_delete, with_reshape, is_gelu_approximate, is_batchmatmulv2));
       continue;
     }
 
@@ -5748,6 +5891,18 @@ Status Remapper::Optimize(Cluster* cluster, const GrapplerItem& item,
         TF_RETURN_IF_ERROR(ReplaceSoftplusTanhAndMulWithMish(
             &ctx, &matched_nodes_map, &remove_node_indices, &invalidated_nodes,
             &nodes_to_delete));
+        continue;
+      }
+
+      // Remap BatchMatMul+BiasAdd into the _FusedBatchMatMul.
+      matched_nodes_map.clear();
+      remove_node_indices.clear();
+      input_node_names.clear();
+      if (FindBatchMatMulBias(&ctx, i, &matched_nodes_map, &remove_node_indices,
+                              &input_node_names)) {
+        TF_RETURN_IF_ERROR(AddBatchMatMulBias(
+            &ctx, matched_nodes_map, remove_node_indices, input_node_names,
+            &invalidated_nodes, &nodes_to_delete));
         continue;
       }
 
@@ -5863,13 +6018,28 @@ Status Remapper::Optimize(Cluster* cluster, const GrapplerItem& item,
       if (FindMatMulReshapeBiasAndFusedGelu(&ctx, i, &matched_nodes_map,
                                   &remove_node_indices)) {
         with_reshape = true;
-        is_gelu_approximate=false;
+        is_gelu_approximate = false;
+        is_batchmatmulv2 = false;
         TF_RETURN_IF_ERROR(AddFusedMatMulBiasAddAndGelu(
             &ctx, matched_nodes_map, remove_node_indices, &invalidated_nodes,
-            &nodes_to_delete, with_reshape, is_gelu_approximate));
+            &nodes_to_delete, with_reshape, is_gelu_approximate, is_batchmatmulv2));
         continue;
       }
     } // end IsMKLEnabled
+    // Remap MatMul + BiasAdd + gelu-subgraph
+    matched_nodes_map.clear();
+    remove_node_indices.clear();
+    is_gelu_approximate = false;
+    is_batchmatmulv2 = false;
+    with_reshape = false;
+    if (FindMatMulBiasAddAndGelu(&ctx, i, cluster, &matched_nodes_map,
+                                 &remove_node_indices, &is_gelu_approximate,
+                                 &is_batchmatmulv2)) {
+      TF_RETURN_IF_ERROR(AddFusedMatMulBiasAddAndGelu(
+          &ctx, matched_nodes_map, remove_node_indices, &invalidated_nodes,
+          &nodes_to_delete, with_reshape, is_gelu_approximate, is_batchmatmulv2));
+      continue;
+    }
 
     // Remap {Conv2D,DepthwiseConv2D,MatMul}+BiasAdd into the
     // _Fused{Conv2D,DepthwiseConv2dNative,MatMul}

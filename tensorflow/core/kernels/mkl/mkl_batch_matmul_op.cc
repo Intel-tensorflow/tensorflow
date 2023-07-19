@@ -157,14 +157,23 @@ class BatchMatMulMkl : public OpKernel {
     // Compute parameters for DNNL matmul primitive.
     MklBatchMatMulHelper bmm;
     string prefix = "batchmatmul";
+    memory::dims bias_dims = NONE_DIMS;
+    if (fuse_bias_) {
+      const Tensor& bias_tensor = ctx->input(2);
+      if (out_shape.dims() == 4) {
+        bias_dims = {1, 1, 1, bias_tensor.dim_size(0)};
+      } else if (out_shape.dims() == 3) {
+        bias_dims = {1, 1, bias_tensor.dim_size(0)};
+      }
+    }
     auto params = bmm.CreateMatMulParams(prefix, lhs.shape(), rhs.shape(),
-                                         out_shape, adj_x_, adj_y_);
+                                         out_shape, adj_x_, adj_y_, bias_dims);
 
     this->ExtendMklMatMulParams(ctx, *params);
     MklDnnThreadPool eigen_tp(ctx);
     // Create or retrieve matmul primitive from cache.
-    MklMatMulPrimitive<Tlhs, Trhs, Toutput>* matmul_prim =
-        MklMatMulPrimitiveFactory<float, Tlhs, Trhs, Toutput>::Get(
+    MklMatMulPrimitive<Tlhs, Trhs, Tlhs, Toutput>* matmul_prim =
+        MklMatMulPrimitiveFactory<float, Tlhs, Trhs, Tlhs, Toutput>::Get(
             *params, false /* value for do_not_cache */);
 
     Trhs* weight_data = const_cast<Trhs*>(rhs.flat<Trhs>().data());
@@ -217,12 +226,22 @@ class BatchMatMulMkl : public OpKernel {
     std::shared_ptr<stream> cpu_stream;
     cpu_stream.reset(CreateStream(&eigen_tp, matmul_prim->GetEngine()));
     if (this->fusion_data_.size() > 0) {
-      matmul_prim->Execute(cpu_stream, lhs.flat<Tlhs>().data(), weight_data,
-                           out->flat<Toutput>().data(), *params,
-                           scratch_pad.Get(), this->fusion_data_);
+      if (fuse_bias_) {
+        const Tensor& bias = ctx->input(2);
+        matmul_prim->Execute(cpu_stream, lhs.flat<Tlhs>().data(),
+                             weight_data, bias.flat<Tlhs>().data(),
+                             out->flat<Toutput>().data(), *params,
+                             scratch_pad.Get(), this->fusion_data_);
+      } else {
+        matmul_prim->Execute(cpu_stream, lhs.flat<Tlhs>().data(),
+                             weight_data, nullptr,
+                             out->flat<Toutput>().data(), *params,
+                             scratch_pad.Get(), this->fusion_data_);
+      }
+
     } else {
       matmul_prim->Execute(cpu_stream, lhs.flat<Tlhs>().data(), weight_data,
-                           out->flat<Toutput>().data(), *params,
+                           nullptr, out->flat<Toutput>().data(), *params,
                            scratch_pad.Get());
     }
   }
@@ -233,6 +252,7 @@ class BatchMatMulMkl : public OpKernel {
   virtual void ExtendMklMatMulParams(OpKernelContext* ctx,
                                      MklMatMulParams& params) {}
   std::vector<void*> fusion_data_;
+  bool fuse_bias_ = false;
 
  private:
   bool adj_x_;
@@ -257,6 +277,8 @@ enum class FusedComputationType {
   kMul_Requantize,
   kAdd_Requantize,
   kMulAdd_Requantize,
+  kBiasGelu,
+  kBias,
 };
 
 struct FusedComputationPattern {
@@ -265,7 +287,15 @@ struct FusedComputationPattern {
 };
 
 }  // namespace
-enum class PostOpKind { kNone, kOutputScale, kMul, kAdd, kLinear };
+enum class PostOpKind {
+  kNone,
+  kOutputScale,
+  kMul,
+  kAdd,
+  kLinear,
+  kBias,
+  kGelu
+};
 
 // FusedBatchMatMul has additional inputs, currently forcing all the operands
 // of fusion to have same type `U`.
@@ -296,14 +326,17 @@ class FusedBatchMatMulMkl
     OP_REQUIRES(context, !fused_ops.empty(),
                 absl::InvalidArgumentError(
                     "Fused BatchMatMul must have at least one fused op."));
-
+    if (fused_ops.size() >= 1 && fused_ops[0] == "BiasAdd")
+      this->fuse_bias_ = true;
     using FCT = FusedComputationType;
     // TODO(intel-tf): Add more patterns when implemented. Refactor for
     // arbitrary fusion sequence when oneDNN is performant.
     std::vector<FusedComputationPattern> patterns{
         {FCT::kMul, {"Mul"}},
         {FCT::kAdd, {"Add"}},
+        {FCT::kBias, {"BiasAdd"}},
         {FCT::kMulAdd, {"Mul", "Add"}},
+        {FCT::kBiasGelu, {"BiasAdd", "GeluExact"}},
     };
     FusedComputationType fused_computation = FusedComputationType::kUndefined;
     for (const auto& pattern : patterns) {
@@ -322,8 +355,15 @@ class FusedBatchMatMulMkl
       case FCT::kAdd:
         post_op_info_list_ = {{PostOpKind::kAdd, 2}};
         break;
+      case FCT::kBias:
+        post_op_info_list_ = {{PostOpKind::kBias, 2}};
+        break;
       case FCT::kMulAdd:
         post_op_info_list_ = {{PostOpKind::kMul, 2}, {PostOpKind::kAdd, 3}};
+        break;
+      case FCT::kBiasGelu:
+        post_op_info_list_ = {{PostOpKind::kBias, 2},
+                              {PostOpKind::kGelu, 3}};
         break;
       default:
         OP_REQUIRES_OK(context, absl::UnimplementedError(absl::StrCat(
@@ -339,6 +379,17 @@ class FusedBatchMatMulMkl
   virtual void ExtendMklMatMulParams(OpKernelContext* ctx,
                                      MklMatMulParams& params) {
     int idx = 0;
+    memory::format_tag format_tag;
+    switch (params.c_dims.size()) {
+      case 3:
+        format_tag = memory::format_tag::abc;
+        break;
+      case 4:
+        format_tag = memory::format_tag::abcd;
+        break;
+      default:
+        OP_REQUIRES(ctx, false, errors::Unimplemented("Unimplemented"));
+    }
     for (const auto& post_op_info : this->post_op_info_list_) {
       switch (post_op_info.post_op_kind) {
         case PostOpKind::kMul: {
@@ -379,6 +430,15 @@ class FusedBatchMatMulMkl
           void* addend_data = static_cast<void*>(
               const_cast<U*>(addend_tensor.flat<U>().data()));
           this->fusion_data_[idx++] = addend_data;
+        } break;
+        case PostOpKind::kBias: {
+          // Do nothing
+        } break;
+        case PostOpKind::kGelu: {
+          float scale = 1.0f;
+          float alpha = 0.0f;
+          float beta = 0.0f;
+          params.post_op_params.push_back({"GeluExact", {scale, alpha, beta}});
         } break;
         default:
           OP_REQUIRES_OK(ctx,
@@ -736,6 +796,23 @@ TF_CALL_float(REGISTER_MATMUL_MKL);
 TF_CALL_bfloat16(REGISTER_MATMUL_MKL);
 #endif  // DNNL_AARCH64_USE_ACL
 #endif  // !ENABLE_ONEDNN_V2
+
+#define REGISTER_QUANTIZED_KERNEL(U, T) \
+  REGISTER_KERNEL_BUILDER(              \
+      Name("_QuantizedBatchMatMul")     \
+          .Device(DEVICE_CPU)           \
+          .TypeConstraint<qint8>("T1")  \
+          .TypeConstraint<qint8>("T2")  \
+          .TypeConstraint<U>("U")       \
+          .TypeConstraint<T>("Tout"),   \
+      QuantizedBatchMatMulOp<CPUDevice, qint8, qint8, T, U>);
+
+REGISTER_QUANTIZED_KERNEL(float, float);
+REGISTER_QUANTIZED_KERNEL(float, qint8);
+REGISTER_QUANTIZED_KERNEL(float, quint8);
+REGISTER_QUANTIZED_KERNEL(bfloat16, bfloat16);
+REGISTER_QUANTIZED_KERNEL(bfloat16, qint8);
+REGISTER_QUANTIZED_KERNEL(bfloat16, quint8);
 
 #define REGISTER_QUANTIZED_KERNEL(U, T) \
   REGISTER_KERNEL_BUILDER(              \
