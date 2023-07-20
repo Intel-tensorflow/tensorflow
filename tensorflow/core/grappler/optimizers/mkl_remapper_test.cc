@@ -980,6 +980,79 @@ TEST_F(FusedMatMulReshapeBiasAddAndGeluTest, Float32GeluExact) {
 TEST_F(FusedMatMulReshapeBiasAddAndGeluTest, BFloat16GeluExact) {
   RunTest<DT_BFLOAT16>();
 }
+class FusedMatMulReshapeBiasAddTest : public GrapplerTest {
+ public:
+  template <DataType DTYPE>
+  void RunTest() {
+    using ::tensorflow::ops::Placeholder;
+
+    tensorflow::Scope s = tensorflow::Scope::NewRootScope();
+
+    auto lhs_shape = ops::Placeholder::Shape({8, 32});
+    auto rhs_shape = ops::Placeholder::Shape({32, 64});
+    auto bias_shape = ops::Placeholder::Shape({64});
+    // auto reshape_shape = ops::Placeholder::Shape({1, 32, 64});
+
+    auto lhs = Placeholder(s.WithOpName("lhs"), DTYPE, lhs_shape);
+    auto rhs = Placeholder(s.WithOpName("rhs"), DTYPE, rhs_shape);
+    auto bias = Placeholder(s.WithOpName("bias"), DTYPE, bias_shape);
+
+    auto matmul = ops::MatMul(s.WithOpName("matmul"), lhs, rhs);
+    auto reshape = ops::Reshape(s.WithOpName("reshape"), matmul, ops::Const(s.WithOpName("reshape_shape"), {1, 8, 64}));
+    auto bias_add = ops::BiasAdd(s.WithOpName("bias_add"), reshape, bias);
+    auto reshape1 = ops::Reshape(s.WithOpName("reshape1"), bias_add, ops::Const(s.WithOpName("reshape_shape1"), {1, 8, 8, 8}));
+
+    auto fetch = ops::Identity(s.WithOpName("fetch"), reshape1);
+
+    auto lhs_t = GenerateTensorWithSetRandom<DTYPE>({8, 32});
+    auto rhs_t = GenerateTensorWithSetRandom<DTYPE>({32, 64});
+    auto bias_t = GenerateTensorWithSetRandom<DTYPE>({64});
+
+    GrapplerItem item;
+    item.fetch = {"fetch"};
+    item.feed = {{"lhs", lhs_t}, {"rhs", rhs_t}, {"bias", bias_t}};
+    TF_ASSERT_OK(s.ToGraphDef(&item.graph));
+
+    // Place all nodes on CPU.
+    for (int i = 0; i < item.graph.node_size(); ++i) {
+      item.graph.mutable_node(i)->set_device("/device:CPU:0");
+    }
+
+    Remapper optimizer(RewriterConfig::ON);
+    GraphDef optimized_graph;
+    TF_ASSERT_OK(optimizer.Optimize(nullptr, item, &optimized_graph));
+    int found = 0;
+
+    for (const NodeDef& node : optimized_graph.node()) {
+      if (node.name() == "bias_add") {
+        EXPECT_EQ(node.op(), "_FusedMatMul");
+        ASSERT_GE(node.input_size(), 3);
+        EXPECT_EQ(node.input(0), "lhs");
+        EXPECT_EQ(node.input(1), "rhs");
+        EXPECT_EQ(node.input(2), "bias");
+        EXPECT_EQ(node.attr().at("num_args").i(), 1);
+        const auto fused_ops = node.attr().at("fused_ops").list().s();
+        ASSERT_EQ(fused_ops.size(), 1);
+        EXPECT_EQ(fused_ops[0], "BiasAdd");
+        found++;
+      }
+    }
+    EXPECT_EQ(1, found);
+
+    // Evaluate result without remapper fusion
+    auto tensors_expected = EvaluateNodes(item.graph, item.fetch, item.feed);
+    ASSERT_EQ(tensors_expected.size(), 1);
+
+    auto tensors_evaluated =
+        EvaluateNodes(optimized_graph, item.fetch, item.feed);
+    ASSERT_EQ(tensors_evaluated.size(), 1);
+    test::ExpectClose(tensors_evaluated[0], tensors_expected[0], 1e-6);
+  }
+};
+
+TEST_F(FusedMatMulReshapeBiasAddTest, Float32GeluExact) {
+  RunTest<DT_FLOAT>();
+}
 
 class MklFusedBatchMatMul : public MklRemapperTest {
  public:

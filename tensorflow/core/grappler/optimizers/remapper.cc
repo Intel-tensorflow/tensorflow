@@ -5062,6 +5062,92 @@ Status ReplaceSoftplusTanhAndMulWithMish(
   return OkStatus();
 }
 
+bool FindMatmulReshapeBiasReshape(RemapperContext* ctx, int node_index,
+                               std::map<string, int>* matched_nodes_map,
+                               std::set<int>* remove_node_indices) {
+  using utils::MatchingDirection;
+  using utils::NodeStatus;
+  // clang-format off
+  //            Matmul                        _FusedMatMul
+  //              |    * (shape)                |   * (shape)
+  //              |   /                         |  /
+  //              |  /                          | /
+  //            Reshape1                      Reshape2
+  //              |    * (bias)
+  //              |   /
+  //            BiasAdd
+  //              |   * (shape)
+  //              |  /
+  //            Reshape2
+    utils::OpTypePattern matmulreshapebias_pattern1 {
+     "Reshape", "output", NodeStatus::kRemain,
+      {
+        {"BiasAdd", "biasadd", NodeStatus::kReplace,
+          {
+            {"Reshape", "reshape", NodeStatus::kRemove,
+              {
+                {"MatMul", "matmul", NodeStatus::kRemove},
+                {"*", "shape", NodeStatus::kRemain}
+              }
+            }, // Reshape
+            {"*", "bias", NodeStatus::kRemain}
+          }
+        }, // Bias
+        {"*", "shape1", NodeStatus::kRemain}
+      }
+    };
+  // clang-format on
+
+  bool found_op_type_match = false;
+  utils::SubGraphMatcher<MatchingDirection::kFollowInputs> graph_matcher(
+      &(ctx->graph_view));
+  matched_nodes_map->clear();
+  remove_node_indices->clear();
+    const auto* node_view = ctx->graph_view.GetNode(node_index);
+  found_op_type_match = graph_matcher.GetMatchedNodes(
+      matmulreshapebias_pattern1, {}, ctx->graph_view.GetNode(node_index),
+      matched_nodes_map, remove_node_indices);
+  return found_op_type_match;
+}
+
+Status AddFusedMatMulReshape(
+    RemapperContext* ctx, const std::map<string, int>* matched_nodes_map,
+    const std::set<int>* remove_node_indices,
+    std::vector<bool>* invalidated_nodes, std::vector<bool>* nodes_to_delete) {
+  auto* bias_add_node =
+      ctx->graph_view.GetNode(matched_nodes_map->at("biasadd"))->node();
+  auto* matmul_node =
+      ctx->graph_view.GetNode(matched_nodes_map->at("matmul"))->node();
+    auto* output_node =
+      ctx->graph_view.GetNode(matched_nodes_map->at("output"))->node();
+
+  NodeDef fused_node;
+  fused_node.set_name(bias_add_node->name());
+  fused_node.set_op("_FusedMatMul");
+  fused_node.set_device(matmul_node->device());
+  fused_node.add_input(matmul_node->input(0));
+  fused_node.add_input(matmul_node->input(1));
+  fused_node.add_input(bias_add_node->input(1));
+
+  CopyMatMulAttributes(*matmul_node, &fused_node);
+  SetFusedOpAttributes(&fused_node, {"BiasAdd"});
+
+  utils::Mutation* mutation = ctx->graph_view.GetMutationBuilder();
+  Status status;
+  mutation->AddNode(std::move(fused_node), &status);
+  TF_RETURN_IF_ERROR(status);
+  TF_RETURN_IF_ERROR(mutation->Apply());
+
+  (*invalidated_nodes)[matched_nodes_map->at("biasadd")] = true;
+  (*invalidated_nodes)[matched_nodes_map->at("matmul")] = true;
+
+  for (const auto& node_idx : *remove_node_indices) {
+    (*nodes_to_delete)[node_idx] = true;
+  }
+
+  return OkStatus();
+}
+
 // Check if a node is a candidate to one of the patterns that require inferred
 // shapes:
 //   (1) Splitting FusedBatchNorm into primitives.
@@ -6025,6 +6111,20 @@ Status Remapper::Optimize(Cluster* cluster, const GrapplerItem& item,
             &nodes_to_delete, with_reshape, is_gelu_approximate, is_batchmatmulv2));
         continue;
       }
+
+      // Remap Matmul + Reshape + BiasAdd + Reshape to
+      // _FusedMatMul + Reshape
+      matched_nodes_map.clear();
+      remove_node_indices.clear();
+      if (FindMatmulReshapeBiasReshape(&ctx, i, &matched_nodes_map,
+                                      &remove_node_indices)) {
+        TF_RETURN_IF_ERROR(AddFusedMatMulReshape(
+            &ctx, &matched_nodes_map, &remove_node_indices, &invalidated_nodes,
+            &nodes_to_delete));
+        continue;
+      }
+
+
     } // end IsMKLEnabled
     // Remap MatMul + BiasAdd + gelu-subgraph
     matched_nodes_map.clear();
