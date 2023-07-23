@@ -14,7 +14,7 @@ limitations under the License.
 ==============================================================================*/
 
 // See docs in ../ops/nn_ops.cc.
-#if defined(INTEL_MKL) && !defined(ENABLE_ONEDNN_V3)
+#if defined(INTEL_MKL) && defined(ENABLE_ONEDNN_V2)
 
 #include <unordered_map>
 
@@ -1237,4 +1237,4 @@ TF_CALL_bfloat16(REGISTER_LeakyRelu_MKL_SUPPORTED_KERNELS_TYPES);
 
 }  // namespace tensorflow
 
-#endif  // INTEL_MKL && !ENABLE_ONEDNN_V3
+#endif  // INTEL_MKL && ENABLE_ONEDNN_V2
