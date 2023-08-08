@@ -451,6 +451,7 @@ class AutoMixedPrecisionListsMkl : public AutoMixedPrecisionLists {
                                      "FusedBatchNormGradV3",
                                      "LeakyRelu",
                                      "LeakyReluGrad",
+                                     "Mean",
                                      "Mul",
                                      "Sub",
                                      "Elu",
@@ -476,7 +477,7 @@ class AutoMixedPrecisionListsMkl : public AutoMixedPrecisionLists {
                                      "Sqrt",
                                      "Square",
                                      "SquaredDifference",
-                                     "Sum"
+                                     "Sum",
                                      "Tanh",
                                      "TanhGrad"};
     UpdateList("INFERLIST", &list);
@@ -491,7 +492,6 @@ class AutoMixedPrecisionListsMkl : public AutoMixedPrecisionLists {
         "Exp",
         "Expm1",
         "L2Loss",
-        "Mean",
         "Pow",
         "SaveV2",
         "SoftmaxCrossEntropyWithLogits",
