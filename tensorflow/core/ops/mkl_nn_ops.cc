@@ -2026,10 +2026,10 @@ oneDNN version of the Mish operator. Uses oneDNN APIs to implement Mish operator
 to invoke these operators.
 )doc");
 
-REGISTER_OP("_MklNativeGelu")
+REGISTER_OP("_MklFusedGelu")
     .Input("features: T")
     .Output("activations: T")
-    .Attr("T: {float, bfloat16} = DT_FLOAT")
+    .Attr("T: {float, bfloat16, half} = DT_FLOAT")
     .SetShapeFn(shape_inference::UnchangedShape)
     .Doc(R"doc(
 oneDNN version of the Gelu operator. Uses oneDNN APIs to implement Gelu operator that

@@ -37,6 +37,7 @@ limitations under the License.
 #include "tensorflow/core/lib/gtl/flatset.h"
 #include "tensorflow/core/lib/gtl/inlined_vector.h"
 #include "tensorflow/core/platform/types.h"
+#include "tensorflow/core/platform/cpu_info.h"
 
 namespace tensorflow {
 namespace grappler {
@@ -425,6 +426,43 @@ int EraseRegularNodeAttributes(NodeDef* node);
 // Erase attribute "_xla_inferred_shapes" as well as all attributes starting in
 // "_output_".
 int EraseNodeOutputAttributes(NodeDef* node);
+
+static bool HasCpuFP16Support() {
+#ifdef INTEL_MKL
+#ifdef __linux__
+  // Check if the CPU supports FP16
+  if ((port::TestCPUFeature(port::CPUFeature::AVX512BW) &&
+      port::TestCPUFeature(port::CPUFeature::AVX512_FP16) ||
+      port::TestCPUFeature(port::CPUFeature::AMX_FP16)) ||
+      port::TestCPUFeature(port::CPUFeature::AVX_NE_CONVERT)) {
+    VLOG(2) << "CPU supports FP16\n";
+    return true;
+  } else {
+    return false;
+  }
+#else
+  return false;
+#endif  // __linux__
+#endif  // INTEL_MKL
+  return false;
+}
+
+static bool HasCpuFP16AMXSupport() {
+#ifdef INTEL_MKL
+#ifdef __linux__
+  // Check if the CPU supports AMX FP16
+  if (port::TestCPUFeature(port::CPUFeature::AMX_FP16)) {
+    VLOG(2) << "CPU supports AMX FP16\n";
+    return true;
+  } else {
+    return false;
+  }
+#else
+  return false;
+#endif  // __linux__
+#endif  // INTEL_MKL
+  return false;
+}
 
 }  // end namespace grappler
 }  // end namespace tensorflow

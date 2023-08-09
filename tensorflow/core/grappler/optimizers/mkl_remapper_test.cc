@@ -24,6 +24,7 @@ limitations under the License.
 #include "tensorflow/core/lib/core/status_test_util.h"
 #include "tensorflow/core/platform/test.h"
 #include "tensorflow/core/util/mkl_util.h"
+#include "tensorflow/core/grappler/utils.h"
 
 namespace tensorflow {
 namespace grappler {
@@ -831,7 +832,7 @@ class FusedGeluTest : public GrapplerTest {
     int found = 0;
     for (const NodeDef& node : optimized_graph.node()) {
       if (node.name() == "fusion_output") {
-        EXPECT_EQ(node.op(), "_MklNativeGelu");
+        EXPECT_EQ(node.op(), "_MklFusedGelu");
         ASSERT_GE(node.input_size(), 1);
         EXPECT_EQ(node.input(0), "bias_add");
         found++;
@@ -846,7 +847,12 @@ class FusedGeluTest : public GrapplerTest {
     auto tensors_evaluated =
         EvaluateNodes(optimized_graph, item.fetch, item.feed);
     ASSERT_EQ(tensors_evaluated.size(), 1);
-    test::ExpectClose(tensors_evaluated[0], tensors_expected[0], 1e-6);
+    float atol = 1e-6, rtol = 1e-6;
+    if (DTYPE == DT_BFLOAT16 || DTYPE == DT_HALF) {
+      atol = 1e-2;
+      rtol = 1e-2;
+    }
+    test::ExpectClose(tensors_evaluated[0], tensors_expected[0], atol, rtol);
   }
 };
 
@@ -855,6 +861,13 @@ TEST_F(FusedGeluTest, Float32GeluExact) {
 }
 TEST_F(FusedGeluTest, BFloat16GeluExact) {
   RunTest<DT_BFLOAT16>();
+}
+TEST_F(FusedGeluTest, Float16GeluExact) {
+  if (!HasCpuFP16Support()) {
+    GTEST_SKIP() << "This CPU doesn't support FP16";
+  } else {
+    RunTest<DT_HALF>();
+  }
 }
 
 class FusedMatMulReshapeBiasAddAndGeluTest : public GrapplerTest {
@@ -928,7 +941,7 @@ class FusedMatMulReshapeBiasAddAndGeluTest : public GrapplerTest {
     int found = 0;
     for (const NodeDef& node : optimized_graph_1.node()) {
       if (node.name() == "fusion_output") {
-        EXPECT_EQ(node.op(), "_MklNativeGelu");
+        EXPECT_EQ(node.op(), "_MklFusedGelu");
         ASSERT_GE(node.input_size(), 1);
         EXPECT_EQ(node.input(0), "bias_add");
         found++;
@@ -965,21 +978,32 @@ class FusedMatMulReshapeBiasAddAndGeluTest : public GrapplerTest {
     // Evaluate result without remapper fusion
     auto tensors_expected = EvaluateNodes(item.graph, item.fetch, item.feed);
     ASSERT_EQ(tensors_expected.size(), 1);
-
     auto tensors_evaluated =
         EvaluateNodes(optimized_graph_2, item.fetch, item.feed);
     ASSERT_EQ(tensors_evaluated.size(), 1);
-    test::ExpectClose(tensors_evaluated[0], tensors_expected[0], 1e-6);
+    float atol = 1e-6, rtol = 1e-6;
+    if (DTYPE == DT_BFLOAT16 || DTYPE == DT_HALF) {
+      atol = 1e-2;
+      rtol = 1e-2;
+    }
+    test::ExpectClose(tensors_evaluated[0], tensors_expected[0], atol, rtol);
   }
 };
 
 TEST_F(FusedMatMulReshapeBiasAddAndGeluTest, Float32GeluExact) {
   RunTest<DT_FLOAT>();
 }
-
 TEST_F(FusedMatMulReshapeBiasAddAndGeluTest, BFloat16GeluExact) {
   RunTest<DT_BFLOAT16>();
 }
+TEST_F(FusedMatMulReshapeBiasAddAndGeluTest, Float16GeluExact) {
+  if (!HasCpuFP16Support()) {
+    GTEST_SKIP() << "This CPU doesn't support FP16";
+  } else {
+    RunTest<DT_HALF>();
+  }
+}
+
 class FusedMatMulReshapeBiasAddTest : public GrapplerTest {
  public:
   template <DataType DTYPE>
@@ -1146,7 +1170,6 @@ class MklFusedBatchMatMul : public MklRemapperTest {
     }
     test::ExpectClose(tensors_expected[0], tensors[0], atol, rtol);
   }
-
   template <typename T>
   void VerifyPreceedingScalarMul(bool adjx, bool adjy) {
     using ::tensorflow::ops::Placeholder;
@@ -1232,6 +1255,87 @@ class MklFusedBatchMatMul : public MklRemapperTest {
     auto tensors = EvaluateNodes(output, item.fetch, item.feed);
     float atol = 1e-6, rtol = 1e-6;
     if (std::is_same<T, bfloat16>::value) {
+      atol = 1e-2;
+      rtol = 1e-2;
+    }
+    test::ExpectClose(tensors_expected[0], tensors[0], atol, rtol);
+  }
+  template <typename T>
+  void VerifyMulFusion(bool adjx, bool adjy) {
+    using ::tensorflow::ops::Placeholder;
+    using normal_generator = Eigen::internal::NormalRandomGenerator<T>;
+
+    int b0 = 2;
+    int b1 = 2;
+    int m = 32;
+    int k = 16;
+    int n = 64;
+
+    tensorflow::Scope s = tensorflow::Scope::NewRootScope();
+
+    auto input_shape =
+        adjx ? TensorShape({b0, b1, k, m}) : TensorShape({b0, b1, m, k});
+    auto weight_shape =
+        adjy ? TensorShape({b0, b1, n, k}) : TensorShape({b0, b1, k, n});
+
+    auto input_placeholder_shape = ops::Placeholder::Shape(input_shape);
+    auto weight_placeholder_shape = ops::Placeholder::Shape(weight_shape);
+
+    auto input = Placeholder(s.WithOpName("input"), DataTypeToEnum<T>::v(),
+                             input_placeholder_shape);
+    auto weight = Placeholder(s.WithOpName("weight"), DataTypeToEnum<T>::v(),
+                              weight_placeholder_shape);
+
+    auto batchmatmul =
+        ops::BatchMatMulV2(s.WithOpName("batchmatmul"), input, weight,
+                           ops::BatchMatMulV2::Attrs().AdjX(adjx).AdjY(adjy));
+    auto scale_const = ops::Const(s.WithOpName("scale_const"), {0.1f});
+    auto scale =
+        ops::Cast(s.WithOpName("scale"), scale_const, DataTypeToEnum<T>::v());
+    auto mul = ops::Multiply(s.WithOpName("mul"), batchmatmul, scale);
+    auto fetch = ops::Identity(s.WithOpName("fetch"), mul);
+
+    Tensor input_t = Tensor(DataTypeToEnum<T>::v(), input_shape);
+    Tensor weight_t = Tensor(DataTypeToEnum<T>::v(), weight_shape);
+    input_t.flat<T>() =
+        input_t.flat<T>().template setRandom<normal_generator>();
+    weight_t.flat<T>() =
+        weight_t.flat<T>().template setRandom<normal_generator>();
+
+    GrapplerItem item;
+    item.fetch = {"fetch"};
+    item.feed = {{"input", input_t}, {"weight", weight_t}};
+    TF_CHECK_OK(s.ToGraphDef(&item.graph));
+
+    // Place all nodes on CPU.
+    for (int i = 0; i < item.graph.node_size(); ++i) {
+      item.graph.mutable_node(i)->set_device("/device:CPU:0");
+    }
+
+    Remapper optimizer(RewriterConfig::ON);
+    GraphDef output;
+    TF_CHECK_OK(optimizer.Optimize(nullptr, item, &output));
+
+    int found = 0;
+    for (const NodeDef& node : output.node()) {
+      if (node.name() == "mul") {
+        EXPECT_EQ("_MklFusedBatchMatMulV2", node.op());
+        EXPECT_EQ("input", node.input(0));
+        EXPECT_EQ("weight", node.input(1));
+        EXPECT_EQ("scale", node.input(2));
+        const auto fused_ops = node.attr().at("fused_ops").list().s();
+        EXPECT_EQ(1, fused_ops.size());
+        EXPECT_EQ("Mul", fused_ops[0]);
+        found++;
+      }
+    }
+    EXPECT_EQ(1, found);
+
+    auto tensors_expected = EvaluateNodes(item.graph, item.fetch, item.feed);
+    auto tensors = EvaluateNodes(output, item.fetch, item.feed);
+    float atol = 1e-6, rtol = 1e-6;
+    if (std::is_same<T, bfloat16>::value ||
+        std::is_same<T, Eigen::half>::value) {
       atol = 1e-2;
       rtol = 1e-2;
     }
@@ -1346,7 +1450,6 @@ class MklFusedBatchMatMul : public MklRemapperTest {
       }
       test::ExpectClose(tensors_expected[0], tensors[0], atol, rtol);
   }
-
   template <typename T>
   void VerifyBiasAddFusion(bool adjx, bool adjy) {
     using ::tensorflow::ops::Placeholder;
@@ -1450,12 +1553,23 @@ TEST_F(MklFusedBatchMatMul, Bias) {
       this->VerifyBiasAddFusion<float>(adjx, adjy);
     }
 }
-
 TEST_F(MklFusedBatchMatMul, MulAndAdd2) {
   for (const auto adjx : {false, true})
     for (const auto adjy : {false, true}) {
       this->VerifyPreceedingScalarMul<float>(adjx, adjy);
       this->VerifyPreceedingScalarMul<bfloat16>(adjx, adjy);
+    }
+}
+TEST_F(MklFusedBatchMatMul, Mul) {
+  for (const auto adjx : {false, true})
+    for (const auto adjy : {false, true}) {
+      this->VerifyMulFusion<float>(adjx, adjy);
+      this->VerifyMulFusion<bfloat16>(adjx, adjy);
+      if (!HasCpuFP16Support()) {
+        GTEST_SKIP() << "This CPU doesn't support FP16";
+      } else {
+        this->VerifyMulFusion<Eigen::half>(adjx, adjy);
+      }
     }
 }
 

@@ -65,12 +65,13 @@ class MklFusedGeluOp
 // register dnn kernels for supported operations and supported types
 #define REGISTER_GELU_MKL_SUPPORTED_KERNELS_TYPES(type)                       \
   REGISTER_KERNEL_BUILDER(                                                    \
-      Name("_MklNativeGelu")                                                  \
+      Name("_MklFusedGelu")                                                  \
           .Device(DEVICE_CPU)                                                 \
           .TypeConstraint<type>("T"),                                         \
       MklFusedGeluOp<CPUDevice, type>);
 TF_CALL_float(REGISTER_GELU_MKL_SUPPORTED_KERNELS_TYPES);
 TF_CALL_bfloat16(REGISTER_GELU_MKL_SUPPORTED_KERNELS_TYPES);
+TF_CALL_half(REGISTER_GELU_MKL_SUPPORTED_KERNELS_TYPES);
 
 }  // namespace tensorflow
 

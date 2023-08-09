@@ -22,6 +22,7 @@ limitations under the License.
 #include "tensorflow/core/lib/strings/str_util.h"
 #include "tensorflow/core/util/env_var.h"
 #include "tensorflow/core/util/util.h"
+#include "tensorflow/core/grappler/utils.h"
 
 namespace tensorflow {
 namespace grappler {
@@ -254,9 +255,11 @@ class AutoMixedPrecisionListsCuda : public AutoMixedPrecisionLists {
         "Sub",
         "Tanh",
         "TanhGrad",
+        "Softmax",
     };
-    if (!IsMKLEnabled()) {
-      list.insert("Softmax");
+    if (IsMKLEnabled() && HasCpuFP16Support()) {
+      list.insert("SquaredDifference");
+      list.insert("Rsqrt");
     }
     UpdateList("INFERLIST", &list);
     // For backwards compatibility, keeping the original env variable here.
