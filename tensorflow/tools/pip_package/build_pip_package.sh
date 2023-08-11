@@ -164,7 +164,7 @@ function prepare_src() {
     cp ./bazel-bin/tensorflow/tools/pip_package/simple_console_for_windows.zip ./bazel-bin/tensorflow/tools/pip_package/simple_console_for_window_unzip1
     mkdir -p ./bazel-bin/tensorflow/tools/pip_package/simple_console_for_window_unzip
     echo "Unzipping simple_console_for_windows.zip to create runfiles tree..."
-    tar xfC ./bazel-bin/tensorflow/tools/pip_package/simple_console_for_windows.zip -d ./bazel-bin/tensorflow/tools/pip_package/simple_console_for_window_unzip
+    7z x ./bazel-bin/tensorflow/tools/pip_package/simple_console_for_windows.zip  -o./bazel-bin/tensorflow/tools/pip_package/simple_console_for_window_unzip
     echo "Unzip finished."
     # runfiles structure after unzip the python binary
     cp -L \
