@@ -156,6 +156,16 @@ COMMON_PIP_DEPS = [
     "//tensorflow/python/kernel_tests/sparse_ops:sparse_xent_op_test_base",
     "//tensorflow/python/lib:__init__",
     "//tensorflow/python/ops/parallel_for:test_util",
+     "//tensorflow/python/ops/structured:structured_tensor_dynamic",
+    "//tensorflow/python/platform:resource_loader",
+    "//tensorflow/python/profiler:trace",
+    "//tensorflow/python/saved_model:saved_model",
+    "//tensorflow/python/summary:__init__",
+    "//tensorflow/python/summary:plugin_asset",
+    "//tensorflow/python/summary:summary_iterator",
+    "//tensorflow/python/summary:summary_py",
+    "//tensorflow/python/tools:tools_pip",
+    "//tensorflow/python/tools/api/generator:create_python_api",
     "//tensorflow:tensorflow_py",
 ]
 
