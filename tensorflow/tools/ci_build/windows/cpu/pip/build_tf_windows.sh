@@ -143,7 +143,7 @@ bazel build ${EXTRA_BUILD_FLAGS}  \
   tensorflow/lite:framework tensorflow/lite/examples/minimal:minimal || exit $?
 
 bazel build \
-  --experimental_cc_shared_library --define=no_tensorflow_py_deps=true \
+  --experimental_cc_shared_library -s --define=no_tensorflow_py_deps=true \
   --config=release_cpu_windows ${EXTRA_BUILD_FLAGS} \
   --output_filter=^$ \
   tensorflow/tools/pip_package:build_pip_package || exit $?
