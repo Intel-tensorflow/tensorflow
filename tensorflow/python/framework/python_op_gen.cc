@@ -378,7 +378,7 @@ bool IsOpWithUnderscorePrefix(const string& s) {
        "bytes", "callable", "chr", "classmethod", "cmp", "coerce", "compile",
        "complex", "copyright", "credits", "delattr", "dict", "dir", "divmod",
        "enumerate", "eval", "execfile", "exit", "file", "filter", "float",
-       "format", "frozenset", "getattr", "globals", "hasattr", "hash", "help",
+       "format", "frozenset", "gelu", "getattr", "globals", "hasattr", "hash", "help",
        "hex", "id", "input", "int", "intern", "isinstance", "issubclass",
        "iter", "len", "license", "list", "locals", "long", "map", "max",
        "memoryview", "min", "next", "object", "oct", "open", "ord", "pow",

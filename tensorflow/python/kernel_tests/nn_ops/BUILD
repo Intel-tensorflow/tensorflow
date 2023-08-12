@@ -690,6 +690,20 @@ cuda_py_strict_test(
 )
 
 cuda_py_strict_test(
+    name = "gelu_op_test",
+    size = "small",
+    srcs = ["gelu_op_test.py"],
+    deps = [
+        "//third_party/py/numpy",
+        "//tensorflow/python:framework_for_generated_wrappers",
+        "//tensorflow/python/ops:gradient_checker_v2",
+        "//tensorflow/python/ops:nn_grad",
+        "//tensorflow/python/ops:nn_ops",
+        "//tensorflow/python/platform:client_testlib",
+    ],
+)
+
+cuda_py_strict_test(
     name = "relu_op_test",
     size = "small",
     srcs = ["relu_op_test.py"],

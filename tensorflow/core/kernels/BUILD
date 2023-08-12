@@ -4110,6 +4110,7 @@ cc_library(
         ":depthwise_conv_op",
         ":dilation_ops",
         ":fused_batch_norm_op",
+        ":gelu_op",
         ":in_topk_op",
         ":l2loss_op",
         ":lrn_op",
@@ -4198,6 +4199,12 @@ tf_kernel_library(
     name = "lrn_op",
     prefix = "lrn_op",
     deps = NN_DEPS + if_rocm([":conv_ops_gpu_hdrs"]) + [":loose_headers"],
+)
+
+tf_kernel_library(
+    name = "gelu_op",
+    prefix = "gelu_op",
+    deps = NN_DEPS,
 )
 
 tf_kernel_library(
