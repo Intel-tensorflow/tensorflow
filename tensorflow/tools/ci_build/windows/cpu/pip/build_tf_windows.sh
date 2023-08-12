@@ -147,7 +147,6 @@ bazel build \
   --config=release_cpu_windows ${EXTRA_BUILD_FLAGS} \
   --output_filter=^$ \
   tensorflow/tools/pip_package:build_pip_package || exit $?
-exit 0
 
 if [[ "$SKIP_TEST" == 1 ]]; then
   exit 0
