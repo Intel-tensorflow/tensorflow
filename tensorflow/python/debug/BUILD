@@ -9,6 +9,7 @@
 # ":grpc_debug_server": Server interface for grpc:// debug URLs.
 
 load("//tensorflow:strict.default.bzl", "py_strict_library")
+load("//tensorflow:tensorflow.bzl", "py_binary")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["//tensorflow:license"],
