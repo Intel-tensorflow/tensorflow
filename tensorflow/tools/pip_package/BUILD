@@ -168,8 +168,6 @@ COMMON_PIP_DEPS = [
     "//tensorflow/python/summary:plugin_asset",
     "//tensorflow/python/summary:summary_iterator",
     "//tensorflow/python/summary:summary_py",
-    "//tensorflow/python/tools:tools_pip",
-    "//tensorflow/python/tools/api/generator:create_python_api",
     "//tensorflow/python/util:example_parser_configuration",
     "//tensorflow/python/util:function_utils",
     "//tensorflow/python/util:keyword_args",
