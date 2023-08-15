@@ -100,13 +100,10 @@ while [[ $# -gt 0 ]]; do
   esac
   shift
 done
-
-if [[ "$RELEASE_BUILD" == 1 || "$RELEASE_BUILD" == 0 ]]; then
-  # Overriding eigen strong inline speeds up the compiling of conv_grad_ops_3d.cc and conv_ops_3d.cc
-  # by 20 minutes. See https://github.com/tensorflow/tensorflow/issues/10521
-  # Because this hurts the performance of TF, we don't override it in release build.
-  export TF_OVERRIDE_EIGEN_STRONG_INLINE=1
-fi
+# Overriding eigen strong inline speeds up the compiling of conv_grad_ops_3d.cc and conv_ops_3d.cc
+# by 20 minutes. See https://github.com/tensorflow/tensorflow/issues/10521
+# Because this hurts the performance of TF, we don't override it in the release build.
+export TF_OVERRIDE_EIGEN_STRONG_INLINE=1
 
 if [[ "$TF_NIGHTLY" == 1 ]]; then
   if [[ ${PROJECT_NAME} == *"2.0_preview"* ]]; then
@@ -125,7 +122,7 @@ else
   fi
 fi
 
-# Enable short object file path to avoid long path issue on Windows.
+# Enable short object file path to avoid long path issues on Windows.
 echo "startup --output_user_root=${TMPDIR}" >> "${TMP_BAZELRC}"
 
 if ! grep -q "import %workspace%/${TMP_BAZELRC}" .bazelrc; then
