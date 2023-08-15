@@ -106,6 +106,7 @@ if [[ "$RELEASE_BUILD" == 1 || "$RELEASE_BUILD" == 0 ]]; then
   # by 20 minutes. See https://github.com/tensorflow/tensorflow/issues/10521
   # Because this hurts the performance of TF, we don't override it in release build.
   export TF_OVERRIDE_EIGEN_STRONG_INLINE=1
+fi
 
 if [[ "$TF_NIGHTLY" == 1 ]]; then
   if [[ ${PROJECT_NAME} == *"2.0_preview"* ]]; then
