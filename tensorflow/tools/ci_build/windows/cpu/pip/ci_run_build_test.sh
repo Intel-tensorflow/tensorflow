@@ -47,6 +47,7 @@ export PATH=/c/Tools/bazel:/c/Program\ Files/Git:/c/Program\ Files/Git/cmd:/c/ms
 # 
 
 export PYTHON_VERSION=${PYTHON_VERSION:-"310"}  #We expect Python installation as C:\Python39
+export TF_PYTHON_VERSION=$(PYTHON_VERSION:-"310"}  #We expect Python installation as C:\Python39
 MYTFWS_ROOT=${WORKSPACE:-"C:/Users/mlp_admin"} # keep the tensorflow git repo clone under here as tensorflow subdir
 MYTFWS_ROOT=`cygpath -m $MYTFWS_ROOT`
 export MYTFWS_ROOT="$MYTFWS_ROOT"
@@ -164,8 +165,8 @@ cd $MYTFWS_ROOT
 
 if [[ "$RELEASE_BUILD" = 1 ]]; then
   if [[ $build_ret_val -eq 0 ]]; then
-    cd ${MYTFWS}/py_test_dir/
-    for file in *.whl ; do mv "$file" "${file/"cp310-cp310"/"cp${PYTHON_VERSION}-cp${PYTHON_VERSION}"}"; done
+    #cd ${MYTFWS}/py_test_dir/
+    #for file in *.whl ; do mv "$file" "${file/"cp310-cp310"/"cp${PYTHON_VERSION}-cp${PYTHON_VERSION}"}"; done
     cp ${MYTFWS}/py_test_dir/*.whl ${MYTFWS_ARTIFACT}
     cp "${MYTFWS}"/run.log ${MYTFWS_ARTIFACT}/test_run_${PYTHON_VERSION}.log
   else
