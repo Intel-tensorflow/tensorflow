@@ -121,6 +121,7 @@ export BAZEL_VC=${VS_LOCATION}/VC
 export JAVA_HOME=${JAVA_LOCATION}
 export BAZEL_SH="${MSYS_LOCATION}"/usr/bin/bash.exe
 
+
 cd ${MYTFWS_ROOT}
 mkdir -p "$TMP"
 # remove old logs
@@ -161,11 +162,23 @@ cd $MYTFWS_ROOT
 # Check to make sure log was created.
 [ ! -f "${MYTFWS}"/run.log  ] && exit 1
 
+if [[ "$RELEASE_BUILD" = 1 ]]; then
+  if [[ $build_ret_val -eq 0 ]]; then
+    cd ${MYTFWS}/py_test_dir/
+    for file in *.whl ; do mv "$file" "${file/"cp310-cp310"/"cp${PYTHON_VERSION}-cp${PYTHON_VERSION}"}"; done
+    cp ${MYTFWS}/py_test_dir/*.whl ${MYTFWS_ARTIFACT}
+    cp "${MYTFWS}"/run.log ${MYTFWS_ARTIFACT}/test_run_${PYTHON_VERSION}.log
+  else
+    # build failed just copy the log, mark log with py version.
+    cp "${MYTFWS}"/run.log ${MYTFWS_ARTIFACT}/test_run_${PYTHON_VERSION}.log
+  fi
+  exit $build_ret_val
+fi
+
 # Handle the case when only whl are built
-if [[ "$TF_NIGHTLY" = 1 ]] || [[ "$RELEASE_BUILD" = 1 ]]; then
+if [[ "$TF_NIGHTLY" = 1 ]] ; then
   if [[ $build_ret_val -eq 0 ]]; then
     cp ${MYTFWS}/py_test_dir/*.whl ${MYTFWS_ARTIFACT}
-    cp "${path_level}"/h5py_whl/artifact/h5py-3.7.0-cp311-cp311-win_amd64.whl ${MYTFWS_ARTIFACT}
     cp "${MYTFWS}"/run.log ${MYTFWS_ARTIFACT}/test_run_${PYTHON_VERSION}.log
   else
     # build failed just copy the log, mark log with py version.
