@@ -62,6 +62,7 @@ TEST_TARGET="//${PY_TEST_DIR}/tensorflow/python/..."
 PROJECT_NAME=""
 EXTRA_BUILD_FLAGS=""
 EXTRA_TEST_FLAGS=""
+HERMETIC_PYTHON=""
 
 # --skip_test            Skip running tests
 # --enable_remote_cache  Add options to enable remote cache for build and test
@@ -89,6 +90,12 @@ while [[ $# -gt 0 ]]; do
       fi
       PROJECT_NAME="$1"
       ;;
+    --hermetic_python) 
+      shift
+      if [[ -z "$1" ]]; then
+        break
+      fi
+      HERMETIC_PYTHON="$1"
     --extra_test_flags)
       shift
       if [[ -z "$1" ]]; then
@@ -141,6 +148,7 @@ bazel build \
   --experimental_cc_shared_library \
   --config=release_cpu_windows ${EXTRA_BUILD_FLAGS} \
   --output_filter=^$ \
+  ${HERMETIC_PYTHON} \
   tensorflow/tools/pip_package:build_pip_package || exit $?
 
 if [[ "$SKIP_TEST" == 1 ]]; then
