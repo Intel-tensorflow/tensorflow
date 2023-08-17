@@ -148,8 +148,8 @@ bazel build ${EXTRA_BUILD_FLAGS}  \
 bazel build \
   --experimental_cc_shared_library \
   --config=release_cpu_windows ${EXTRA_BUILD_FLAGS} \
-  --output_filter=^$ \
   ${HERMETIC_PYTHON} \
+  --output_filter=^$ \
   tensorflow/tools/pip_package:build_pip_package || exit $?
 
 if [[ "$SKIP_TEST" == 1 ]]; then
