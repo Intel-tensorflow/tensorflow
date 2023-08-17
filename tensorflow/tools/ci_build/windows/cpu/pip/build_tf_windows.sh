@@ -96,6 +96,7 @@ while [[ $# -gt 0 ]]; do
         break
       fi
       HERMETIC_PYTHON="$1"
+      ;;
     --extra_test_flags)
       shift
       if [[ -z "$1" ]]; then
