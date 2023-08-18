@@ -136,14 +136,16 @@ fi
 
 run_configure_for_cpu_build
 
-bazel build ${EXTRA_BUILD_FLAGS}  \
+bazel --windows_enable_symlinks  build ${EXTRA_BUILD_FLAGS}  \
   --experimental_cc_shared_library \
+  --enable_runfiles \
   --build_tag_filters=-no_pip,-no_windows,-windows_excluded,-no_oss,-oss_excluded,-gpu,-tpu \
   --output_filter=^$ \
   tensorflow/lite:framework tensorflow/lite/examples/minimal:minimal || exit $?
 
-bazel build \
+bazel --windows_enable_symlinks  build \
   --experimental_cc_shared_library \
+  --enable_runfiles \
   --config=release_cpu_windows ${EXTRA_BUILD_FLAGS} \
   --output_filter=^$ \
   tensorflow/tools/pip_package:build_pip_package || exit $?
