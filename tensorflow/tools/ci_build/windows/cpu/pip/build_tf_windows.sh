@@ -136,7 +136,8 @@ fi
 
 run_configure_for_cpu_build
 
-bazel build ${EXTRA_BUILD_FLAGS}  \
+bazel --windows_enable_symlinks build ${EXTRA_BUILD_FLAGS}  \
+  --enable_runfiles \
   --experimental_cc_shared_library \
   --build_tag_filters=-no_pip,-no_windows,-windows_excluded,-no_oss,-oss_excluded,-gpu,-tpu \
   --output_filter=^$ \
