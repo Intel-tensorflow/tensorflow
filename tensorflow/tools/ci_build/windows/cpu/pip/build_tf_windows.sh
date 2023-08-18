@@ -142,8 +142,9 @@ bazel build ${EXTRA_BUILD_FLAGS}  \
   --output_filter=^$ \
   tensorflow/lite:framework tensorflow/lite/examples/minimal:minimal || exit $?
 
-bazel build \
+bazel --windows_enable_symlinks build \
   --experimental_cc_shared_library \
+  --enable_runfiles \
   --config=release_cpu_windows ${EXTRA_BUILD_FLAGS} \
   --output_filter=^$ \
   tensorflow/tools/pip_package:build_pip_package || exit $?
