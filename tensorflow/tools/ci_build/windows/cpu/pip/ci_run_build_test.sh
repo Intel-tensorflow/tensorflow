@@ -145,17 +145,17 @@ bash "${MYTFWS}"/tensorflow/tools/ci_build/windows/cpu/pip/build_tf_windows.sh \
 build_ret_val=$?   # Store the ret value
 
 # Retry once more with "bazel clean" for failed builds to get rid of any stale cache
-if [[ $build_ret_val -ne 0 ]]; then
-  cd ${MYTFWS}
-  bazel --output_user_root=${TMPDIR} clean --expunge
+# if [[ $build_ret_val -ne 0 ]]; then
+#   cd ${MYTFWS}
+#   bazel --output_user_root=${TMPDIR} clean --expunge
 
-  bash "${MYTFWS}"/tensorflow/tools/ci_build/windows/cpu/pip/build_tf_windows.sh \
-     --extra_build_flags "--action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XBF_ARGS} --repo_env=TF_PYTHON_VERSION=${TF_PYTHON_VERSION}" \
-     --extra_test_flags "--action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XTF_ARGS}" \
-     ${POSITIONAL_ARGS[@]}  > run.log 2>&1
+#   bash "${MYTFWS}"/tensorflow/tools/ci_build/windows/cpu/pip/build_tf_windows.sh \
+#      --extra_build_flags "--action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XBF_ARGS} --repo_env=TF_PYTHON_VERSION=${TF_PYTHON_VERSION}" \
+#      --extra_test_flags "--action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XTF_ARGS}" \
+#      ${POSITIONAL_ARGS[@]}  > run.log 2>&1
 
-  build_ret_val=$?   # Store the ret value
-fi
+#   build_ret_val=$?   # Store the ret value
+# fi
 
 # process results
 cd $MYTFWS_ROOT
