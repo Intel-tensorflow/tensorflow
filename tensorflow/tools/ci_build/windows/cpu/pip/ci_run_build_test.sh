@@ -65,6 +65,7 @@ export TF_LOCATION=%MYTFWS%
 export TMP="${MYTFWS_ROOT}/tmp"
 export TEMP="$TMP"
 export TMPDIR="${MYTFWS}-build" # used internally by TF build
+export TMPDIR=`cygpath $TMPDIR`
 export MSYS_LOCATION='C:/msys64'
 export GIT_LOCATION='C:/Program Files/Git'
 export JAVA_LOCATION='C:/Program Files/Eclipse Adoptium/jdk-11.0.14.101-hotspot'
