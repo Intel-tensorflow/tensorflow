@@ -3343,10 +3343,10 @@ bool FindInstanceNorm(RemapperContext* ctx, int node_index,
   // Check if gamma and beta constants have the same shape
   const auto* gamma_node_view =
       ctx->graph_view.GetNode(matched_nodes_map->at("gamma"));
-  const auto* gamma_node_def = gamma_node_view->node();
+  NodeDef* gamma_node_def = gamma_node_view->node();
   const auto* beta_node_view =
       ctx->graph_view.GetNode(matched_nodes_map->at("beta"));
-  const auto* beta_node_def = beta_node_view->node();
+  NodeDef* beta_node_def = beta_node_view->node();
   if (!gamma_node_def || !beta_node_def) {
     VLOG(2) << "Unexpected error to retrieve gamma or beta node";
     return false;
@@ -3360,8 +3360,7 @@ bool FindInstanceNorm(RemapperContext* ctx, int node_index,
 
   Tensor gamma_tensor;
   if (gamma_node_def == nullptr || gamma_node_def->op() != "Const" ||
-      !gamma_tensor.FromProto(gamma_node_def->attr().at("value").tensor()) ||
-      gamma_tensor.NumElements() != 1) {
+      !gamma_tensor.FromProto(gamma_node_def->attr().at("value").tensor())) {
     return false;
   }
 
@@ -3373,8 +3372,7 @@ bool FindInstanceNorm(RemapperContext* ctx, int node_index,
 
   Tensor beta_tensor;
   if (beta_node_def == nullptr || beta_node_def->op() != "Const" ||
-      !beta_tensor.FromProto(beta_node_def->attr().at("value").tensor()) ||
-      beta_tensor.NumElements() != 1) {
+      !beta_tensor.FromProto(beta_node_def->attr().at("value").tensor())) {
     return false;
   }
 
