@@ -41,12 +41,13 @@ done
 #SCRIPT_ARGS=${POSITIONAL_ARGS[@]}
 
 # bazelisk (renamed as bazel) is kept in C:\Tools
-export PATH=/c/Tools/bazel:/c/Program\ Files/Git:/c/Program\ Files/Git/cmd:/c/msys64:/c/msys64/usr/bin:/c/Windows/system32:/c/Windows:/c/Windows/System32/Wbem
+export PATH=/c/Tools/bazel:/c/Program\ Files/Git:/c/Program\ Files/Git/cmd:/c/msys64:/c/msys64/usr/bin:/C/Program Files/LLVM/bin:/c/Windows/system32:/c/Windows:/c/Windows/System32/Wbem:/c/Windows/System32/OpenSSH
 
 # Environment variables to be set by Jenkins before calling this script
 # 
 
 export PYTHON_VERSION=${PYTHON_VERSION:-"310"}  #We expect Python installation as C:\Python39
+export TF_PYTHON_VERSION=${PYTHON_VERSION:0:1}.${PYTHON_VERSION:1}
 MYTFWS_ROOT=${WORKSPACE:-"C:/Users/mlp_admin"} # keep the tensorflow git repo clone under here as tensorflow subdir
 MYTFWS_ROOT=`cygpath -m $MYTFWS_ROOT`
 export MYTFWS_ROOT="$MYTFWS_ROOT"
@@ -64,10 +65,12 @@ export TF_LOCATION=%MYTFWS%
 export TMP="${MYTFWS_ROOT}/tmp"
 export TEMP="$TMP"
 export TMPDIR="${MYTFWS}-build" # used internally by TF build
+TMPDIR=C:/
 export MSYS_LOCATION='C:/msys64'
 export GIT_LOCATION='C:/Program Files/Git'
 export JAVA_LOCATION='C:/Program Files/Eclipse Adoptium/jdk-11.0.14.101-hotspot'
 export VS_LOCATION='C:/Program Files (x86)/Microsoft Visual Studio/2019/BuildTools'
+export LLVM_LOCATION='C:/Program Files/LLVM'
 export NATIVE_PYTHON_LOCATION="C:/Python${PYTHON_VERSION}"
 
 echo "*** *** hostname is $(hostname) *** ***"
@@ -111,6 +114,8 @@ python --version
 # Install pip modules as per specs in tensorflow/tools/ci_build/release/requirements_common.txt
 python -m pip install -r $MYTFWS/tensorflow/tools/ci_build/release/requirements_common.txt
 
+
+
 # set up other Variables required by bazel.
 export PYTHON_BIN_PATH="${PYTHON_DIRECTORY}"/Scripts/python.exe
 export PYTHON_LIB_PATH="${PYTHON_DIRECTORY}"/Lib/site-packages
@@ -118,6 +123,8 @@ export BAZEL_VS=${VS_LOCATION}
 export BAZEL_VC=${VS_LOCATION}/VC
 export JAVA_HOME=${JAVA_LOCATION}
 export BAZEL_SH="${MSYS_LOCATION}"/usr/bin/bash.exe
+export BAZEL_LLVM=${LLVM_LOCATION}
+
 
 cd ${MYTFWS_ROOT}
 mkdir -p "$TMP"
@@ -134,24 +141,24 @@ set +e   # Unset so script continues even if commands fail, this is needed to co
 cd $MYTFWS
 
 bash "${MYTFWS}"/tensorflow/tools/ci_build/windows/cpu/pip/build_tf_windows.sh \
-   --extra_build_flags "--action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XBF_ARGS}" \
+   --extra_build_flags "--action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XBF_ARGS} --repo_env=TF_PYTHON_VERSION=${TF_PYTHON_VERSION}" \
    --extra_test_flags "--action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XTF_ARGS}" \
    ${POSITIONAL_ARGS[@]}  > run.log 2>&1
 
 build_ret_val=$?   # Store the ret value
 
 # Retry once more with "bazel clean" for failed builds to get rid of any stale cache
-if [[ $build_ret_val -ne 0 ]]; then
-  cd ${MYTFWS}
-  bazel --output_user_root=${TMPDIR} clean --expunge
+# if [[ $build_ret_val -ne 0 ]]; then
+#   cd ${MYTFWS}
+#   bazel --output_user_root=${TMPDIR} clean --expunge
 
-  bash "${MYTFWS}"/tensorflow/tools/ci_build/windows/cpu/pip/build_tf_windows.sh \
-     --extra_build_flags "--action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XBF_ARGS}" \
-     --extra_test_flags "--action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XTF_ARGS}" \
-     ${POSITIONAL_ARGS[@]}  > run.log 2>&1
+#   bash "${MYTFWS}"/tensorflow/tools/ci_build/windows/cpu/pip/build_tf_windows.sh \
+#      --extra_build_flags "--action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XBF_ARGS} --repo_env=TF_PYTHON_VERSION=${TF_PYTHON_VERSION}" \
+#      --extra_test_flags "--action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XTF_ARGS}" \
+#      ${POSITIONAL_ARGS[@]}  > run.log 2>&1
 
-  build_ret_val=$?   # Store the ret value
-fi
+#   build_ret_val=$?   # Store the ret value
+# fi
 
 # process results
 cd $MYTFWS_ROOT
@@ -159,8 +166,21 @@ cd $MYTFWS_ROOT
 # Check to make sure log was created.
 [ ! -f "${MYTFWS}"/run.log  ] && exit 1
 
+if [[ "$RELEASE_BUILD" = 1 ]]; then
+  if [[ $build_ret_val -eq 0 ]]; then
+    #cd ${MYTFWS}/py_test_dir/
+    #for file in *.whl ; do mv "$file" "${file/"cp310-cp310"/"cp${PYTHON_VERSION}-cp${PYTHON_VERSION}"}"; done
+    cp ${MYTFWS}/py_test_dir/*.whl ${MYTFWS_ARTIFACT}
+    cp "${MYTFWS}"/run.log ${MYTFWS_ARTIFACT}/test_run_${PYTHON_VERSION}.log
+  else
+    # build failed just copy the log, mark log with py version.
+    cp "${MYTFWS}"/run.log ${MYTFWS_ARTIFACT}/test_run_${PYTHON_VERSION}.log
+  fi
+  exit $build_ret_val
+fi
+
 # Handle the case when only whl are built
-if [[ "$TF_NIGHTLY" = 1 ]] || [[ "$RELEASE_BUILD" = 1 ]]; then
+if [[ "$TF_NIGHTLY" = 1 ]] ; then
   if [[ $build_ret_val -eq 0 ]]; then
     cp ${MYTFWS}/py_test_dir/*.whl ${MYTFWS_ARTIFACT}
     cp "${MYTFWS}"/run.log ${MYTFWS_ARTIFACT}/test_run_${PYTHON_VERSION}.log
