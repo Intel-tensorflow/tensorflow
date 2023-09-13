@@ -206,7 +206,7 @@ fgrep "Executed" test_run.log >> summary.log
 [ $build_ret_val -eq 0 ] && exit 0
 
 echo "FAILED TESTS:" > test_failures.log
-fgrep "FAILED" test_run.log | grep "ms)" | sed -e 's/^.*\] //' -e 's/ .*$//' | sort | uniq >> test_failures.log
+fgrep "FAILED" test_run.log | grep "ms" | sed -e 's/^.*\] //' -e 's/ .*$//' | sort | uniq >> test_failures.log
 echo >> test_failures.log
 echo "SKIPPED TESTS:" >> test_failures.log
 fgrep "SKIPPED" test_run.log | grep -v "listed below:" | sed -e 's/^.*\] //' | sort | uniq >> test_failures.log
