@@ -47,6 +47,7 @@ export PATH=/c/ProgramData/chocolatey/bin:/c/Tools/bazel:/c/Program\ Files/Git:/
 # 
 
 export PYTHON_VERSION=${PYTHON_VERSION:-"310"}  #We expect Python installation as C:\Python39
+export TF_PYTHON_VERSION=${PYTHON_VERSION:0:1}.${PYTHON_VERSION:1}
 MYTFWS_ROOT=${WORKSPACE:-"C:/Users/mlp_admin"} # keep the tensorflow git repo clone under here as tensorflow subdir
 MYTFWS_ROOT=`cygpath -m $MYTFWS_ROOT`
 export MYTFWS_ROOT="$MYTFWS_ROOT"
@@ -70,6 +71,7 @@ export GIT_LOCATION='C:/Program Files/Git'
 export JAVA_LOCATION='C:/Program Files/Eclipse Adoptium/jdk-11.0.14.101-hotspot'
 export VS_LOCATION='C:/Program Files (x86)/Microsoft Visual Studio/2019/BuildTools'
 export NATIVE_PYTHON_LOCATION="C:/Python${PYTHON_VERSION}"
+
 
 echo "*** *** hostname is $(hostname) *** ***"
 which bazel
@@ -176,6 +178,7 @@ bazel --windows_enable_symlinks test \
   --dynamic_mode=off --config=xla --config=short_logs --announce_rc \
   --build_tag_filters=-no_pip,-no_windows,-no_oss,-gpu,-tpu --build_tests_only --config=monolithic \
   --config=opt \
+  --repo_env=TF_PYTHON_VERSION=${TF_PYTHON_VERSION} --test_env=TF_ENABLE_ONEDNN_OPTS=1" \
   -k --test_output=errors \
   --test_tag_filters=-no_windows,-no_oss,-gpu,-tpu \
   --discard_analysis_cache \
