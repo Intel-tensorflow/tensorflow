@@ -178,7 +178,7 @@ bazel --windows_enable_symlinks test \
   --dynamic_mode=off --config=xla --config=short_logs --announce_rc \
   --build_tag_filters=-no_pip,-no_windows,-no_oss,-gpu,-tpu --build_tests_only --config=monolithic \
   --config=opt \
-  --repo_env=TF_PYTHON_VERSION=${TF_PYTHON_VERSION} --test_env=TF_ENABLE_ONEDNN_OPTS=1" \
+  --repo_env=TF_PYTHON_VERSION=${TF_PYTHON_VERSION} --test_env=TF_ENABLE_ONEDNN_OPTS=1 \
   -k --test_output=errors \
   --test_tag_filters=-no_windows,-no_oss,-gpu,-tpu \
   --discard_analysis_cache \
@@ -206,7 +206,7 @@ fgrep "Executed" test_run.log >> summary.log
 [ $build_ret_val -eq 0 ] && exit 0
 
 echo "FAILED TESTS:" > test_failures.log
-fgrep "FAILED" test_run.log | grep "ms" | sed -e 's/^.*\] //' -e 's/ .*$//' | sort | uniq >> test_failures.log
+fgrep "FAILED" test_run.log | grep " ms)" | sed -e 's/^.*\] //' -e 's/ .*$//' | sort | uniq >> test_failures.log
 echo >> test_failures.log
 echo "SKIPPED TESTS:" >> test_failures.log
 fgrep "SKIPPED" test_run.log | grep -v "listed below:" | sed -e 's/^.*\] //' | sort | uniq >> test_failures.log
