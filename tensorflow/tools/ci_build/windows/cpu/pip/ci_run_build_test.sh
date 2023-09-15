@@ -41,7 +41,7 @@ done
 #SCRIPT_ARGS=${POSITIONAL_ARGS[@]}
 
 # bazelisk (renamed as bazel) is kept in C:\Tools
-export PATH=/c/Tools/bazel:/c/Program\ Files/Git:/c/Program\ Files/Git/cmd:/c/msys64:/c/msys64/usr/bin:/c/Program Files/LLVM/bin:/c/Windows/system32:/c/Windows:/c/Windows/System32/Wbem:/c/Windows/System32/OpenSSH
+export PATH=/c/Tools/bazel:/c/Program\ Files/Git:/c/Program\ Files/Git/cmd:/c/msys64:/c/msys64/usr/bin:/c/Program\ Files/LLVM/bin:/c/Windows/system32:/c/Windows:/c/Windows/System32/Wbem:/c/Windows/System32/OpenSSH
 
 # Environment variables to be set by Jenkins before calling this script
 # 
