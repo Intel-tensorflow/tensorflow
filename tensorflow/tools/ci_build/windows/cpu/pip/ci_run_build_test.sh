@@ -41,7 +41,7 @@ done
 #SCRIPT_ARGS=${POSITIONAL_ARGS[@]}
 
 # bazelisk (renamed as bazel) is kept in C:\Tools
-export PATH=/c/Tools/bazel:/c/Program\ Files/Git:/c/Program\ Files/Git/cmd:/c/msys64:/c/msys64/usr/bin:/c/Program\ Files/LLVM/bin:/c/Windows/system32:/c/Windows:/c/Windows/System32/Wbem:/c/Windows/System32/OpenSSH
+export PATH=/c/Tools/bazel:/c/Program\ Files/Git:/c/Program\ Files/Git/cmd:/c/msys64:/c/msys64/usr/bin:/c/Windows/system32:/c/Windows:/c/Windows/System32/Wbem:/c/Windows/System32/OpenSSH
 
 # Environment variables to be set by Jenkins before calling this script
 # 
@@ -70,7 +70,7 @@ export MSYS_LOCATION='C:/msys64'
 export GIT_LOCATION='C:/Program Files/Git'
 export JAVA_LOCATION='C:/Program Files/Eclipse Adoptium/jdk-11.0.14.101-hotspot'
 export VS_LOCATION='C:/Program Files (x86)/Microsoft Visual Studio/2019/BuildTools'
-export LLVM_LOCATION='C:/Program Files/LLVM'
+#export LLVM_LOCATION='C:/Program Files/LLVM'
 export NATIVE_PYTHON_LOCATION="C:/Python${PYTHON_VERSION}"
 
 echo "*** *** hostname is $(hostname) *** ***"
@@ -141,7 +141,7 @@ set +e   # Unset so script continues even if commands fail, this is needed to co
 cd $MYTFWS
 
 bash "${MYTFWS}"/tensorflow/tools/ci_build/windows/cpu/pip/build_tf_windows.sh \
-   --extra_build_flags "--action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XBF_ARGS} --repo_env=TF_PYTHON_VERSION=${TF_PYTHON_VERSION} --test_env=TF_ENABLE_ONEDNN_OPTS=" \
+   --extra_build_flags "--action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XBF_ARGS} --repo_env=TF_PYTHON_VERSION=${TF_PYTHON_VERSION}" \
    --extra_test_flags "--action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XTF_ARGS}" \
    ${POSITIONAL_ARGS[@]}  > run.log 2>&1
 
