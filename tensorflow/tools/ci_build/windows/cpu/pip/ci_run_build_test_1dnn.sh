@@ -123,7 +123,7 @@ export BAZEL_VS=${VS_LOCATION}
 export BAZEL_VC=${VS_LOCATION}/VC
 export JAVA_HOME=${JAVA_LOCATION}
 export BAZEL_SH="${MSYS_LOCATION}"/usr/bin/bash.exe
-export BAZEL_LLVM=${LLVM_LOCATION}
+# export BAZEL_LLVM=${LLVM_LOCATION}
 
 
 cd ${MYTFWS_ROOT}
