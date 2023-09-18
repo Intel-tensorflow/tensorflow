@@ -550,7 +550,9 @@ class FusedMatMulOpsTest : public OpsTestBase {
   void GetFusionConfiguration(const std::vector<string>& fused_ops,
                               const int row, const int col,
                               FusedOpsAndDims* fused_ops_and_dims) {
-    if (fused_ops == std::vector<string>{"BiasAdd"}) {
+    if (fused_ops.empty()) {
+      *fused_ops_and_dims = {fused_ops, {{}}};
+    } else if (fused_ops == std::vector<string>{"BiasAdd"}) {
       *fused_ops_and_dims = {fused_ops, {std::vector<int64_t>{col}}};
     } else if (fused_ops == std::vector<string>{"BiasAdd", "Relu"} ||
                fused_ops == std::vector<string>{"BiasAdd", "Relu6"} ||
@@ -687,6 +689,10 @@ TYPED_TEST_P(FusedMatMulOpsTest, BiasAddGeluApproximate) {
 }
 
 // The following tests are for quantized fusions.
+TYPED_TEST_P(FusedMatMulOpsTest, Quantized_NoFusion) {
+  this->VerifyQuantizedMatMul({});
+}
+
 TYPED_TEST_P(FusedMatMulOpsTest, Quantized_BiasAdd) {
   this->VerifyQuantizedMatMul({"BiasAdd"});
 }
@@ -724,10 +730,10 @@ TYPED_TEST_P(FusedMatMulOpsTest, Quantized_BiasAddAdd) {
 }
 
 REGISTER_TYPED_TEST_SUITE_P(FusedMatMulOpsTest, BiasAddGeluApproximate,
-                            Quantized_BiasAdd, Quantized_BiasAddRelu,
-                            Quantized_BiasAddRelu6, Quantized_BiasAddLeakyRelu,
-                            Quantized_BiasAddElu, Quantized_BiasAddTanh,
-                            Quantized_BiasAddSigmoid,
+                            Quantized_NoFusion, Quantized_BiasAdd,
+                            Quantized_BiasAddRelu, Quantized_BiasAddRelu6,
+                            Quantized_BiasAddLeakyRelu, Quantized_BiasAddElu,
+                            Quantized_BiasAddTanh, Quantized_BiasAddSigmoid,
                             Quantized_BiasAddGeluApproximate,
                             Quantized_BiasAddAdd);
 

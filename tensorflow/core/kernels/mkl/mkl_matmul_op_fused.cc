@@ -70,7 +70,8 @@ class MklFusedMatMulOp : public MklDnnMatMulOpBase<T2, Tbias, Toutput> {
     // FusedMatMul has 3 inputs: src, weights, bias
     const Tensor& src_tensor = ctx->input(this->kInputIndexSrc);
     const Tensor& weight_tensor = ctx->input(this->kInputIndexWeight);
-    const Tensor& bias_tensor = MklGetInput(ctx, this->kInputIndexBias);
+    const Tensor& bias_tensor = fuse_bias_ ? ctx->input(this->kInputIndexBias)
+                                           : Tensor(DataTypeToEnum<Tbias>::v());
 
     if (std::is_same<T1, float>::value) {
       (void)SetFPMathMode();
@@ -94,13 +95,6 @@ class MklFusedMatMulOp : public MklDnnMatMulOpBase<T2, Tbias, Toutput> {
                 absl::InvalidArgumentError("In[0] is not a matrix"));
     OP_REQUIRES(ctx, TensorShapeUtils::IsMatrix(weight_tf_shape),
                 absl::InvalidArgumentError("In[1] is not a matrix"));
-    for (int i = 0; i < bias_tensor.dims() - 1; i++) {
-      OP_REQUIRES(ctx, bias_tensor.dim_size(i) == 1,
-                  absl::InvalidArgumentError(
-                      absl::StrCat("For bias_dims > 1, all except the "
-                                   "last dimension (channel) must be 1, got: ",
-                                   bias_tensor.shape().DebugString())));
-    }
 
     // Expression: [batch, k] * [k, channel] + [channel] = [batch, channel]
     //
@@ -117,10 +111,19 @@ class MklFusedMatMulOp : public MklDnnMatMulOpBase<T2, Tbias, Toutput> {
         absl::InvalidArgumentError(absl::StrCat(
             "Matrix size-incompatible: In[0]: ", src_tf_shape.DebugString(),
             ", In[1]: ", weight_tf_shape.DebugString())));
-    OP_REQUIRES(ctx, bias_tensor.dim_size(bias_tensor.dims() - 1) == channel,
-                absl::InvalidArgumentError(absl::StrCat(
-                    "Must provide as many biases as the channel size: ",
-                    bias_tensor.shape().DebugString(), " vs. ", channel)));
+    if (fuse_bias_) {
+      for (int i = 0; i < bias_tensor.dims() - 1; i++) {
+        OP_REQUIRES(ctx, bias_tensor.dim_size(i) == 1,
+                    absl::InvalidArgumentError(absl::StrCat(
+                        "For bias_dims > 1, all except the "
+                        "last dimension (channel) must be 1, got: ",
+                        bias_tensor.shape().DebugString())));
+      }
+      OP_REQUIRES(ctx, bias_tensor.dim_size(bias_tensor.dims() - 1) == channel,
+                  absl::InvalidArgumentError(absl::StrCat(
+                      "Must provide as many biases as the channel size: ",
+                      bias_tensor.shape().DebugString(), " vs. ", channel)));
+    }
 
     // For inputs s[batch, k], w[k, channel] and b[channel], the primitive
     // dims should be described like this:
@@ -287,7 +290,7 @@ class MklFusedMatMulOp : public MklDnnMatMulOpBase<T2, Tbias, Toutput> {
       // Temporary tensor for scaled bias when op is quantized version.
       Tensor temp_scaled_bias_tensor;
       if (std::is_same<T2, qint8>::value) {
-        this->GetScaledBias(ctx, matmul_pd, bias_tensor,
+        this->GetScaledBias(ctx, matmul_pd, bias_tensor, channel,
                             &temp_scaled_bias_tensor, &bias_data);
       }
 
@@ -340,9 +343,10 @@ class MklFusedMatMulOp : public MklDnnMatMulOpBase<T2, Tbias, Toutput> {
   virtual void GetScaledBias(
       OpKernelContext*,
       std::shared_ptr<dnnl::inner_product_forward::primitive_desc>&,
-      const Tensor&, Tensor*, void**) {}
+      const Tensor&, const int, Tensor*, void**) {}
 
   bool fuse_add_ = false;
+  bool fuse_bias_ = true;
   bool transpose_a_;
   bool transpose_b_;
   float leakyrelu_alpha_ = 0.2;
@@ -367,6 +371,8 @@ enum class FusedComputationType {
   kBiasAdd_Add,
   kBiasAdd_Add_Dequantize,
   kBiasAdd_Add_Requantize,
+  kDequantize,
+  kRequantize
 };
 
 struct FusedComputationPattern {
@@ -469,6 +475,8 @@ class QuantizedFusedMatMulOp
         {FCT::kBiasAdd_Activation_Requantize,
          {"BiasAdd", "Activation", "Requantize"}},
         {FCT::kBiasAdd_Add_Dequantize, {"BiasAdd", "Add", "Dequantize"}},
+        {FCT::kDequantize, {"Dequantize"}},
+        {FCT::kRequantize, {"Requantize"}},
     };
 
     FusedComputationType fused_computation = FusedComputationType::kUndefined;
@@ -478,6 +486,13 @@ class QuantizedFusedMatMulOp
         break;
       }
     }
+
+    auto update_indices = [&](int offset) {
+      input_min_idx_ += offset;
+      input_max_idx_ += offset;
+      weight_min_idx_ += offset;
+      weight_max_idx_ += offset;
+    };
 
     // Configure oneDNN post ops
     switch (fused_computation) {
@@ -512,18 +527,35 @@ class QuantizedFusedMatMulOp
                 "Quantized addend tensor is not implemented yet."));
         // Addend tensor precedes all minmax tensors. Shift the indices from
         // default initilized values.
-        input_min_idx_ += 1;
-        input_max_idx_ += 1;
-        weight_min_idx_ += 1;
-        weight_max_idx_ += 1;
+        update_indices(1);
         post_op_info_list_ = {{PostOpKind::kOutputScale, {}, {}},
                               {PostOpKind::kSum, {3, {}}, {}}};
       } break;
+      case FCT::kDequantize:
+        post_op_info_list_ = {{PostOpKind::kOutputScale, {}, {}}};
+        this->fuse_bias_ = false;
+        // Since there is no bias input, decrement the inputs' indices that
+        // follow bias by 1.
+        update_indices(-1);
+        break;
+      case FCT::kRequantize:
+        post_op_info_list_ = {{PostOpKind::kOutputScale, {}, {}},
+                              {PostOpKind::kLinear, {}, {6, 7}}};
+        this->fuse_bias_ = false;
+        // Since there is no bias input, decrement the inputs' indices that
+        // follow bias by 1.
+        update_indices(-1);
+        break;
       default:
         OP_REQUIRES(context, false,
                     errors::Unimplemented("Fusion is not implemented: [",
                                           absl::StrJoin(fused_ops, ","), "]"));
     }
+#ifdef ENABLE_ONEDNN_V2
+    OP_REQUIRES(context, this->fuse_bias_,
+                errors::Unimplemented("QuantizedMatmul without bias is only "
+                                      "supported in oneDNN v3.0 or newer"));
+#endif  // ENABLE_ONEDNN_V2
   }
 
  public:
@@ -718,11 +750,21 @@ class QuantizedFusedMatMulOp
   void GetScaledBias(
       OpKernelContext* ctx,
       std::shared_ptr<dnnl::inner_product_forward::primitive_desc>& matmul_pd,
-      const Tensor& bias_tensor, Tensor* temp_scaled_bias_tensor,
-      void** bias_data) override {
+      const Tensor& bias_tensor, const int channel,
+      Tensor* temp_scaled_bias_tensor, void** bias_data) override {
+    auto scaled_bias_md = matmul_pd->bias_desc();
+    TensorShape scaled_bias_shape;
     if ((std::is_same<Tbias, float>::value ||
          std::is_same<Tbias, bfloat16>::value) &&
         input_quant_mode_ == "SCALED") {
+      if (!this->fuse_bias_) {
+        scaled_bias_shape.AddDim((scaled_bias_md.get_size() / sizeof(Tbias)));
+        OP_REQUIRES_OK(ctx, ctx->allocate_temp(DataTypeToEnum<Tbias>::v(),
+                                               scaled_bias_shape,
+                                               temp_scaled_bias_tensor));
+        temp_scaled_bias_tensor->flat<Tbias>().setZero();
+        *bias_data = temp_scaled_bias_tensor->flat<Tbias>().data();
+      }
       return;
     } else {
       const float min_input = ctx->input(input_min_idx_).flat<float>()(0);
@@ -738,10 +780,20 @@ class QuantizedFusedMatMulOp
         is_cached_bias_valid = (*bias_data != nullptr);
       }
       if (!is_cached_bias_valid) {
-        void* input_bias_buf = static_cast<void*>(
-            const_cast<Tbias*>(bias_tensor.flat<Tbias>().data()));
-        auto scaled_bias_md = matmul_pd->bias_desc();
-        TensorShape scaled_bias_shape;
+        Tensor dummy_bias_tensor;
+        if (!this->fuse_bias_) {
+          // If BiasAdd is not fused we create dummy bias tensor and fill it
+          // with 0. That will allow us using the same implementation of
+          // scaling logic as when BiasAdd is fused for both SCALED and
+          // MIN_FIRST quantization modes
+          OP_REQUIRES_OK(
+              ctx, ctx->allocate_temp(DataTypeToEnum<Tbias>::v(), {channel},
+                                      &dummy_bias_tensor));
+          dummy_bias_tensor.flat<Tbias>().setZero();
+        }
+        void* input_bias_buf = static_cast<void*>(const_cast<Tbias*>(
+            this->fuse_bias_ ? bias_tensor.flat<Tbias>().data()
+                             : dummy_bias_tensor.flat<Tbias>().data()));
         scaled_bias_shape.AddDim((scaled_bias_md.get_size() / sizeof(float)));
         OP_REQUIRES_OK(ctx, ctx->allocate_temp(DataTypeToEnum<float>::v(),
                                                scaled_bias_shape,
@@ -814,8 +866,10 @@ class QuantizedFusedMatMulOp
           dnnl::primitive_attr bias_attr;
           (num_weight_scales == 1) ? bias_attr.set_scales_mask(DNNL_ARG_SRC, 0)
                                    : bias_attr.set_scales_mask(DNNL_ARG_SRC, 1);
-          memory::dims input_bias_dims =
-              memory::dims({bias_tensor.shape().dim_size(0)});
+          const int bias_dim_size = this->fuse_bias_
+                                        ? bias_tensor.shape().dim_size(0)
+                                        : dummy_bias_tensor.shape().dim_size(0);
+          memory::dims input_bias_dims = memory::dims({bias_dim_size});
           auto input_bias_md = dnnl::memory::desc(
               input_bias_dims, MklDnnType<Tbias>(), memory::format_tag::x);
           auto input_bias_mem =
@@ -852,7 +906,7 @@ class QuantizedFusedMatMulOp
                          float current_max_input) override
       TF_LOCKS_EXCLUDED(this->bias_cache_mutex_) {
     tf_shared_lock lock(this->bias_cache_mutex_);
-    if (this->is_bias_const_ && this->is_weight_const_ &&
+    if ((this->is_bias_const_ || !this->fuse_bias_) && this->is_weight_const_ &&
         std::abs(current_min_input - saved_min_input_) < 1e-5 &&
         std::abs(current_max_input - saved_max_input_) < 1e-5) {
       return true;
