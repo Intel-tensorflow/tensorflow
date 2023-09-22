@@ -27,7 +27,7 @@ ARG RELEASE_CONTAINER=""
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN ln -s /usr/bin/clang-17 /usr/bin/clang && ln -s /usr/bin/clang++-17 /usr/bin/clang++
+RUN ln -s /usr/bin/clang-16 /usr/bin/clang && ln -s /usr/bin/clang++-16 /usr/bin/clang++
 ENV CC=clang
 ENV CXX=clang++
 ENV BAZEL_COMPILER=/usr/bin/
