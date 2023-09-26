@@ -178,6 +178,16 @@ void InfoAboutUnusedCPUFeatures() {
 #ifndef __FMA__
     CheckIfFeatureUnused(CPUFeature::FMA, "FMA", missing_instructions);
 #endif  // __FMA__
+    LOG(INFO) << "Beginning TensorFlow 2.15, this package will be updated to "
+              << "install stock TensorFlow 2.15 alongside Intel's TensorFlow "
+              << "CPU extension plugin, which provides all the optimizations "
+              << "available in the package and more. If a compatible version "
+              << "of stock TensorFlow is present, only the extension will get "
+              << "installed. No changes to code or installation setup is "
+              << "needed as a result of this change." << std::endl
+              << "More information on Intel's optimizations for TensorFlow, "
+              << "delivered as TensorFlow extension plugin can be viewed at "
+              << "https://github.com/intel/intel-extension-for-tensorflow.";
     if (!missing_instructions.empty()) {
       LOG(INFO) << "This TensorFlow binary is optimized "
                 << "to use available CPU instructions in performance-"
