@@ -180,7 +180,7 @@ bazel --windows_enable_symlinks test \
   --experimental_cc_shared_library --enable_runfiles --nodistinct_host_configuration \
   --dynamic_mode=off --config=xla --config=short_logs --announce_rc \
   --build_tag_filters=-no_pip,-no_windows,-no_oss,-gpu,-tpu --build_tests_only --config=monolithic \
-  --config=opt --copt=/std:c++latest --copt=/clang:-Weverything --linkopt=/FORCE:MULTIPLE \
+  --config=opt --copt=/std:c++latest --copt=/clang:-Weverything --linkopt=/FORCE:MULTIPLE --host_linkopt=--linkopt=/FORCE:MULTIPLE \
   --extra_execution_platforms=//tensorflow/tools/toolchains/win:x64_windows-clang-cl --compiler=clang-cl \
   --repo_env=TF_PYTHON_VERSION=${TF_PYTHON_VERSION} --test_env=TF_ENABLE_ONEDNN_OPTS=1 \
   -k --test_output=errors \
