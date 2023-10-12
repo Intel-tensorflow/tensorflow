@@ -170,7 +170,6 @@ set +e   # Unset so script continues even if commands fail, this is needed to co
 
 # NUMBER_OF_PROCESSORS is predefined on Windows
 N_JOBS="${NUMBER_OF_PROCESSORS}"
-start-stop-daemon -b -n portserver.py -a /usr/local/bin/python3 -S -- /usr/local/bin/portserver.py
 # --config=release_cpu_windows 
 bazel --windows_enable_symlinks test \
   --action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XTF_ARGS} \
