@@ -171,7 +171,7 @@ set +e   # Unset so the script continues even if commands fail, this is needed t
 # start port server before testing 
 export SCRIPT_PATH=/C/Program\ Files/python_portpicker/src/portserver.py
 # Start the server
-start "PORTSERVER" "%PYTHON_BIN_PATH%" "%SCRIPT_PATH%"
+start "PORTSERVER" "${PYTHON_BIN_PATH}" "${SCRIPT_PATH}"
 echo "started server"
 
 # NUMBER_OF_PROCESSORS is predefined on Windows
