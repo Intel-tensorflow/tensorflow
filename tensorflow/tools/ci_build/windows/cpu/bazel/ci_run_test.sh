@@ -170,8 +170,8 @@ run_configure_for_cpu_build
 set +e   # Unset so the script continues even if commands fail, this is needed to correctly process the logs
 
 # start port server before testing 
-set PYTHON_EXECUTABLE=C:\Jenkins\workspace\alltest310\venv_py310\Scripts\python.exe
-set SCRIPT_PATH=C:\Program Files\python_portpicker\src\portserver.py
+set PYTHON_EXECUTABLE='C:\Jenkins\workspace\alltest310\venv_py310\Scripts\python.exe'
+set SCRIPT_PATH='C:\Program Files\python_portpicker\src\portserver.py'
 start "PORTSERVER" "%PYTHON_EXECUTABLE%" "%SCRIPT_PATH%"
 
 echo "started server"
