@@ -169,7 +169,7 @@ run_configure_for_cpu_build
 set +e   # Unset so the script continues even if commands fail, this is needed to correctly process the logs
 
 # start port server before testing 
-export SCRIPT_PATH=C:/Program Files/python_portpicker/src/portserver.py
+export SCRIPT_PATH=/C/Program Files/python_portpicker/src/portserver.py
 # Start the server
 start "PORTSERVER" "%PYTHON_BIN_PATH%" "%SCRIPT_PATH%"
 echo "started server"
