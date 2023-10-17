@@ -70,7 +70,7 @@ export MSYS_LOCATION='C:/msys64'
 export GIT_LOCATION='C:/Program Files/Git'
 export JAVA_LOCATION='C:/Program Files/Eclipse Adoptium/jdk-11.0.14.101-hotspot'
 export VS_LOCATION='C:/Program Files (x86)/Microsoft Visual Studio/2019/BuildTools'
-set SCRIPT_PATH=C:\Program Files\python_portpicker\src\portserver.py'
+set SCRIPT_PATH=C:\Program Files\python_portpicker\src\portserver.py
 export NATIVE_PYTHON_LOCATION="C:/Python${PYTHON_VERSION}"
 
 
