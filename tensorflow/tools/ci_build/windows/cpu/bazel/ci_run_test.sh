@@ -166,7 +166,13 @@ fi
 
 run_configure_for_cpu_build
 
-set +e   # Unset so script continues even if commands fail, this is needed to correctly process the logs
+set +e   # Unset so the script continues even if commands fail, this is needed to correctly process the logs
+
+# start port server before testing 
+export SCRIPT_PATH=C:\Program Files\python_portpicker\src\portserver.py
+# Start the server
+start "PORTSERVER" "%PYTHON_BIN_PATH%" "%SCRIPT_PATH%"
+echo "started server"
 
 # NUMBER_OF_PROCESSORS is predefined on Windows
 N_JOBS="${NUMBER_OF_PROCESSORS}"
@@ -188,6 +194,9 @@ bazel --windows_enable_symlinks test \
   > run.log 2>&1
 
 build_ret_val=$?   # Store the ret value
+
+echo "kill server"
+taskkill /FI "WindowTitle eq PORTSERVER*" /F /t
 
 # process results
 cd $MYTFWS_ROOT
