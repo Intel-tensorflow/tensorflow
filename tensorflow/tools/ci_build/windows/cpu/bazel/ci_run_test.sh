@@ -173,7 +173,7 @@ set +e   # Unset so the script continues even if commands fail, this is needed t
 export PYTHON_EXECUTABLE='C:/Jenkins/workspace/alltest310/venv_py310/Scripts/python.exe'
 export SCRIPT_PATH='C:/Program Files/python_portpicker/src/portserver.py'
 
-source "tensorflow\tools\ci_build\windows\cpu\bazel\start_server.bat"
+source "tensorflow/tools/ci_build/windows/cpu/bazel/start_server.bat"
 
 
 # NUMBER_OF_PROCESSORS is predefined on Windows
@@ -197,7 +197,7 @@ bazel --windows_enable_symlinks test \
 
 build_ret_val=$?   # Store the ret value
 
-source "tensorflow\tools\ci_build\windows\cpu\bazel\start_server.bat"
+source "tensorflow/tools/ci_build/windows/cpu/bazel/start_server.bat"
 
 # process results
 cd $MYTFWS_ROOT
