@@ -183,7 +183,7 @@ N_JOBS="${NUMBER_OF_PROCESSORS}"
 # build_ret_val=$?   # Store the ret value
 
 echo "kill server"
-taskkill python.exe
+pkill -f "python.exe"
 
 
 # process results
