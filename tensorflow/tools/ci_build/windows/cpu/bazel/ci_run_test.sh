@@ -183,10 +183,7 @@ N_JOBS="${NUMBER_OF_PROCESSORS}"
 # build_ret_val=$?   # Store the ret value
 
 echo "kill server"
-pids=$(pgrep -f "PORTSERVER")
-if [ -n "$pids" ]; then
-  kill -9 $pids
-fi
+taskkill /F /IM python.exe
 
 
 # process results
