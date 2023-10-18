@@ -197,7 +197,7 @@ bazel --windows_enable_symlinks test \
 
 build_ret_val=$?   # Store the ret value
 
-source "tensorflow/tools/ci_build/windows/cpu/bazel/stop_server.bat"
+source "tensorflow/tools/ci_build/windows/cpu/bazel/start_server.bat"
 
 # process results
 cd $MYTFWS_ROOT
