@@ -169,20 +169,19 @@ run_configure_for_cpu_build
 
 set +e   # Unset so the script continues even if commands fail, this is needed to correctly process the logs
 
-# start port server before testing 
+# start the port server before testing 
 # Define the batch script content
-BATCH_SCRIPT_CONTENT="
+BATCH_SCRIPT_CONTENT_start="
 @echo off
-set PYTHON_EXECUTABLE=C:\Jenkins\workspace\alltest310\venv_py310\Scripts\python.exe
 set SCRIPT_PATH=C:\Program Files\python_portpicker\src\portserver.py
 echo Starting the server...
-start \"PORTSERVER\" \"%PYTHON_EXECUTABLE%\" \"%SCRIPT_PATH%\"
+start \"PORTSERVER\" \"%PYTHON_BIN_PATH%\" \"%SCRIPT_PATH%\"
 echo Server started.
 "
 
 # Save the batch script content to a temporary batch file
 BATCH_SCRIPT_FILE="temp_script.bat"
-echo "$BATCH_SCRIPT_CONTENT" > "$BATCH_SCRIPT_FILE"
+echo "$BATCH_SCRIPT_CONTENT_start" > "$BATCH_SCRIPT_FILE"
 
 # Run the batch script
 cmd.exe /C "$BATCH_SCRIPT_FILE"
@@ -207,18 +206,16 @@ bazel --windows_enable_symlinks test \
   > run.log 2>&1
 
 build_ret_val=$?   # Store the ret value
-BATCH_SCRIPT_CONTENTl="
+BATCH_SCRIPT_CONTENT_end="
 echo Killing the server...
 taskkill /FI \"WindowTitle eq PORTSERVER*\" /F /T
 echo Server killed.
 "
 BATCH_SCRIPT_FILEl="temp_script.bat"
-echo "$BATCH_SCRIPT_CONTENTl" > "$BATCH_SCRIPT_FILEl"
+echo "$BATCH_SCRIPT_CONTENT_end" > "$BATCH_SCRIPT_FILEl"
 cmd.exe /C "$BATCH_SCRIPT_FILEl"
 
-
-
-# Clean up by removing the temporary batch script
+# Removing the temporary batch script
 rm -f "$BATCH_SCRIPT_FILE"
 rm -f "$BATCH_SCRIPT_FILEl"
 
