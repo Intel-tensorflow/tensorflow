@@ -1,4 +1,4 @@
-#!/bin/bash -vx
+#!/bin/bash
 # This script is a CI script for invoking 'bazel test ... ...'
 # It assumes the standard setup on tensorflow Jenkins windows machines.
 # Update the flags/variables below to make it work on your local system.
