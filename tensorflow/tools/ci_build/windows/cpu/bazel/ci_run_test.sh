@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -vx
 # This script is a CI script for invoking 'bazel test ... ...'
 # It assumes the standard setup on tensorflow Jenkins windows machines.
 # Update the flags/variables below to make it work on your local system.
@@ -47,7 +47,7 @@ export PATH=/c/ProgramData/chocolatey/bin:/c/Tools/bazel:/c/Program\ Files/Git:/
 
 export PYTHON_VERSION=${PYTHON_VERSION:-"310"}  #We expect Python installation as C:\Python39
 export TF_PYTHON_VERSION=${PYTHON_VERSION:0:1}.${PYTHON_VERSION:1}
-MYTFWS_ROOT=${WORKSPACE:-"C:/Users/mlp_admin"} # keep the tensorflow git repo clone under here as tensorflow subdir
+MYTFWS_ROOT=${WORKSPACE:-"D:\user\mraunak\tf_pub_int"} # keep the tensorflow git repo clone under here as tensorflow subdir
 MYTFWS_ROOT=`cygpath -m $MYTFWS_ROOT`
 export MYTFWS_ROOT="$MYTFWS_ROOT"
 export MYTFWS_NAME="tensorflow"
@@ -193,7 +193,7 @@ bazel --windows_enable_symlinks test \
   --build_tests_only -k \
   --test_env=PORTSERVER_ADDRESS=@unittest-portserver \
   --repo_env=TF_PYTHON_VERSION=${TF_PYTHON_VERSION} \
-  --test_size_filters=small,medium --jobs=16 --test_timeout=300,450,1200,3600 --verbose_failures \
+  --test_size_filters=small,medium --jobs=N_JOBS --test_timeout=300,450,1200,3600 --verbose_failures \
   --flaky_test_attempts=3 \
   ${POSITIONAL_ARGS[@]} \
   -- ${TEST_TARGET} \
