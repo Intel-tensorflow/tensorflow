@@ -44,7 +44,6 @@ done
 export PATH=/c/ProgramData/chocolatey/bin:/c/Tools/bazel:/c/Program\ Files/Git:/c/Program\ Files/Git/cmd:/c/msys64:/c/msys64/usr/bin:/c/Windows/system32:/c/Windows:/c/Windows/System32/Wbem
 
 # Environment variables to be set by Jenkins before calling this script
-# 
 
 export PYTHON_VERSION=${PYTHON_VERSION:-"310"}  #We expect Python installation as C:\Python39
 export TF_PYTHON_VERSION=${PYTHON_VERSION:0:1}.${PYTHON_VERSION:1}
@@ -58,19 +57,22 @@ export MYTFWS_ARTIFACT="${MYTFWS_ROOT}/artifact"
 
 export TF_LOCATION=%MYTFWS%
 
-# Environment variables specific to the system where this job is running, to
-# be set by a script for the specific system. This needs to be set here by
-# sourcing a file.
+# Import General Test Target
+source tensorflow/tools/ci_build/build_scripts/DEFAULT_TEST_TARGETS.sh
+
+# Environment variables specific to the system where this job is running, are to
+# be set by a script for the specific system. This needs to be set here by sourcing a file.
 
 export TMP=${TMP:-"${MYTFWS_ROOT}/tmp"}
 export TEMP="$TMP"
 export TMPDIR=${TMPDIR:-"${MYTFWS}-build"} # used internally by TF build
-export TEST_TARGET=${TEST_TARGET:-"//tensorflow/..."}
+export TEST_TARGET=${TEST_TARGET:-"${DEFAULT_BAZEL_TARGETS}"}
 export MSYS_LOCATION='C:/msys64'
 export GIT_LOCATION='C:/Program Files/Git'
 export JAVA_LOCATION='C:/Program Files/Eclipse Adoptium/jdk-11.0.14.101-hotspot'
 export VS_LOCATION='C:/Program Files (x86)/Microsoft Visual Studio/2019/BuildTools'
 export NATIVE_PYTHON_LOCATION="C:/Python${PYTHON_VERSION}"
+export PORTSERVER_LOCATION='C:/Program Files/python_portpicker/src/portserver.py'
 
 
 echo "*** *** hostname is $(hostname) *** ***"
@@ -98,7 +100,6 @@ $NATIVE_PYTHON_LOCATION/python.exe -m pip list
 # 4) System specific env variables for location of different software
 #    components needed for building.
 
-
 # create python virtual env.
 cd ${MYTFWS_ROOT}
 export PYTHON_DIRECTORY="${MYTFWS_ROOT}"/venv_py${PYTHON_VERSION}
@@ -109,7 +110,6 @@ source "${PYTHON_DIRECTORY}"/Scripts/activate
 
 which python
 python --version
-
 
 # Install pip modules as per specs in tensorflow/tools/ci_build/release/requirements_common.txt
 python -m pip install -r $MYTFWS/tensorflow/tools/ci_build/release/requirements_common.txt
@@ -122,7 +122,6 @@ export BAZEL_VC=${VS_LOCATION}/VC
 export JAVA_HOME=${JAVA_LOCATION}
 export BAZEL_SH="${MSYS_LOCATION}"/usr/bin/bash.exe
 
-
 cd ${MYTFWS_ROOT}
 mkdir -p "$TMP"
 # remove old logs
@@ -134,7 +133,6 @@ rm -rf ${MYTFWS_ARTIFACT}
 mkdir -p ${MYTFWS_ARTIFACT}
 
 cd $MYTFWS
-
 
 # All commands shall pass
 set -e
@@ -158,7 +156,7 @@ function cleanup {
 }
 trap cleanup EXIT
 
-# Enable short object file path to avoid long path issue on Windows.
+# Enable short object file path to avoid long path issues on Windows.
 echo "startup --output_user_root=${TMPDIR}" >> "${TMP_BAZELRC}"
 
 if ! grep -q "import %workspace%/${TMP_BAZELRC}" .bazelrc; then
@@ -169,36 +167,32 @@ run_configure_for_cpu_build
 
 set +e   # Unset so the script continues even if commands fail, this is needed to correctly process the logs
 
-# start the port server before testing 
+# start the port server before testing so that each invocation of 
+# portpicker will defer to the single instance of portserver
 # Define the batch script content
-BATCH_SCRIPT_CONTENT_start="
+BATCH_SCRIPT_START="
 @echo off
-set SCRIPT_PATH=C:\Program Files\python_portpicker\src\portserver.py
+set SCRIPT_PATH="${PORTSERVER_LOCATION}"
 echo Starting the server...
 start \"PORTSERVER\" \"%PYTHON_BIN_PATH%\" \"%SCRIPT_PATH%\"
 echo Server started.
 "
-
 # Save the batch script content to a temporary batch file
 BATCH_SCRIPT_FILE="temp_script.bat"
-echo "$BATCH_SCRIPT_CONTENT_start" > "$BATCH_SCRIPT_FILE"
+echo "$BATCH_SCRIPT_START" > "$BATCH_SCRIPT_FILE"
 
 # Run the batch script
 cmd.exe /C "$BATCH_SCRIPT_FILE"
 
 # NUMBER_OF_PROCESSORS is predefined on Windows
 N_JOBS="${NUMBER_OF_PROCESSORS}"
-# --config=release_cpu_windows 
 bazel --windows_enable_symlinks test \
   --action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XTF_ARGS} \
-  --experimental_cc_shared_library --enable_runfiles --nodistinct_host_configuration \
-  --dynamic_mode=off --config=xla --config=short_logs --announce_rc \
-  --build_tag_filters=-no_pip,-no_windows,-no_oss,-gpu,-tpu --build_tests_only --config=monolithic \
-  --config=opt --test_env=PORTSERVER_ADDRESS=@unittest-portserver \
+  --nodistinct_host_configuration \
+  --dynamic_mode=off --config=xla --config=opt \
+  --build_tests_only -k \
+  --test_env=PORTSERVER_ADDRESS=@unittest-portserver \
   --repo_env=TF_PYTHON_VERSION=${TF_PYTHON_VERSION} \
-  -k --test_output=errors \
-  --test_tag_filters=-no_windows,-no_oss,-gpu,-tpu \
-  --discard_analysis_cache \
   --test_size_filters=small,medium --jobs=16 --test_timeout=300,450,1200,3600 --verbose_failures \
   --flaky_test_attempts=3 \
   ${POSITIONAL_ARGS[@]} \
@@ -206,19 +200,19 @@ bazel --windows_enable_symlinks test \
   > run.log 2>&1
 
 build_ret_val=$?   # Store the ret value
-BATCH_SCRIPT_CONTENT_end="
+
+BATCH_SCRIPT_STOP="
 echo Killing the server...
 taskkill /FI \"WindowTitle eq PORTSERVER*\" /F /T
 echo Server killed.
 "
 BATCH_SCRIPT_FILEl="temp_script.bat"
-echo "$BATCH_SCRIPT_CONTENT_end" > "$BATCH_SCRIPT_FILEl"
+echo "$BATCH_SCRIPT_STOP" > "$BATCH_SCRIPT_FILEl"
 cmd.exe /C "$BATCH_SCRIPT_FILEl"
 
 # Removing the temporary batch script
 rm -f "$BATCH_SCRIPT_FILE"
 rm -f "$BATCH_SCRIPT_FILEl"
-
 
 # process results
 cd $MYTFWS_ROOT
