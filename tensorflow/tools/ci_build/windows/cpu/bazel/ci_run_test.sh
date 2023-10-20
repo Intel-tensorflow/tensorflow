@@ -193,7 +193,7 @@ bazel --windows_enable_symlinks test \
   --build_tests_only -k \
   --test_env=PORTSERVER_ADDRESS=@unittest-portserver \
   --repo_env=TF_PYTHON_VERSION=${TF_PYTHON_VERSION} \
-  --test_size_filters=small,medium --jobs=N_JOBS --test_timeout=300,450,1200,3600 --verbose_failures \
+  --test_size_filters=small,medium --jobs="${N_JOBS}" --test_timeout=300,450,1200,3600 --verbose_failures \
   --flaky_test_attempts=3 \
   ${POSITIONAL_ARGS[@]} \
   -- ${TEST_TARGET} \
