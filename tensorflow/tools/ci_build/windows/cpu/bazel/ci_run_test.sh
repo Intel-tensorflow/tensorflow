@@ -47,7 +47,7 @@ export PATH=/c/ProgramData/chocolatey/bin:/c/Tools/bazel:/c/Program\ Files/Git:/
 
 export PYTHON_VERSION=${PYTHON_VERSION:-"310"}  #We expect Python installation as C:\Python39
 export TF_PYTHON_VERSION=${PYTHON_VERSION:0:1}.${PYTHON_VERSION:1}
-MYTFWS_ROOT=${WORKSPACE:-"D:\user\mraunak\tf_pub_int"} # keep the tensorflow git repo clone under here as tensorflow subdir
+MYTFWS_ROOT=${WORKSPACE:-"C:\"} # keep the tensorflow git repo clone under here as tensorflow subdir
 MYTFWS_ROOT=`cygpath -m $MYTFWS_ROOT`
 export MYTFWS_ROOT="$MYTFWS_ROOT"
 export MYTFWS_NAME="tensorflow"
@@ -188,13 +188,16 @@ cmd.exe /C "$BATCH_SCRIPT_FILE"
 N_JOBS="${NUMBER_OF_PROCESSORS}"
 bazel --windows_enable_symlinks test \
   --action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XTF_ARGS} \
-  --nodistinct_host_configuration \
+  --experimental_cc_shared_library --enable_runfiles --nodistinct_host_configuration \
+  --build_tag_filters=-no_pip,-no_windows,-no_oss,-gpu,-tpu \
+  --test_tag_filters=-no_windows,-no_oss,-gpu,-tpu \
+  --build_tests_only --config=monolithic \
   --dynamic_mode=off --config=xla --config=opt \
   --build_tests_only -k \
   --test_env=PORTSERVER_ADDRESS=@unittest-portserver \
   --repo_env=TF_PYTHON_VERSION=${TF_PYTHON_VERSION} \
-  --test_size_filters=small,medium --jobs="${N_JOBS}" --verbose_failures \
-  --flaky_test_attempts=3 \
+  --test_size_filters=small,medium --jobs="${N_JOBS}" --test_timeout=300,450,1200,3600 \
+  --flaky_test_attempts=3 --verbose_failures \
   ${POSITIONAL_ARGS[@]} \
   -- ${TEST_TARGET} \
   > run.log 2>&1
