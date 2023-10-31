@@ -12,7 +12,7 @@
 # * Bazel windows executable copied as "bazel.exe" and included in PATH.
 
 
-# All commands shall pass (-e), and all should be visible (-x).
+# All commands should be visible (-x).
 set -x
 
 POSITIONAL_ARGS=()
