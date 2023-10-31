@@ -14,7 +14,6 @@
 
 # All commands shall pass (-e), and all should be visible (-x).
 set -x
-#set -e
 
 POSITIONAL_ARGS=()
 XBF_ARGS=""
@@ -38,14 +37,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-#SCRIPT_ARGS=${POSITIONAL_ARGS[@]}
-
-# bazelisk (renamed as bazel) is kept in C:\Tools
+# Bazelisk (renamed as bazel) is kept in C:\Tools
 export PATH=/c/ProgramData/chocolatey/bin:/c/Tools/bazel:/c/Program\ Files/Git:/c/Program\ Files/Git/cmd:/c/msys64:/c/msys64/usr/bin:/c/Windows/system32:/c/Windows:/c/Windows/System32/Wbem
 
 # Environment variables to be set by Jenkins before calling this script
 
-export PYTHON_VERSION=${PYTHON_VERSION:-"310"}  #We expect Python installation as C:\Python39
+export PYTHON_VERSION=${PYTHON_VERSION:-"310"}
 export TF_PYTHON_VERSION=${PYTHON_VERSION:0:1}.${PYTHON_VERSION:1}
 MYTFWS_ROOT=${WORKSPACE:-"C:/Users/mlp_admin"} # keep the tensorflow git repo clone under here as tensorflow subdir
 MYTFWS_ROOT=`cygpath -m $MYTFWS_ROOT`
@@ -54,8 +51,6 @@ export MYTFWS_NAME="tensorflow"
 export MYTFWS="${MYTFWS_ROOT}/${MYTFWS_NAME}"
 export MYTFWS_ARTIFACT="${MYTFWS_ROOT}/artifact"
 
-
-export TF_LOCATION=%MYTFWS%
 
 # Import General Test Target
 source tensorflow/tools/ci_build/build_scripts/DEFAULT_TEST_TARGETS.sh
@@ -124,8 +119,6 @@ export BAZEL_SH="${MSYS_LOCATION}"/usr/bin/bash.exe
 
 cd ${MYTFWS_ROOT}
 mkdir -p "$TMP"
-# remove old logs
-#rm -f summary.log test_failures.log test_run.log
 mv summary.log summary.log.bak
 mv test_failures.log test_failures.log.bak
 mv test_run.log test_run.log.bak
@@ -165,7 +158,8 @@ fi
 
 run_configure_for_cpu_build
 
-set +e   # Unset so the script continues even if commands fail, this is needed to correctly process the logs
+# Unset so the script continues even if commands fail, this is needed to correctly process the logs
+set +e   
 
 # start the port server before testing so that each invocation of 
 # portpicker will defer to the single instance of portserver
@@ -237,7 +231,5 @@ fgrep "FAILED" test_run.log | grep " ms)" | sed -e 's/^.*\] //' -e 's/ .*$//' | 
 echo >> test_failures.log
 echo "SKIPPED TESTS:" >> test_failures.log
 fgrep "SKIPPED" test_run.log | grep -v "listed below:" | sed -e 's/^.*\] //' | sort | uniq >> test_failures.log
-# fgrep "TIMEOUT" test_run.log | grep "out of" | sed -e 's/[ ][ ]*.*//' -e 's/$/ TIMEOUT/' >> test_failures.log
-# count=$(wc -l < test_failures.log)
 
 exit 1
