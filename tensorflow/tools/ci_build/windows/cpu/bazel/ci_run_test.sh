@@ -178,7 +178,7 @@ bazel --windows_enable_symlinks test \
   --dynamic_mode=off --config=xla --config=short_logs --announce_rc \
   --build_tag_filters=-no_pip,-no_windows,-no_oss,-gpu,-tpu --build_tests_only --config=monolithic \
   --config=opt \
-  --repo_env=TF_PYTHON_VERSION=${TF_PYTHON_VERSION} --test_env=ONEDNN_MAX_CPU_ISA=AVX2 \
+  --repo_env=TF_PYTHON_VERSION=${TF_PYTHON_VERSION} \
   -k --test_output=errors \
   --test_tag_filters=-no_windows,-no_oss,-gpu,-tpu \
   --discard_analysis_cache \
