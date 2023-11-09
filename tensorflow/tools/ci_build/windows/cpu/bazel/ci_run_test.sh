@@ -2,7 +2,7 @@
 # This script is a CI script for invoking 'bazel test ... ...'
 # It assumes the standard setup on tensorflow Jenkins windows machines.
 # Update the flags/variables below to make it work on your local system.
-#
+
 # REQUIREMENTS:
 # * All installed in standard locations:
 #   - JDK8, and JAVA_HOME set.
@@ -84,7 +84,6 @@ $NATIVE_PYTHON_LOCATION/python.exe -m pip list
 # We also assume a few Software components are also installed in the machine: MS VC++,
 # MINGW SYS64, Python 3.x, JAVA, Git, Bazelisk etc.
 
-
 # Asuumptions
 # 1) TF repo cloned into to %WORKSPACE%\tensorflow (aka %TF_LOCATION%)
 # 2) Bazelisk is installed in "C:\Tools\Bazel"
@@ -95,7 +94,7 @@ $NATIVE_PYTHON_LOCATION/python.exe -m pip list
 # 4) System specific env variables for location of different software
 #    components needed for building.
 
-# create python virtual env.
+# create python virtual env
 cd ${MYTFWS_ROOT}
 export PYTHON_DIRECTORY="${MYTFWS_ROOT}"/venv_py${PYTHON_VERSION}
 "${NATIVE_PYTHON_LOCATION}"/python.exe -mvenv --clear  "${PYTHON_DIRECTORY}"
@@ -106,7 +105,7 @@ source "${PYTHON_DIRECTORY}"/Scripts/activate
 which python
 python --version
 
-# Install pip modules as per specs in tensorflow/tools/ci_build/release/requirements_common.txt
+# Install pip modules specs from tensorflow/tools/ci_build/release/requirements_common.txt
 python -m pip install -r $MYTFWS/tensorflow/tools/ci_build/release/requirements_common.txt
 
 # set up other Variables required by bazel.
@@ -158,7 +157,7 @@ fi
 
 run_configure_for_cpu_build
 
-# Unset so the script continues even if commands fail, this is needed to correctly process the logs
+# Unset so the script continues even if commands fail, needed to correctly process the logs
 set +e   
 
 # start the port server before testing so that each invocation of 
@@ -214,7 +213,7 @@ rm -f "$BATCH_SCRIPT_FILEl"
 # process results
 cd $MYTFWS_ROOT
 
-# Check to make sure log was created.
+# Check to make sure log was created
 [ ! -f "${MYTFWS}"/run.log  ] && exit 1
 
 # handle logs for unit test
@@ -227,9 +226,11 @@ fgrep "Executed" test_run.log >> summary.log
 [ $build_ret_val -eq 0 ] && exit 0
 
 echo "FAILED TESTS:" > test_failures.log
-fgrep "FAILED" test_run.log | grep " ms)" | sed -e 's/^.*\] //' -e 's/ .*$//' | sort | uniq >> test_failures.log
+fgrep "FAILED" test_run.log | grep " ms)" | sed -e 's/^.*\] //' -e 's/ .*$//' | sort | \
+uniq >> test_failures.log
 echo >> test_failures.log
 echo "SKIPPED TESTS:" >> test_failures.log
-fgrep "SKIPPED" test_run.log | grep -v "listed below:" | sed -e 's/^.*\] //' | sort | uniq >> test_failures.log
+fgrep "SKIPPED" test_run.log | grep -v "listed below:" | sed -e 's/^.*\] //' | sort | \
+uniq >> test_failures.log
 
 exit 1
