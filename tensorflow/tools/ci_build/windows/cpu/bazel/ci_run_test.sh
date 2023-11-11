@@ -50,14 +50,14 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Bazelisk (renamed as bazel) is kept in C:\Tools
-export PATH=/c/ProgramData/chocolatey/bin:/c/Tools/bazel:/c/Program\ Files/Git:/c/Program\ 
+export PATH=/c/ProgramData/chocolatey/bin:/c/Tools/bazel:/c/Program\ Files/Git:/c/Program\ \
 Files/Git/cmd:/c/msys64:/c/msys64/usr/bin:/c/Windows/system32:/c/Windows:/c/Windows/System32/Wbem
 
 # Environment variables to be set by Jenkins before calling this script
 
 export PYTHON_VERSION=${PYTHON_VERSION:-"310"}
 export TF_PYTHON_VERSION=${PYTHON_VERSION:0:1}.${PYTHON_VERSION:1}
-# keep the tensorflow git repo clone under here as tensorflow subdir
+# keep the tensorflow git repo clone under here as the tensorflow subdir
 MYTFWS_ROOT=${WORKSPACE:-"C:/Users/mlp_admin"} 
 MYTFWS_ROOT=`cygpath -m $MYTFWS_ROOT`
 export MYTFWS_ROOT="$MYTFWS_ROOT"
