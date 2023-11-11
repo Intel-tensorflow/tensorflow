@@ -1,6 +1,18 @@
 #!/bin/bash
+# Copyright 2023 The TensorFlow Authors. All Rights Reserved.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#     http://www.apache.org/licenses/LICENSE-2.0
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
 # This script is a CI script for invoking 'bazel test ... ...'
-# It assumes the standard setup on tensorflow Jenkins windows machines.
+# It assumes the standard setup on tensorflow Jenkins Windows machines.
 # Update the flags/variables below to make it work on your local system.
 
 # REQUIREMENTS:
@@ -9,7 +21,7 @@
 #   - Microsoft Visual Studio 2015 Community Edition
 #   - Msys2
 #   - Python 3.x (with pip, setuptools, venv)
-# * Bazel windows executable copied as "bazel.exe" and included in PATH.
+# * Bazel Windows executable copied as "bazel.exe" and included in PATH.
 
 
 # All commands should be visible (-x).
@@ -38,13 +50,15 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Bazelisk (renamed as bazel) is kept in C:\Tools
-export PATH=/c/ProgramData/chocolatey/bin:/c/Tools/bazel:/c/Program\ Files/Git:/c/Program\ Files/Git/cmd:/c/msys64:/c/msys64/usr/bin:/c/Windows/system32:/c/Windows:/c/Windows/System32/Wbem
+export PATH=/c/ProgramData/chocolatey/bin:/c/Tools/bazel:/c/Program\ Files/Git:/c/Program\ 
+Files/Git/cmd:/c/msys64:/c/msys64/usr/bin:/c/Windows/system32:/c/Windows:/c/Windows/System32/Wbem
 
 # Environment variables to be set by Jenkins before calling this script
 
 export PYTHON_VERSION=${PYTHON_VERSION:-"310"}
 export TF_PYTHON_VERSION=${PYTHON_VERSION:0:1}.${PYTHON_VERSION:1}
-MYTFWS_ROOT=${WORKSPACE:-"C:/Users/mlp_admin"} # keep the tensorflow git repo clone under here as tensorflow subdir
+# keep the tensorflow git repo clone under here as tensorflow subdir
+MYTFWS_ROOT=${WORKSPACE:-"C:/Users/mlp_admin"} 
 MYTFWS_ROOT=`cygpath -m $MYTFWS_ROOT`
 export MYTFWS_ROOT="$MYTFWS_ROOT"
 export MYTFWS_NAME="tensorflow"
@@ -73,28 +87,31 @@ export PORTSERVER_LOCATION='C:/Program Files/python_portpicker/src/portserver.py
 echo "*** *** hostname is $(hostname) *** ***"
 which bazel
 which git
-[[ -e "$NATIVE_PYTHON_LOCATION/python.exe" ]] || { echo "Specified Python path is incorrect: $NATIVE_PYTHON_LOCATION"; exit 1;}
-[[ -e "$NATIVE_PYTHON_LOCATION/Scripts/pip.exe" ]] || { echo "Specified Python path has no pip: $NATIVE_PYTHON_LOCATION"; exit 1;}
-[[ -e "$NATIVE_PYTHON_LOCATION/Lib/venv" ]] || { echo "Specified Python path has no venv: $NATIVE_PYTHON_LOCATION"; exit 1;}
+[[ -e "$NATIVE_PYTHON_LOCATION/python.exe" ]] || \
+{ echo "Specified Python path is incorrect: $NATIVE_PYTHON_LOCATION"; exit 1;}
+[[ -e "$NATIVE_PYTHON_LOCATION/Scripts/pip.exe" ]] || \
+{ echo "Specified Python path has no pip: $NATIVE_PYTHON_LOCATION"; exit 1;}
+[[ -e "$NATIVE_PYTHON_LOCATION/Lib/venv" ]] || \
+{ echo "Specified Python path has no venv: $NATIVE_PYTHON_LOCATION"; exit 1;}
 
 $NATIVE_PYTHON_LOCATION/python.exe -m pip list
 
 # =========================== Start of actual script =========================
-# This script set necessary environment variables and run TF-Windows build & unit tests
+# This script sets necessary environment variables and runs TF-Windows build & unit tests
 # We also assume a few Software components are also installed in the machine: MS VC++,
 # MINGW SYS64, Python 3.x, JAVA, Git, Bazelisk etc.
 
 # Asuumptions
 # 1) TF repo cloned into to %WORKSPACE%\tensorflow (aka %TF_LOCATION%)
 # 2) Bazelisk is installed in "C:\Tools\Bazel"
-# 3) The following jobs specific env vars will be export  by the caller
+# 3) The following jobs-specific env vars will be exported  by the caller
 #       WORKSPACE (ex. C:\Jenkins\workspace\tensorflow-eigen-test-win)
 #       PYTHON_VERSION  (ex. 38)
-#       PIP_MODULES (if set will conatain any additional pip packages)
-# 4) System specific env variables for location of different software
+#       PIP_MODULES (if set will contain any additional pip packages)
+# 4) System-specific env variables for the location of different software
 #    components needed for building.
 
-# create python virtual env
+# Create Python virtual env
 cd ${MYTFWS_ROOT}
 export PYTHON_DIRECTORY="${MYTFWS_ROOT}"/venv_py${PYTHON_VERSION}
 "${NATIVE_PYTHON_LOCATION}"/python.exe -mvenv --clear  "${PYTHON_DIRECTORY}"
@@ -108,7 +125,7 @@ python --version
 # Install pip modules specs from tensorflow/tools/ci_build/release/requirements_common.txt
 python -m pip install -r $MYTFWS/tensorflow/tools/ci_build/release/requirements_common.txt
 
-# set up other Variables required by bazel.
+# set up other Variables required by Bazel.
 export PYTHON_BIN_PATH="${PYTHON_DIRECTORY}"/Scripts/python.exe
 export PYTHON_LIB_PATH="${PYTHON_DIRECTORY}"/Lib/site-packages
 export BAZEL_VS=${VS_LOCATION}
@@ -213,7 +230,7 @@ rm -f "$BATCH_SCRIPT_FILEl"
 # process results
 cd $MYTFWS_ROOT
 
-# Check to make sure log was created
+# Check to make sure the log was created
 [ ! -f "${MYTFWS}"/run.log  ] && exit 1
 
 # handle logs for unit test
