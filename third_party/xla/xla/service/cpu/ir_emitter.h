@@ -195,6 +195,9 @@ class IrEmitter : public DfsHloVisitorWithDefault,
   Status HandleAllReduceMultipleReplica(HloInstruction* crs);
 #if defined(INTEL_MKL) && defined(ENABLE_ONEDNN_V3)
   Status HandleOneDnnMatMul(HloInstruction* hlo);
+  Status HandleOneDnnSoftmax(HloInstruction* hlo);
+  Status HandleOneDnnLayerNorm(HloInstruction* hlo);
+  Status HandleOneDnnMatMulReorder(HloInstruction* hlo);
 #endif  // INTEL_MKL && ENABLE_ONEDNN_V3
   // Private helper to initialize an IR function for the computation.
   void InitializeIrFunction(const std::string& function_name);
@@ -683,4 +686,4 @@ class IrEmitter : public DfsHloVisitorWithDefault,
 }  // namespace cpu
 }  // namespace xla
 
-#endif  // XLA_SERVICE_CPU_IR_EMITTER_H_
+#endif  // TENSORFLOW_COMPILER_XLA_SERVICE_CPU_IR_EMITTER_H_

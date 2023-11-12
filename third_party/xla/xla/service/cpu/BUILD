@@ -208,6 +208,7 @@ cc_library(
         ":compiler_functor",
         ":conv_canonicalization",
         ":cpu_executable",
+        ":cpu_float_support",
         ":cpu_instruction_fusion",
         ":cpu_layout_assignment",
         ":cpu_options",
@@ -216,7 +217,8 @@ cc_library(
         ":hlo_xla_runtime_pipeline",
         ":ir_emission_utils",
         ":ir_emitter",
-        ":onednn_rewriter",
+        ":onednn_ops_rewriter",
+        ":onednn_matmul_rewriter",
         ":parallel_task_assignment",
         ":simple_orc_jit",
         ":target_machine_features",
@@ -317,6 +319,7 @@ cc_library(
         "//xla/service:select_and_scatter_expander",
         "//xla/service:sharding_propagation",
         "//xla/service:sharding_remover",
+        "//xla/service:simplify_fp_conversions",
         "//xla/service:slice_sinker",
         "//xla/service:slow_operation_alarm",
         "//xla/service:sort_simplifier",
@@ -523,7 +526,9 @@ cc_library(
     deps = [
         ":compiler_functor",
         ":cpu_runtime",
+        ":onednn_layer_norm",
         ":onednn_matmul",
+        ":onednn_softmax",
         ":orc_jit_memory_mapper",
         ":runtime_conv2d",
         ":runtime_conv2d_acl",
@@ -1616,6 +1621,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":runtime_lightweight_check",
+        "//xla:literal",
         "//xla:shape_util",
         "//xla:status_macros",
         "//xla:statusor",
@@ -1661,14 +1667,43 @@ cc_library(
 )
 
 cc_library(
-    name = "onednn_rewriter",
-    srcs = ["onednn_rewriter.cc"],
-    hdrs = ["onednn_rewriter.h"],
+    name = "onednn_matmul_rewriter",
+    srcs = ["onednn_matmul_rewriter.cc"],
+    hdrs = [
+        "onednn_matmul_rewriter.h",
+        "onednn_util.h",
+        "onednn_matmul.h",
+        "@local_tsl//tsl/util:onednn_util_hdrs",
+    ],
     copts = tsl_copts(),
     visibility = ["//visibility:public"],
     deps = [
         ":backend_config_proto_cc",
         ":onednn_memory_util",
+        ":onednn_matmul",
+        "//xla:executable_run_options",
+        "//xla:status_macros",
+        "//xla:xla_data_proto_cc",
+        "//xla/hlo/evaluator:hlo_evaluator",
+        "//xla/hlo/ir:hlo",
+        "//xla/service:hlo_creation_utils",
+        "//xla/service:hlo_pass",
+        "//xla/service:pattern_matcher",
+        "@eigen_archive//:eigen3",
+    ] + mkl_deps(),
+)
+
+cc_library(
+    name = "onednn_ops_rewriter",
+    srcs = ["onednn_ops_rewriter.cc"],
+    hdrs = [
+        "onednn_ops_rewriter.h",
+        "onednn_util.h",
+    ],
+    copts = tsl_copts(),
+    deps = [
+        ":onednn_memory_util",
+        ":backend_config_proto_cc",
         "//xla:status_macros",
         "//xla:xla_data_proto_cc",
         "//xla/hlo/ir:hlo",
@@ -1683,4 +1718,61 @@ cc_library(
     hdrs = ["cpu_symbol_repository.h"],
     visibility = ["//visibility:public"],
     deps = ["//xla/service:symbol_repository"],
+)
+
+cc_library(
+    name = "onednn_softmax",
+    srcs = ["onednn_softmax.cc"],
+    hdrs = [
+        "onednn_softmax.h",
+        "@local_tsl//tsl/util:onednn_util_hdrs",
+    ],
+    copts = runtime_copts() + tsl_copts(),
+    visibility = ["//visibility:public"],
+    deps = [
+        ":onednn_memory_util",
+        ":backend_config_proto_cc",
+        ":runtime_lightweight_check",
+        "//xla:executable_run_options",
+        "@local_tsl//tsl/platform:blocking_counter",
+        "@local_tsl//tsl/platform:env",
+        "@local_tsl//tsl/platform:platform_port",
+        "@eigen_archive//:eigen3",
+        "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/base:dynamic_annotations",
+    ] + mkl_deps(),
+)
+
+cc_library(
+    name = "onednn_layer_norm",
+    srcs = ["onednn_layer_norm.cc"],
+    hdrs = [
+        "onednn_layer_norm.h",
+        "@local_tsl//tsl/util:onednn_util_hdrs",
+    ],
+    copts = runtime_copts() + tsl_copts(),
+    visibility = ["//visibility:public"],
+    deps = [
+        ":onednn_memory_util",
+        ":backend_config_proto_cc",
+        ":runtime_lightweight_check",
+        "//xla:executable_run_options",
+        "@local_tsl//tsl/platform:blocking_counter",
+        "@local_tsl//tsl/platform:env",
+        "@local_tsl//tsl/platform:platform_port",
+        "@eigen_archive//:eigen3",
+        "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/base:dynamic_annotations",
+    ] + mkl_deps(),
+)
+
+cc_library(
+    name = "cpu_float_support",
+    srcs = ["cpu_float_support.cc"],
+    hdrs = ["cpu_float_support.h"],
+    copts = tsl_copts(),
+    deps = [
+        "//xla/service:float_support",
+        ":onednn_matmul_rewriter",
+    ],
 )

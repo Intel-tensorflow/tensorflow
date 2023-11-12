@@ -34,6 +34,9 @@ limitations under the License.
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_join.h"
 #include "absl/synchronization/mutex.h"
+#include "tsl/platform/logging.h"
+#include "tsl/platform/status.h"
+#include "tsl/profiler/lib/traceme.h"
 #include "xla/executable_run_options.h"
 #include "xla/layout_util.h"
 #include "xla/primitive_util.h"
@@ -46,9 +49,6 @@ limitations under the License.
 #include "xla/statusor.h"
 #include "xla/stream_executor/device_memory.h"
 #include "xla/stream_executor/stream_executor.h"
-#include "tsl/platform/logging.h"
-#include "tsl/platform/status.h"
-#include "tsl/profiler/lib/traceme.h"
 
 namespace xla {
 namespace cpu {
@@ -149,6 +149,12 @@ extern const char* const kPartitionIdSymbolName =
 extern const char* const kReplicaIdSymbolName = "__xla_cpu_runtime_ReplicaId";
 extern const char* const kOneDnnMatMulSymbolName =
     "__xla_cpu_runtime_OneDnnMatMul";
+extern const char* const kOneDnnSoftmaxSymbolName =
+    "__xla_cpu_runtime_OneDnnSoftmax";
+extern const char* const kOneDnnLayerNormSymbolName =
+    "__xla_cpu_runtime_OneDnnLayerNorm";
+extern const char* const kOneDnnMatMulReorderSymbolName =
+    "__xla_cpu_runtime_OneDnnMatMulReorder";
 
 namespace {
 
