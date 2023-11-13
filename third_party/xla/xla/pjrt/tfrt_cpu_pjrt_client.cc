@@ -42,8 +42,21 @@ limitations under the License.
 #include "absl/strings/string_view.h"
 #include "absl/synchronization/mutex.h"
 #include "absl/types/span.h"
-#include "unsupported/Eigen/CXX11/Tensor"  // from @eigen_archive
 #include "mlir/IR/BuiltinOps.h"  // from @llvm-project
+#include "tsl/concurrency/async_value.h"
+#include "tsl/concurrency/async_value_ref.h"
+#include "tsl/concurrency/ref_count.h"
+#include "tsl/platform/casts.h"
+#include "tsl/platform/denormal.h"
+#include "tsl/platform/env.h"
+#include "tsl/platform/errors.h"
+#include "tsl/platform/setround.h"
+#include "tsl/platform/statusor.h"
+#include "tsl/platform/threadpool.h"
+#include "tsl/profiler/lib/connected_traceme.h"
+#include "tsl/profiler/lib/context_types.h"
+#include "tsl/profiler/lib/traceme.h"
+#include "unsupported/Eigen/CXX11/Tensor"  // from @eigen_archive
 #include "xla/array.h"
 #include "xla/client/executable_build_options.h"
 #include "xla/client/xla_computation.h"
@@ -88,19 +101,6 @@ limitations under the License.
 #include "xla/util.h"
 #include "xla/xla.pb.h"
 #include "xla/xla_data.pb.h"
-#include "tsl/concurrency/async_value.h"
-#include "tsl/concurrency/async_value_ref.h"
-#include "tsl/concurrency/ref_count.h"
-#include "tsl/platform/casts.h"
-#include "tsl/platform/denormal.h"
-#include "tsl/platform/env.h"
-#include "tsl/platform/errors.h"
-#include "tsl/platform/setround.h"
-#include "tsl/platform/statusor.h"
-#include "tsl/platform/threadpool.h"
-#include "tsl/profiler/lib/connected_traceme.h"
-#include "tsl/profiler/lib/context_types.h"
-#include "tsl/profiler/lib/traceme.h"
 
 namespace xla {
 namespace {
@@ -561,7 +561,8 @@ static StatusOr<std::unique_ptr<xla::Executable>> JitCompile(
     const XlaComputation& computation,
     const absl::Span<const Shape* const> argument_layouts,
     const ExecutableBuildOptions& build_options,
-    const ExecutionOptions& execution_options) {
+    const ExecutionOptions& execution_options,
+    const xla::Compiler::CompileOptions& compile_options) {
   TF_ASSIGN_OR_RETURN(ProgramShape program_shape,
                       computation.GetProgramShape());
   // Unoptimized HloModuleConfig.
@@ -585,14 +586,13 @@ static StatusOr<std::unique_ptr<xla::Executable>> JitCompile(
   bool allow_sparse_shapes =
       hlo_module->config().debug_options().xla_cpu_use_xla_runtime();
   cpu::CpuCompiler compiler(allow_sparse_shapes);
-  xla::Compiler::CompileOptions dummy;
-  TF_ASSIGN_OR_RETURN(hlo_module,
-                      compiler.RunHloPasses(std::move(hlo_module),
-                                            /*stream_exec=*/nullptr, dummy));
+  TF_ASSIGN_OR_RETURN(hlo_module, compiler.RunHloPasses(std::move(hlo_module),
+                                                        /*stream_exec=*/nullptr,
+                                                        compile_options));
 
   // Run backend.
   return compiler.RunBackend(std::move(hlo_module), /*stream_exec=*/nullptr,
-                             dummy);
+                             compile_options);
 }
 
 StatusOr<std::unique_ptr<PjRtLoadedExecutable>> TfrtCpuClient::Compile(
@@ -655,9 +655,13 @@ StatusOr<std::unique_ptr<PjRtLoadedExecutable>> TfrtCpuClient::Compile(
                       computation.GetProgramShape());
   ExecutionOptions execution_options =
       CreateExecutionOptions(build_options, &program_shape);
-  TF_ASSIGN_OR_RETURN(std::unique_ptr<Executable> cpu_executable,
-                      JitCompile(computation, argument_layout_pointers,
-                                 build_options, execution_options));
+  xla::Compiler::CompileOptions compile_options{
+      build_options.device_allocator(), build_options.compile_thread_pool(),
+      build_options.layout_canonicalization_callback()};
+  TF_ASSIGN_OR_RETURN(
+      std::unique_ptr<Executable> cpu_executable,
+      JitCompile(computation, argument_layout_pointers, build_options,
+                 execution_options, compile_options));
   auto cpu_executable_ptr =
       tensorflow::down_cast<cpu::CpuExecutable*>(cpu_executable.get());
 

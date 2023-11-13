@@ -85,6 +85,9 @@ extern const char* const kTracingStartSymbolName;
 extern const char* const kTracingEndSymbolName;
 extern const char* const kAllToAllSymbolName;
 extern const char* const kOneDnnMatMulSymbolName;
+extern const char* const kOneDnnSoftmaxSymbolName;
+extern const char* const kOneDnnLayerNormSymbolName;
+extern const char* const kOneDnnMatMulReorderSymbolName;
 
 // All symbol names for XLA CPU runtime functions need to start with this
 // prefix.

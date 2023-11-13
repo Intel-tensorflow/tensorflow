@@ -13,29 +13,37 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef XLA_SERVICE_CPU_ONEDNN_MATMUL_H_
-#define XLA_SERVICE_CPU_ONEDNN_MATMUL_H_
 #if defined(INTEL_MKL) && defined(ENABLE_ONEDNN_V3)
 
-#include "xla/service/cpu/backend_config.pb.h"
-#include "xla/shape.h"
+#ifndef XLA_SERVICE_CPU_CPU_FLOAT_SUPPORT_H_
+#define XLA_SERVICE_CPU_CPU_FLOAT_SUPPORT_H_
+
+#include "xla/service/float_support.h"
 
 namespace xla {
 namespace cpu {
 
-Shape OneDnnMatMulOptWeightsShape(const Shape& input_shape,
-                                  const Shape& weights_shape,
-                                  const Shape& bias_shape,
-                                  const Shape& output_shape,
-                                  const OneDnnMatMulConfig* matmul_config);
+class CpuFloatSupport : public FloatSupport {
+ public:
+  explicit CpuFloatSupport(PrimitiveType low_precision_type)
+      : FloatSupport(low_precision_type) {}
 
-extern "C" {
-extern void __xla_cpu_runtime_OneDnnMatMulReorder(void* result, void** args);
-extern void __xla_cpu_runtime_OneDnnMatMul(void* result, void** args);
-}  // extern "C"
+  bool SupportsLowPrecisionOperand(const HloInstruction& hlo,
+                                   int64_t operand_index) const override {
+    return FloatSupport::SupportsLowPrecisionOperand(hlo, operand_index) ||
+           IsSupported(hlo);
+  }
+
+  bool SupportsLowPrecisionOutput(const HloInstruction& hlo) const override {
+    return FloatSupport::SupportsLowPrecisionOutput(hlo) || IsSupported(hlo);
+  }
+
+ private:
+  bool IsSupported(const HloInstruction& hlo) const;
+};
 
 }  // namespace cpu
 }  // namespace xla
 
+#endif  // XLA_SERVICE_CPU_CPU_FLOAT_SUPPORT_H_
 #endif  // INTEL_MKL && ENABLE_ONEDNN_V3
-#endif  // XLA_SERVICE_CPU_ONEDNN_MATMUL_H_

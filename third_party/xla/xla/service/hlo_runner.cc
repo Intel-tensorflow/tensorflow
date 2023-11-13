@@ -21,6 +21,8 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include "tsl/platform/blocking_counter.h"
+#include "tsl/platform/logging.h"
 #include "unsupported/Eigen/CXX11/Tensor"  // from @eigen_archive
 #include "xla/hlo/ir/hlo_module_group.h"
 #include "xla/layout_util.h"
@@ -30,8 +32,6 @@ limitations under the License.
 #include "xla/service/transfer_manager.h"
 #include "xla/shape.h"
 #include "xla/shape_util.h"
-#include "tsl/platform/blocking_counter.h"
-#include "tsl/platform/logging.h"
 
 namespace xla {
 
@@ -641,11 +641,13 @@ HloRunner::CreateExecutableWithBufferAssignment(
                       "are enabled.";
     }
     auto module_group = std::make_unique<HloModuleGroup>(std::move(module));
+    xla::Compiler::CompileOptions compile_options{
+        backend().memory_allocator(), backend().eigen_intra_op_thread_pool()};
     TF_ASSIGN_OR_RETURN(
         auto executables,
         backend().compiler()->Compile(std::move(module_group),
                                       {{backend().default_stream_executor()}},
-                                      backend().memory_allocator()));
+                                      compile_options));
     return std::move(executables[0]);
   }
   return backend().compiler()->RunBackendWithBufferAssignment(

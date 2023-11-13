@@ -1,5 +1,4 @@
 /* Copyright 2023 The TensorFlow Authors. All Rights Reserved.
-
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
@@ -12,9 +11,8 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
-
-#ifndef XLA_SERVICE_CPU_ONEDNN_REWRITER_H_
-#define XLA_SERVICE_CPU_ONEDNN_REWRITER_H_
+#ifndef TENSORFLOW_COMPILER_XLA_SERVICE_CPU_ONEDNN_OPS_REWRITER_H_
+#define TENSORFLOW_COMPILER_XLA_SERVICE_CPU_ONEDNN_OPS_REWRITER_H_
 #if defined(INTEL_MKL) && defined(ENABLE_ONEDNN_V3)
 
 #include <optional>
@@ -27,10 +25,11 @@ limitations under the License.
 namespace xla {
 namespace cpu {
 
-// This pass pattern-matches hlo instructions and rewrites into custom calls.
-class OneDnnRewriter : public HloModulePass {
+// This pass pattern-matches elementwise hlo instructions and rewrites into
+// custom calls.
+class OneDnnOpsRewriter : public HloModulePass {
  public:
-  absl::string_view name() const override { return "onednn-rewriter"; }
+  absl::string_view name() const override { return "onednn-ops-rewriter"; }
 
   using HloPassInterface::Run;
   StatusOr<bool> Run(
@@ -42,4 +41,4 @@ class OneDnnRewriter : public HloModulePass {
 }  // namespace xla
 
 #endif  // INTEL_MKL && ENABLE_ONEDNN_V3
-#endif  // XLA_SERVICE_CPU_ONEDNN_REWRITER_H_
+#endif  // TENSORFLOW_COMPILER_XLA_SERVICE_CPU_ONEDNN_OPS_REWRITER_H_

@@ -65,28 +65,35 @@ limitations under the License.
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"  // from @llvm-project
 #include "mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h"  // from @llvm-project
 #include "mlir/Dialect/Affine/IR/AffineOps.h"  // from @llvm-project
-#include "mlir/Dialect/Arith/IR/Arith.h"  // from @llvm-project
+#include "mlir/Dialect/Arith/IR/Arith.h"       // from @llvm-project
 #include "mlir/Dialect/Bufferization/Transforms/Bufferize.h"  // from @llvm-project
-#include "mlir/Dialect/Func/IR/FuncOps.h"  // from @llvm-project
-#include "mlir/Dialect/LLVMIR/LLVMDialect.h"  // from @llvm-project
-#include "mlir/Dialect/Linalg/IR/Linalg.h"  // from @llvm-project
+#include "mlir/Dialect/Func/IR/FuncOps.h"           // from @llvm-project
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"        // from @llvm-project
+#include "mlir/Dialect/Linalg/IR/Linalg.h"          // from @llvm-project
 #include "mlir/Dialect/MemRef/Transforms/Passes.h"  // from @llvm-project
-#include "mlir/Dialect/SCF/IR/SCF.h"  // from @llvm-project
-#include "mlir/Dialect/Tensor/IR/Tensor.h"  // from @llvm-project
-#include "mlir/Dialect/Vector/IR/VectorOps.h"  // from @llvm-project
-#include "mlir/IR/Attributes.h"  // from @llvm-project
-#include "mlir/IR/Builders.h"  // from @llvm-project
-#include "mlir/IR/BuiltinAttributes.h"  // from @llvm-project
-#include "mlir/IR/BuiltinTypes.h"  // from @llvm-project
-#include "mlir/IR/OperationSupport.h"  // from @llvm-project
-#include "mlir/IR/OwningOpRef.h"  // from @llvm-project
-#include "mlir/Pass/PassManager.h"  // from @llvm-project
-#include "mlir/Support/LLVM.h"  // from @llvm-project
-#include "mlir/Support/LogicalResult.h"  // from @llvm-project
+#include "mlir/Dialect/SCF/IR/SCF.h"                // from @llvm-project
+#include "mlir/Dialect/Tensor/IR/Tensor.h"          // from @llvm-project
+#include "mlir/Dialect/Vector/IR/VectorOps.h"       // from @llvm-project
+#include "mlir/IR/Attributes.h"                     // from @llvm-project
+#include "mlir/IR/Builders.h"                       // from @llvm-project
+#include "mlir/IR/BuiltinAttributes.h"              // from @llvm-project
+#include "mlir/IR/BuiltinTypes.h"                   // from @llvm-project
+#include "mlir/IR/OperationSupport.h"               // from @llvm-project
+#include "mlir/IR/OwningOpRef.h"                    // from @llvm-project
+#include "mlir/Pass/PassManager.h"                  // from @llvm-project
+#include "mlir/Support/LLVM.h"                      // from @llvm-project
+#include "mlir/Support/LogicalResult.h"             // from @llvm-project
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"  // from @llvm-project
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"  // from @llvm-project
-#include "mlir/Target/LLVMIR/Export.h"  // from @llvm-project
+#include "mlir/Target/LLVMIR/Export.h"          // from @llvm-project
 #include "mlir/Transforms/DialectConversion.h"  // from @llvm-project
+#include "tsl/platform/casts.h"
+#include "tsl/platform/cpu_info.h"
+#include "tsl/platform/denormal.h"
+#include "tsl/platform/errors.h"
+#include "tsl/platform/logging.h"  // IWYU pragma: keep
+#include "tsl/platform/status.h"
+#include "tsl/platform/statusor.h"
 #include "xla/cpu_function_runtime.h"
 #include "xla/debug_options_flags.h"
 #include "xla/hlo/ir/dfs_hlo_visitor_with_default.h"
@@ -137,6 +144,7 @@ limitations under the License.
 #include "xla/service/cpu/compiler_functor.h"
 #include "xla/service/cpu/conv_canonicalization.h"
 #include "xla/service/cpu/cpu_executable.h"
+#include "xla/service/cpu/cpu_float_support.h"
 #include "xla/service/cpu/cpu_instruction_fusion.h"
 #include "xla/service/cpu/cpu_layout_assignment.h"
 #include "xla/service/cpu/cpu_options.h"
@@ -201,6 +209,7 @@ limitations under the License.
 #include "xla/service/select_and_scatter_expander.h"
 #include "xla/service/sharding_propagation.h"
 #include "xla/service/sharding_remover.h"
+#include "xla/service/simplify_fp_conversions.h"
 #include "xla/service/slow_operation_alarm.h"
 #include "xla/service/sort_simplifier.h"
 #include "xla/service/spmd/stateful_rng_spmd_partitioner.h"
@@ -227,15 +236,10 @@ limitations under the License.
 #include "xla/util.h"
 #include "xla/xla.pb.h"
 #include "xla/xla_data.pb.h"
-#include "tsl/platform/casts.h"
-#include "tsl/platform/cpu_info.h"
-#include "tsl/platform/errors.h"
-#include "tsl/platform/logging.h"  // IWYU pragma: keep
-#include "tsl/platform/status.h"
-#include "tsl/platform/statusor.h"
 
 #if defined(INTEL_MKL) && defined(ENABLE_ONEDNN_V3)
-#include "xla/service/cpu/onednn_rewriter.h"
+#include "xla/service/cpu/onednn_matmul_rewriter.h"
+#include "xla/service/cpu/onednn_ops_rewriter.h"
 #endif
 
 namespace {
@@ -496,7 +500,32 @@ StatusOr<std::vector<std::unique_ptr<Executable>>> CpuCompiler::Compile(
           "Model partitioning not implemented for the CPU compiler");
     }
   }
-  return LLVMCompiler::Compile(std::move(module_group), stream_execs, options);
+
+  // Tensorflow tries to enable the following behaviors in all its threads:
+  //
+  //  - Denormals are zero (DAZ): roughly, operations treat denormal floats as
+  //    zero.
+  //  - Flush denormals to zero (FTZ): roughly, operations produce zero instead
+  //    of denormal floats.
+  //
+  // In theory enabling these shouldn't matter since the compiler should ideally
+  // not leak its environment into generated code, but we turn off DAZ and FTZ
+  // to get some defense-in-depth.
+  tsl::port::ScopedDontFlushDenormal dont_flush_denormals;
+
+  std::vector<std::unique_ptr<Executable>> result;
+  std::vector<std::unique_ptr<HloModule>> modules =
+      module_group->ConsumeModules();
+  for (size_t i = 0; i < modules.size(); i++) {
+    TF_ASSIGN_OR_RETURN(modules[i], RunHloPasses(std::move(modules[i]),
+                                                 stream_execs[i][0], options));
+    TF_ASSIGN_OR_RETURN(
+        std::unique_ptr<Executable> executable,
+        RunBackend(std::move(modules[i]), stream_execs[i][0], options));
+    result.push_back(std::move(executable));
+  }
+
+  return {std::move(result)};
 }
 
 /* static */ void CpuCompiler::InitializeLLVMTarget() {
@@ -618,7 +647,8 @@ void AddHloVerifier(HloPassPipeline* pipeline, bool allow_sparse_shapes,
 
 Status CpuCompiler::RunHloPassesThroughLayoutAssn(
     HloModule* module, bool is_aot_compile,
-    LLVMTargetMachineFeatures* target_machine_features, bool is_mlir_compile) {
+    LLVMTargetMachineFeatures* target_machine_features,
+    const CompileOptions& compile_options, bool is_mlir_compile) {
   const int64_t num_partitions = module->config().num_partitions();
   if (num_partitions > 1) {
     if (!module->config().use_spmd_partitioning()) {
@@ -699,8 +729,10 @@ Status CpuCompiler::RunHloPassesThroughLayoutAssn(
 #if defined(INTEL_MKL) && defined(ENABLE_ONEDNN_V3)
   // AOT compiled code runs in single thread.
   if (!is_aot_compile) {
-    // Temporarily disabling oneDNN rewriter because it causes JAX regression.
-    // pipeline.AddPass<OneDnnRewriter>();
+    // Placing OneDnnOpsRewriter here to match the flax patterns
+    // TODO: Decide where would be the appropriate place for this pass to make
+    // it more generic
+    pipeline.AddPass<OneDnnOpsRewriter>();
   }
 #endif  // INTEL_MKL && ENABLE_ONEDNN_V3
 
@@ -711,7 +743,7 @@ Status CpuCompiler::RunHloPassesThroughLayoutAssn(
   // Convert BF16 and F8 operations to F32 and F16 respectively so that the CPU
   // backend can support BF16/F8 operations without directly implementing a
   // BF16/F8 lowering for most ops.
-  FloatSupport bf16_support(BF16);
+  CpuFloatSupport bf16_support(BF16);
   pipeline.AddPass<FloatNormalization>(&bf16_support);
   FloatSupport f8e5m2_support(F8E5M2);
   pipeline.AddPass<FloatNormalization>(&f8e5m2_support);
@@ -869,7 +901,8 @@ Status CpuCompiler::RunHloPassesThroughLayoutAssn(
 
 Status CpuCompiler::RunHloPassesAfterLayoutAssn(
     HloModule* module, bool is_aot_compile,
-    LLVMTargetMachineFeatures* target_machine_features, bool is_mlir_compile) {
+    LLVMTargetMachineFeatures* target_machine_features,
+    const CompileOptions& compile_options, bool is_mlir_compile) {
   HloPassPipeline pipeline("HLO passes after layout assignment");
 
   // CopyInsertion is still needed by BufferAssignment. MLIR passes will handle
@@ -894,6 +927,31 @@ Status CpuCompiler::RunHloPassesAfterLayoutAssn(
                  HloVerifierOpts{}.MakeLayoutSensitive(), /*debug_only=*/true);
 
   pipeline.AddPass<ReshapeDecomposer>();
+
+#if defined(INTEL_MKL) && defined(ENABLE_ONEDNN_V3)
+  std::unique_ptr<tsl::thread::ThreadPool> eigen_intraop_pool;
+  std::unique_ptr<Eigen::ThreadPoolDevice> threadpool_device;
+  // AOT compiled code runs in single thread.
+  if (!is_aot_compile) {
+    if (compile_options.thread_pool) {
+      threadpool_device.reset(new Eigen::ThreadPoolDevice(
+          compile_options.thread_pool->AsEigenThreadPool(),
+          compile_options.thread_pool->NumThreads()));
+    } else {
+      eigen_intraop_pool.reset(new tsl::thread::ThreadPool(
+          tsl::Env::Default(), "XLACpuCompile", tsl::port::MaxParallelism()));
+      threadpool_device.reset(
+          new Eigen::ThreadPoolDevice(eigen_intraop_pool->AsEigenThreadPool(),
+                                      eigen_intraop_pool->NumThreads()));
+    }
+    pipeline.AddPass<SimplifyFPConversions>(
+        SimplifyFPConversions::Scope::kSimplifyAllConversions);
+    pipeline.AddPass<OneDnnMatMulRewriter>(threadpool_device.get());
+    pipeline.AddPass<SimplifyFPConversions>(
+        SimplifyFPConversions::Scope::kSimplifyAllConversions);
+    pipeline.AddPass<ReshapeDecomposer>();
+  }
+#endif  // INTEL_MKL && ENABLE_ONEDNN_V3
 
   // Add a fusion pass now that layout assignment is done.
   pipeline.AddPass<CpuInstructionFusion>();
@@ -949,13 +1007,16 @@ Status CpuCompiler::RunHloPassesAfterLayoutAssn(
 
 Status CpuCompiler::RunHloPasses(HloModule* module, bool is_aot_compile,
                                  llvm::TargetMachine* target_machine,
+                                 const CompileOptions& compile_options,
                                  bool is_mlir_compile) {
   LLVMTargetMachineFeatures target_machine_features(target_machine);
   TF_RETURN_IF_ERROR(RunHloPassesThroughLayoutAssn(
-      module, is_aot_compile, &target_machine_features, is_mlir_compile));
+      module, is_aot_compile, &target_machine_features, compile_options,
+      is_mlir_compile));
 
   return RunHloPassesAfterLayoutAssn(module, is_aot_compile,
-                                     &target_machine_features, is_mlir_compile);
+                                     &target_machine_features, compile_options,
+                                     is_mlir_compile);
 }
 
 namespace {
@@ -1070,7 +1131,7 @@ Status CreateHloProfilingArtifacts(
 
 StatusOr<std::unique_ptr<HloModule>> CpuCompiler::RunHloPasses(
     std::unique_ptr<HloModule> module, se::StreamExecutor* /*stream_exec*/,
-    const CompileOptions& /*options*/) {
+    const CompileOptions& options) {
   std::unique_ptr<llvm::TargetMachine> jit_target_machine =
       SimpleOrcJIT::InferTargetMachineForJIT(
           CompilerTargetOptions(module->config()),
@@ -1078,6 +1139,7 @@ StatusOr<std::unique_ptr<HloModule>> CpuCompiler::RunHloPasses(
 
   TF_RETURN_IF_ERROR(RunHloPasses(
       module.get(), /*is_aot_compile=*/false, jit_target_machine.get(),
+      /*compile_options=*/options,
       /*is_mlir_compile=*/
       module->config().debug_options().xla_cpu_use_xla_runtime()));
   return std::move(module);
@@ -1701,6 +1763,7 @@ CpuCompiler::CompileAheadOfTime(std::unique_ptr<HloModuleGroup> module_group,
 
     TF_RETURN_IF_ERROR(
         RunHloPasses(module, /*is_aot_compile=*/true, target_machine.get(),
+                     /*dummy*/ CompileOptions{},
                      /*is_mlir_compile=*/options.use_mlir_hlo_lowering()));
 
     TF_ASSIGN_OR_RETURN(HloSchedule schedule,
