@@ -161,13 +161,12 @@ function prepare_src() {
   if [ ! -d bazel-bin/tensorflow ]; then
     echo "Could not find bazel-bin.  Did you run from the root of the build tree?"
     exit 1
-  fi
+  fi 
 
   if is_windows; then
     cp -L \
       bazel-bin/tensorflow/tools/pip_package/build_pip_package.exe.runfiles/org_tensorflow/LICENSE \
       "${TMPDIR}"
-
     # Change the format of file path (TMPDIR-->TMPDIR_rsync) which is input to the rsync from
     # Windows-compatible to Linux-compatible to resolve the error below
     # error: ssh: Could not resolve hostname c: No such host is known.
@@ -273,6 +272,9 @@ function prepare_src() {
   if is_windows; then
     cp -RLn bazel-bin/tensorflow/tools/pip_package/build_pip_package.exe.runfiles/local_tsl/tsl/ ${TMPDIR}/tensorflow
     cp -RLn bazel-bin/tensorflow/tools/pip_package/build_pip_package.exe.runfiles/local_xla/xla/ ${TMPDIR}/tensorflow/compiler
+    cp -RLn bazel-bin/tensorflow/tools/pip_package/build_pip_package.exe.runfiles/local_tsl/tsl/ ${TMPDIR}
+    cp -RLn bazel-bin/tensorflow/tools/pip_package/build_pip_package.exe.runfiles/local_xla/xla/ ${TMPDIR}
+
   else
     cp -RLn bazel-bin/tensorflow/tools/pip_package/build_pip_package.runfiles/local_tsl/tsl ${TMPDIR}/tensorflow
     cp -RLn bazel-bin/tensorflow/tools/pip_package/build_pip_package.runfiles/local_xla/xla ${TMPDIR}/tensorflow/compiler
