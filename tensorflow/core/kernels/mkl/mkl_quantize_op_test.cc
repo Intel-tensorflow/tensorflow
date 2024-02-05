@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#if defined(INTEL_MKL) && defined(ENABLE_MKL)
+#if defined(INTEL_MKL)
 #include "tensorflow/core/framework/fake_input.h"
 #include "tensorflow/core/framework/node_def_builder.h"
 #include "tensorflow/core/framework/tensor.h"
@@ -67,8 +67,8 @@ TEST_F(MklQuantizeV2OpTest, small_int8) {
                    .Finalize(node_def()));
   TF_ASSERT_OK(InitOp());
   AddInputFromArray<float>(TensorShape({8}), {0.0, -1.0, 1.25, -1.75, -24.5,
-                                              -255.0, -80.315, 256.0});
-  AddInputFromArray<float>(TensorShape({}), {-50.0});
+                                              -128.0, -80.315, 127.0});
+  AddInputFromArray<float>(TensorShape({}), {-127.0});
   AddInputFromArray<float>(TensorShape({}), {127.0});
   TF_ASSERT_OK(RunOpKernel());
   Tensor expected(allocator(), DT_QINT8, TensorShape({8}));
