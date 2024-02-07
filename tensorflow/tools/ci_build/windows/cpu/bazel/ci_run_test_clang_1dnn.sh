@@ -48,7 +48,7 @@ export PATH=/c/ProgramData/chocolatey/bin:/c/Tools/bazel:/c/Program\ Files/Git:/
 
 export PYTHON_VERSION=${PYTHON_VERSION:-"310"}  #We expect Python installation as C:\Python39
 export TF_PYTHON_VERSION=${PYTHON_VERSION:0:1}.${PYTHON_VERSION:1}
-MYTFWS_ROOT=${WORKSPACE:-"C:/Users/mlp_admin"} # keep the tensorflow git repo clone under here as tensorflow subdir
+MYTFWS_ROOT=${WORKSPACE:-"C:/Users/mlp_admin"} # Keep the tensorflow git repo clone under here as tensorflow subdir
 MYTFWS_ROOT=`cygpath -m $MYTFWS_ROOT`
 export MYTFWS_ROOT="$MYTFWS_ROOT"
 export MYTFWS_NAME="tensorflow"
@@ -69,7 +69,7 @@ export TEST_TARGET=${TEST_TARGET:-"//tensorflow/..."}
 export MSYS_LOCATION='C:/msys64'
 export GIT_LOCATION='C:/Program Files/Git'
 export JAVA_LOCATION='C:/Program Files/Eclipse Adoptium/jdk-11.0.14.101-hotspot'
-export VS_LOCATION='C:/Program Files (x86)/Microsoft Visual Studio/2019/BuildTools'
+export VS_LOCATION='C:/Program Files/Microsoft Visual Studio/2022/Community'
 export NATIVE_PYTHON_LOCATION="C:/Python${PYTHON_VERSION}"
 export LLVM_LOCATION='C:/Program Files/LLVM'
 
@@ -160,7 +160,7 @@ function cleanup {
 }
 trap cleanup EXIT
 
-# Enable short object file path to avoid long path issue on Windows.
+# Enable short object file path to avoid long path issues on Windows.
 echo "startup --output_user_root=${TMPDIR}" >> "${TMP_BAZELRC}"
 
 if ! grep -q "import %workspace%/${TMP_BAZELRC}" .bazelrc; then
