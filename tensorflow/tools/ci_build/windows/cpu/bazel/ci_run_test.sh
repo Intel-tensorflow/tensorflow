@@ -79,9 +79,10 @@ export TEST_TARGET=${TEST_TARGET:-"${DEFAULT_BAZEL_TARGETS}"}
 export MSYS_LOCATION='C:/msys64'
 export GIT_LOCATION='C:/Program Files/Git'
 export JAVA_LOCATION='C:/Program Files/Eclipse Adoptium/jdk-11.0.14.101-hotspot'
-export VS_LOCATION='C:/Program Files (x86)/Microsoft Visual Studio/2019/BuildTools'
+export VS_LOCATION='C:/Program Files/Microsoft Visual Studio/2022/Community'
 export NATIVE_PYTHON_LOCATION="C:/Python${PYTHON_VERSION}"
 export PORTSERVER_LOCATION='C:/Program Files/python_portpicker/src/portserver.py'
+export LLVM_LOCATION='C:/Program Files/LLVM'
 
 
 echo "*** *** hostname is $(hostname) *** ***"
@@ -132,6 +133,7 @@ export BAZEL_VS=${VS_LOCATION}
 export BAZEL_VC=${VS_LOCATION}/VC
 export JAVA_HOME=${JAVA_LOCATION}
 export BAZEL_SH="${MSYS_LOCATION}"/usr/bin/bash.exe
+export BAZEL_LLVM=${LLVM_LOCATION}
 
 cd ${MYTFWS_ROOT}
 mkdir -p "$TMP"
@@ -202,7 +204,7 @@ bazel --windows_enable_symlinks test \
   --build_tag_filters=-no_pip,-no_windows,-no_oss,-gpu,-tpu \
   --test_tag_filters=-no_windows,-no_oss,-gpu,-tpu \
   --build_tests_only --config=monolithic \
-  --dynamic_mode=off --config=xla --config=opt \
+  --dynamic_mode=off --config=xla --config=opt --config=win_clang \
   --build_tests_only -k \
   --test_env=PORTSERVER_ADDRESS=@unittest-portserver \
   --repo_env=TF_PYTHON_VERSION=${TF_PYTHON_VERSION} \
