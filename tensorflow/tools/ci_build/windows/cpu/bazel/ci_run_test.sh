@@ -177,7 +177,7 @@ bazel --windows_enable_symlinks test \
   --experimental_cc_shared_library --enable_runfiles --nodistinct_host_configuration \
   --dynamic_mode=off --config=xla --config=short_logs --announce_rc \
   --build_tag_filters=-no_pip,-no_windows,-no_oss,-gpu,-tpu --build_tests_only --config=monolithic \
-  --config=opt \
+  --config=win_clang --config=opt \
   --repo_env=TF_PYTHON_VERSION=${TF_PYTHON_VERSION} \
   -k --test_output=errors \
   --test_tag_filters=-no_windows,-no_oss,-gpu,-tpu \
