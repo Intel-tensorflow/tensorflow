@@ -119,8 +119,10 @@ export PYTHON_BIN_PATH="${PYTHON_DIRECTORY}"/Scripts/python.exe
 export PYTHON_LIB_PATH="${PYTHON_DIRECTORY}"/Lib/site-packages
 export BAZEL_VS=${VS_LOCATION}
 export BAZEL_VC=${VS_LOCATION}/VC
+export BAZEL_VC_FULL_VERSION=14.38.33130
 export JAVA_HOME=${JAVA_LOCATION}
 export BAZEL_SH="${MSYS_LOCATION}"/usr/bin/bash.exe
+
 
 cd ${MYTFWS_ROOT}
 mkdir -p "$TMP"
