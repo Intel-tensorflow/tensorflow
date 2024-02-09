@@ -121,6 +121,7 @@ export BAZEL_VC=${VS_LOCATION}/VC
 export JAVA_HOME=${JAVA_LOCATION}
 export BAZEL_SH="${MSYS_LOCATION}"/usr/bin/bash.exe
 export BAZEL_LLVM=${LLVM_LOCATION}
+export BAZEL_VC_FULL_VERSION=14.38.33130
 
 cd ${MYTFWS_ROOT}
 mkdir -p "$TMP"
