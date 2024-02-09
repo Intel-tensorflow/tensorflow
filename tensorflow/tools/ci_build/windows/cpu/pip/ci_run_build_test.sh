@@ -44,7 +44,6 @@ done
 export PATH=/c/Tools/bazel:/c/Program\ Files/Git:/c/Program\ Files/Git/cmd:/c/msys64:/c/msys64/usr/bin:/c/Windows/system32:/c/Windows:/c/Windows/System32/Wbem:/c/Windows/System32/OpenSSH
 
 # Environment variables to be set by Jenkins before calling this script
-# 
 
 export PYTHON_VERSION=${PYTHON_VERSION:-"310"}  #We expect Python installation as C:\Python39
 export TF_PYTHON_VERSION=${PYTHON_VERSION:0:1}.${PYTHON_VERSION:1}
@@ -69,8 +68,9 @@ TMPDIR=C:/
 export MSYS_LOCATION='C:/msys64'
 export GIT_LOCATION='C:/Program Files/Git'
 export JAVA_LOCATION='C:/Program Files/Eclipse Adoptium/jdk-11.0.14.101-hotspot'
-export VS_LOCATION='C:/Program Files (x86)/Microsoft Visual Studio/2019/BuildTools'
+export VS_LOCATION='C:/Program Files/Microsoft Visual Studio/2022/Community'
 export NATIVE_PYTHON_LOCATION="C:/Python${PYTHON_VERSION}"
+export LLVM_LOCATION='C:/Program Files/LLVM'
 
 echo "*** *** hostname is $(hostname) *** ***"
 which bazel
@@ -122,6 +122,7 @@ export BAZEL_VS=${VS_LOCATION}
 export BAZEL_VC=${VS_LOCATION}/VC
 export JAVA_HOME=${JAVA_LOCATION}
 export BAZEL_SH="${MSYS_LOCATION}"/usr/bin/bash.exe
+export BAZEL_LLVM=${LLVM_LOCATION}
 
 
 cd ${MYTFWS_ROOT}
