@@ -44,7 +44,6 @@ done
 export PATH=/c/Tools/bazel:/c/Program\ Files/Git:/c/Program\ Files/Git/cmd:/c/msys64:/c/msys64/usr/bin:/c/Windows/system32:/c/Windows:/c/Windows/System32/Wbem:/c/Windows/System32/OpenSSH
 
 # Environment variables to be set by Jenkins before calling this script
-# 
 
 export PYTHON_VERSION=${PYTHON_VERSION:-"310"}  #We expect Python installation as C:\Python39
 export TF_PYTHON_VERSION=${PYTHON_VERSION:0:1}.${PYTHON_VERSION:1}
@@ -69,9 +68,11 @@ TMPDIR=C:/
 export MSYS_LOCATION='C:/msys64'
 export GIT_LOCATION='C:/Program Files/Git'
 export JAVA_LOCATION='C:/Program Files/Eclipse Adoptium/jdk-11.0.14.101-hotspot'
-export VS_LOCATION='C:/Program Files (x86)/Microsoft Visual Studio/2019/BuildTools'
-#export LLVM_LOCATION='C:/Program Files/LLVM'
+export VS_LOCATION='C:/Program Files/Microsoft Visual Studio/2022/Community'
 export NATIVE_PYTHON_LOCATION="C:/Python${PYTHON_VERSION}"
+export BAZEL_VC_FULL_VERSION=14.39.33519
+export LLVM_LOCATION='C:/Program Files/LLVM'
+
 
 echo "*** *** hostname is $(hostname) *** ***"
 which bazel
@@ -123,7 +124,7 @@ export BAZEL_VS=${VS_LOCATION}
 export BAZEL_VC=${VS_LOCATION}/VC
 export JAVA_HOME=${JAVA_LOCATION}
 export BAZEL_SH="${MSYS_LOCATION}"/usr/bin/bash.exe
-# export BAZEL_LLVM=${LLVM_LOCATION}
+export BAZEL_LLVM=${LLVM_LOCATION}
 
 
 cd ${MYTFWS_ROOT}
@@ -140,9 +141,9 @@ set +e   # Unset so script continues even if commands fail, this is needed to co
 
 cd $MYTFWS
 
-bash "${MYTFWS}"/tensorflow/tools/ci_build/windows/cpu/pip/build_tf_windows.sh \
-   --extra_build_flags "--action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XBF_ARGS} --repo_env=TF_PYTHON_VERSION=${TF_PYTHON_VERSION} --test_env=TF_ENABLE_ONEDNN_OPTS=1" \
-   --extra_test_flags "--action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XTF_ARGS}" \
+bash "${MYTFWS}"/tensorflow/tools/ci_build/windows/cpu/pip/build_tf_windows_clang-cl.sh \
+   --extra_build_flags "--action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XBF_ARGS} --repo_env=TF_PYTHON_VERSION=${TF_PYTHON_VERSION}" \
+   --repo_env=WHEEL_NAME=tensorflow --extra_test_flags "--action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XTF_ARGS}" \
    ${POSITIONAL_ARGS[@]}  > run.log 2>&1
 
 build_ret_val=$?   # Store the ret value
@@ -153,7 +154,7 @@ build_ret_val=$?   # Store the ret value
 #   bazel --output_user_root=${TMPDIR} clean --expunge
 
 #   bash "${MYTFWS}"/tensorflow/tools/ci_build/windows/cpu/pip/build_tf_windows.sh \
-#      --extra_build_flags "--action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XBF_ARGS} --repo_env=TF_PYTHON_VERSION=${TF_PYTHON_VERSION} --test_env=TF_ENABLE_ONEDNN_OPTS=1" \
+#      --extra_build_flags "--action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XBF_ARGS} --repo_env=TF_PYTHON_VERSION=${TF_PYTHON_VERSION}" \
 #      --extra_test_flags "--action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XTF_ARGS}" \
 #      ${POSITIONAL_ARGS[@]}  > run.log 2>&1
 
