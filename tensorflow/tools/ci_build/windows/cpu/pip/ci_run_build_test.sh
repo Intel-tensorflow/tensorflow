@@ -68,9 +68,9 @@ TMPDIR=C:/
 export MSYS_LOCATION='C:/msys64'
 export GIT_LOCATION='C:/Program Files/Git'
 export JAVA_LOCATION='C:/Program Files/Eclipse Adoptium/jdk-11.0.14.101-hotspot'
-export VS_LOCATION='C:/Program Files/Microsoft Visual Studio/2022/Community'
+export VS_LOCATION='C:\Program Files (x86)\Microsoft Visual Studio\2019'
 export NATIVE_PYTHON_LOCATION="C:/Python${PYTHON_VERSION}"
-export BAZEL_VC_FULL_VERSION=14.38.33130
+export BAZEL_VC_FULL_VERSION=14.29.30133
 export LLVM_LOCATION='C:/Program Files/LLVM'
 
 
