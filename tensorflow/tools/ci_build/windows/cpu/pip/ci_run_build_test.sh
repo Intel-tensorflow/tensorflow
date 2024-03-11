@@ -68,9 +68,9 @@ TMPDIR=C:/
 export MSYS_LOCATION='C:/msys64'
 export GIT_LOCATION='C:/Program Files/Git'
 export JAVA_LOCATION='C:/Program Files/Eclipse Adoptium/jdk-11.0.14.101-hotspot'
-export VS_LOCATION='C:/Program Files (x86)/Microsoft Visual Studio/2019/BuildTools'
+export VS_LOCATION='C:/Program Files/Microsoft Visual Studio/2022/Community'
 export NATIVE_PYTHON_LOCATION="C:/Python${PYTHON_VERSION}"
-export BAZEL_VC_FULL_VERSION=14.29.30133
+export BAZEL_VC_FULL_VERSION=14.38.33130
 export LLVM_LOCATION='C:/Program Files/LLVM'
 
 
@@ -143,7 +143,7 @@ cd $MYTFWS
 
 bash "${MYTFWS}"/tensorflow/tools/ci_build/windows/cpu/pip/build_tf_windows.sh \
    --extra_build_flags "--action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XBF_ARGS} --repo_env=TF_PYTHON_VERSION=${TF_PYTHON_VERSION}" \
-   --repo_env=WHEEL_NAME=tensorflow --extra_test_flags "--action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XTF_ARGS}" \
+   --repo_env=WHEEL_NAME=tf_nightly_cpu --extra_test_flags "--action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XTF_ARGS}" \
    ${POSITIONAL_ARGS[@]}  > run.log 2>&1
 
 build_ret_val=$?   # Store the ret value
