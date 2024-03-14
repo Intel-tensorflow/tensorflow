@@ -142,8 +142,8 @@ set +e   # Unset so script continues even if commands fail, this is needed to co
 cd $MYTFWS
 
 bash "${MYTFWS}"/tensorflow/tools/ci_build/windows/cpu/pip/build_tf_windows_clang-cl.sh \
-   --extra_build_flags "--action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XBF_ARGS} --repo_env=TF_PYTHON_VERSION=${TF_PYTHON_VERSION}" \
-   --repo_env=WHEEL_NAME=tensorflow_cpu --extra_test_flags "--action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XTF_ARGS}" \
+   --extra_build_flags "--action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XBF_ARGS} --repo_env=TF_PYTHON_VERSION=${TF_PYTHON_VERSION} \
+   --repo_env=WHEEL_NAME=tensorflow_cpu" --extra_test_flags "--action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XTF_ARGS}" \
    ${POSITIONAL_ARGS[@]}  > run.log 2>&1
 
 build_ret_val=$?   # Store the ret value
