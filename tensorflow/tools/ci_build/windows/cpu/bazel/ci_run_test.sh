@@ -61,13 +61,13 @@ export TF_PYTHON_VERSION=${PYTHON_VERSION:0:1}.${PYTHON_VERSION:1}
 MYTFWS_ROOT=${WORKSPACE:-"C:/Users/mlp_admin"} 
 MYTFWS_ROOT=`cygpath -m $MYTFWS_ROOT`
 export MYTFWS_ROOT="$MYTFWS_ROOT"
-export MYTFWS_NAME="tensorflow"
+export MYTFWS_NAME="xla"
 export MYTFWS="${MYTFWS_ROOT}/${MYTFWS_NAME}"
 export MYTFWS_ARTIFACT="${MYTFWS_ROOT}/artifact"
 
 
 # Import General Test Target
-source tensorflow/tools/ci_build/build_scripts/DEFAULT_TEST_TARGETS.sh
+#source tensorflow/tools/ci_build/build_scripts/DEFAULT_TEST_TARGETS.sh
 
 # Environment variables specific to the system where this job is running, are to
 # be set by a script for the specific system. This needs to be set here by sourcing a file.
@@ -125,7 +125,7 @@ which python
 python --version
 
 # Install pip modules specs from tensorflow/tools/ci_build/release/requirements_common.txt
-python -m pip install -r $MYTFWS/tensorflow/tools/ci_build/release/requirements_common.txt
+#python -m pip install -r $MYTFWS/tensorflow/tools/ci_build/release/requirements_common.txt
 
 # set up other Variables required by Bazel.
 export PYTHON_BIN_PATH="${PYTHON_DIRECTORY}"/Scripts/python.exe
@@ -150,12 +150,12 @@ cd $MYTFWS
 set -e
 
 # Setting up the environment variables Bazel and ./configure needs
-source "tensorflow/tools/ci_build/windows/bazel/common_env.sh" \
-  || { echo "Failed to source common_env.sh" >&2; exit 1; }
+#source "tensorflow/tools/ci_build/windows/bazel/common_env.sh" \
+#  || { echo "Failed to source common_env.sh" >&2; exit 1; }
 
 # load bazel_test_lib.sh
-source "tensorflow/tools/ci_build/windows/bazel/bazel_test_lib.sh" \
-  || { echo "Failed to source bazel_test_lib.sh" >&2; exit 1; }
+#source "tensorflow/tools/ci_build/windows/bazel/bazel_test_lib.sh" \
+ # || { echo "Failed to source bazel_test_lib.sh" >&2; exit 1; }
 
 # Recreate an empty bazelrc file under source root
 export TMP_BAZELRC=.tmp.bazelrc
