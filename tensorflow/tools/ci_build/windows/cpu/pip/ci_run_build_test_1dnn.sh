@@ -71,7 +71,7 @@ export JAVA_LOCATION='C:/Program Files/Eclipse Adoptium/jdk-11.0.14.101-hotspot'
 export VS_LOCATION='C:/Program Files/Microsoft Visual Studio/2022/Community'
 export NATIVE_PYTHON_LOCATION="C:/Python${PYTHON_VERSION}"
 export BAZEL_VC_FULL_VERSION=14.39.33519
-export LLVM_LOCATION='C:/Program Files/LLVM'
+export LLVM_LOCATION='C:/LLVM'
 
 
 echo "*** *** hostname is $(hostname) *** ***"
@@ -114,8 +114,6 @@ python --version
 
 # Install pip modules as per specs in tensorflow/tools/ci_build/release/requirements_common.txt
 python -m pip install -r $MYTFWS/tensorflow/tools/ci_build/release/requirements_common.txt
-
-
 
 # set up other Variables required by bazel.
 export PYTHON_BIN_PATH="${PYTHON_DIRECTORY}"/Scripts/python.exe
