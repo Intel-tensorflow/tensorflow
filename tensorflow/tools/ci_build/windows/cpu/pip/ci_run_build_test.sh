@@ -70,8 +70,8 @@ export GIT_LOCATION='C:/Program Files/Git'
 export JAVA_LOCATION='C:/Program Files/Eclipse Adoptium/jdk-11.0.14.101-hotspot'
 export VS_LOCATION='C:/Program Files/Microsoft Visual Studio/2022/Community'
 export NATIVE_PYTHON_LOCATION="C:/Python${PYTHON_VERSION}"
-export BAZEL_VC_FULL_VERSION=14.38.33130
-export LLVM_LOCATION='C:/Program Files/LLVM'
+export BAZEL_VC_FULL_VERSION=14.39.33519
+export LLVM_LOCATION='C:/LLVM'
 
 
 echo "*** *** hostname is $(hostname) *** ***"
