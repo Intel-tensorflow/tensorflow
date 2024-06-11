@@ -41,7 +41,7 @@ done
 #SCRIPT_ARGS=${POSITIONAL_ARGS[@]}
 
 # bazelisk (renamed as bazel) is kept in C:\Tools
-export PATH=/c/ProgramData/chocolatey/bin:/c/Tools/bazel:/c/Program\ Files/Git:/c/Program\ Files/Git/cmd:/c/msys64:/c/msys64/usr/bin:/c/Windows/system32:/c/Windows:/c/Windows/System32/Wbem
+export PATH=/c/ProgramData/chocolatey/bin:/c/Tools/bazel:/c/Program\ Files/Git:/c/Program\ Files/Git/cmd:/c/msys64:/c/msys64/usr/bin:/c/Windows/system32:/c/Windows:/c/Windows/System32/Wbem:/C/Program\ Files/LLVM/bin
 
 # Environment variables to be set by Jenkins before calling this script
 # 
@@ -50,7 +50,7 @@ export PYTHON_VERSION=${PYTHON_VERSION:-"310"}  #We expect Python installation a
 MYTFWS_ROOT=${WORKSPACE:-"C:/Users/mlp_admin"} # keep the tensorflow git repo clone under here as tensorflow subdir
 MYTFWS_ROOT=`cygpath -m $MYTFWS_ROOT`
 export MYTFWS_ROOT="$MYTFWS_ROOT"
-export MYTFWS_NAME="tensorflow"
+export MYTFWS_NAME="xla"
 export MYTFWS="${MYTFWS_ROOT}/${MYTFWS_NAME}"
 export MYTFWS_ARTIFACT="${MYTFWS_ROOT}/artifact"
 
@@ -63,12 +63,14 @@ export TF_LOCATION=%MYTFWS%
 
 export TMP=${TMP:-"${MYTFWS_ROOT}/tmp"}
 export TEMP="$TMP"
-export TMPDIR=${TMPDIR:-"${MYTFWS}-build"} # used internally by TF build
-export TEST_TARGET=${TEST_TARGET:-"//tensorflow/..."}
+export TMPDIR=${TMPDIR:-"${MYTFWS}-build"} # used internally by xla build
+TMPDIR=C:/
+export TEST_TARGET=${TEST_TARGET:-"//xla/..."}
 export MSYS_LOCATION='C:/msys64'
 export GIT_LOCATION='C:/Program Files/Git'
 export JAVA_LOCATION='C:/Program Files/Eclipse Adoptium/jdk-11.0.14.101-hotspot'
-export VS_LOCATION='C:/Program Files (x86)/Microsoft Visual Studio/2019/BuildTools'
+export VS_LOCATION='C:/Program Files/Microsoft Visual Studio/2022/Community'
+export BAZEL_VC_FULL_VERSION=14.39.33519
 export NATIVE_PYTHON_LOCATION="C:/Python${PYTHON_VERSION}"
 
 echo "*** *** hostname is $(hostname) *** ***"
@@ -172,18 +174,26 @@ N_JOBS="${NUMBER_OF_PROCESSORS}"
 # --config=release_cpu_windows 
 bazel --windows_enable_symlinks test \
   --action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XTF_ARGS} \
-  --experimental_cc_shared_library --enable_runfiles --nodistinct_host_configuration \
-  --dynamic_mode=off --config=xla --config=short_logs --announce_rc \
-  --build_tag_filters=-no_pip,-no_windows,-no_oss,-gpu,-tpu --build_tests_only --config=monolithic \
-  --config=opt \
-  -k --test_output=errors \
-  --test_tag_filters=-no_windows,-no_oss,-gpu,-tpu,-v1only \
-  --discard_analysis_cache \
-  --test_timeout=300,450,1200,3600 --verbose_failures \
-  --flaky_test_attempts=3 \
-  ${POSITIONAL_ARGS[@]} \
-  -- ${TEST_TARGET} \
-  > run.log 2>&1
+    --nodistinct_host_configuration \
+    --noenable_runfiles \
+    --dynamic_mode=off \
+    -k \
+    --sandbox_debug \
+    --config=xla \
+    --config=nonccl \
+    --config=short_logs \
+    --build_tag_filters=-oss_excluded,-no_windows,-oss_serial,-gpu,-no_oss,-requires-gpu-nvidia \
+    --test_tag_filters=-oss_excluded,-oss_serial,-no_oss,-no_windows,-gpu,-requires-gpu-nvidia \
+    --announce_rc \
+    --repo_env=TF_PYTHON_VERSION=3.11 \
+    --config=win_clang_xla \
+    --build_tests_only \
+    --config=monolithic \
+    --test_timeout="300,450,1200,3600" \
+    --copt=/d2ReducedOptimizeHugeFunctions \
+    ${POSITIONAL_ARGS[@]} \
+    -- ${TEST_TARGET} 
+    > run.log 2>&1
 
 build_ret_val=$?   # Store the ret value
 
@@ -203,10 +213,10 @@ fgrep "Executed" test_run.log >> summary.log
 [ $build_ret_val -eq 0 ] && exit 0
 
 echo "FAILED TESTS:" > test_failures.log
-fgrep "FAILED" test_run.log | grep " ms)" | sed -e 's/^.*\] //' -e 's/ .*$//' | sort | uniq >> test_failures.log
+fgrep "FAILED" test_run.log | grep " ms)" | sed -e 's/\.*\] //' -e 's/ .*$//' | sort | uniq >> test_failures.log
 echo >> test_failures.log
 echo "SKIPPED TESTS:" >> test_failures.log
-fgrep "SKIPPED" test_run.log | grep -v "listed below:" | sed -e 's/^.*\] //' | sort | uniq >> test_failures.log
+fgrep "SKIPPED" test_run.log | grep -v "listed below:" | sed -e 's/\.*\] //' | sort | uniq >> test_failures.log
 # fgrep "TIMEOUT" test_run.log | grep "out of" | sed -e 's/[ ][ ]*.*//' -e 's/$/ TIMEOUT/' >> test_failures.log
 # count=$(wc -l < test_failures.log)
 
