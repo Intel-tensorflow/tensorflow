@@ -148,9 +148,6 @@ echo "startup --output_user_root=${TMPDIR}" >> "${TMP_BAZELRC}"
 if ! grep -q "import %workspace%/${TMP_BAZELRC}" .bazelrc; then
   echo "import %workspace%/${TMP_BAZELRC}" >> .bazelrc
 fi
-
-run_configure_for_cpu_build
-
 set +e   # Unset so script continues even if commands fail, this is needed to correctly process the logs
 
 # NUMBER_OF_PROCESSORS is predefined on Windows
