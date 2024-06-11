@@ -106,10 +106,6 @@ source "${PYTHON_DIRECTORY}"/Scripts/activate
 which python
 python --version
 
-
-# Install pip modules as per specs in tensorflow/tools/ci_build/release/requirements_common.txt
-python -m pip install -r $MYTFWS/tensorflow/tools/ci_build/release/requirements_common.txt
-
 # set up other Variables required by bazel.
 export PYTHON_BIN_PATH="${PYTHON_DIRECTORY}"/Scripts/python.exe
 export PYTHON_LIB_PATH="${PYTHON_DIRECTORY}"/Lib/site-packages
