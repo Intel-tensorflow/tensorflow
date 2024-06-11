@@ -44,8 +44,6 @@ done
 export PATH=/c/ProgramData/chocolatey/bin:/c/Tools/bazel:/c/Program\ Files/Git:/c/Program\ Files/Git/cmd:/c/msys64:/c/msys64/usr/bin:/c/Windows/system32:/c/Windows:/c/Windows/System32/Wbem:/C/Program\ Files/LLVM/bin
 
 # Environment variables to be set by Jenkins before calling this script
-# 
-
 export PYTHON_VERSION=${PYTHON_VERSION:-"310"}  #We expect Python installation as C:\Python39
 MYTFWS_ROOT=${WORKSPACE:-"C:/Users/mlp_admin"} # keep the tensorflow git repo clone under here as tensorflow subdir
 MYTFWS_ROOT=`cygpath -m $MYTFWS_ROOT`
@@ -53,8 +51,6 @@ export MYTFWS_ROOT="$MYTFWS_ROOT"
 export MYTFWS_NAME="xla"
 export MYTFWS="${MYTFWS_ROOT}/${MYTFWS_NAME}"
 export MYTFWS_ARTIFACT="${MYTFWS_ROOT}/artifact"
-
-
 export TF_LOCATION=%MYTFWS%
 
 # Environment variables specific to the system where this job is running, to
@@ -184,6 +180,7 @@ bazel --windows_enable_symlinks test \
     --config=monolithic \
     --test_timeout="300,450,1200,3600" \
     --copt=/d2ReducedOptimizeHugeFunctions \
+    --host_copt=/d2ReducedOptimizeHugeFunctions \
     ${POSITIONAL_ARGS[@]} \
     -- ${TEST_TARGET} 
     > run.log 2>&1
