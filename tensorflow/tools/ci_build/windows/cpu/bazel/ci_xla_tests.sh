@@ -138,13 +138,6 @@ cd $MYTFWS
 # All commands shall pass
 set -e
 
-# Setting up the environment variables Bazel and ./configure needs
-source "tensorflow/tools/ci_build/windows/bazel/common_env.sh" \
-  || { echo "Failed to source common_env.sh" >&2; exit 1; }
-
-# load bazel_test_lib.sh
-source "tensorflow/tools/ci_build/windows/bazel/bazel_test_lib.sh" \
-  || { echo "Failed to source bazel_test_lib.sh" >&2; exit 1; }
 
 # Recreate an empty bazelrc file under source root
 export TMP_BAZELRC=.tmp.bazelrc
