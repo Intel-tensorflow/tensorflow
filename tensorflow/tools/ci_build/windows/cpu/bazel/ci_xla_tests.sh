@@ -157,7 +157,6 @@ N_JOBS="${NUMBER_OF_PROCESSORS}"
 bazel --windows_enable_symlinks test \
   --action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XTF_ARGS} \
     --nodistinct_host_configuration \
-    --noenable_runfiles \
     --dynamic_mode=off \
     -k \
     --sandbox_debug \
