@@ -159,7 +159,6 @@ bazel --windows_enable_symlinks test \
     --nodistinct_host_configuration \
     --dynamic_mode=off \
     -k \
-    --sandbox_debug \
     --config=xla \
     --config=nonccl \
     --config=short_logs \
