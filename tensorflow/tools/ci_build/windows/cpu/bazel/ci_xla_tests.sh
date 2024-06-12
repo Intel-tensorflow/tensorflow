@@ -125,29 +125,6 @@ rm -rf ${MYTFWS_ARTIFACT}
 mkdir -p ${MYTFWS_ARTIFACT}
 
 cd $MYTFWS
-
-
-# All commands shall pass
-set -e
-
-
-# Recreate an empty bazelrc file under source root
-export TMP_BAZELRC=.tmp.bazelrc
-rm -f "${TMP_BAZELRC}"
-touch "${TMP_BAZELRC}"
-
-function cleanup {
-  # Remove all options in .tmp.bazelrc
-  echo "" > "${TMP_BAZELRC}"
-}
-trap cleanup EXIT
-
-# Enable short object file path to avoid long path issue on Windows.
-echo "startup --output_user_root=${TMPDIR}" >> "${TMP_BAZELRC}"
-
-if ! grep -q "import %workspace%/${TMP_BAZELRC}" .bazelrc; then
-  echo "import %workspace%/${TMP_BAZELRC}" >> .bazelrc
-fi
 set +e   # Unset so script continues even if commands fail, this is needed to correctly process the logs
 
 # NUMBER_OF_PROCESSORS is predefined on Windows
