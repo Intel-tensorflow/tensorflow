@@ -7,13 +7,11 @@ https://wiki.ith.intel.com/display/intelnervana/BKM%3A+Public+CI+Monitoring+on+W
 """
 
 import tensorflow as tf
-
 print("Sanity test start.")
 
-import tensorflow as tf
-print("Sanity test start.")
 print("Validate keras")
 assert "keras" in tf.keras.__name__, "Test keras in tf.keras.__name__"
+
 print("Validate array shape after adding")
 t1 = tf.constant([1, 2, 3, 4])
 t2 = tf.constant([5, 6, 7, 8])
