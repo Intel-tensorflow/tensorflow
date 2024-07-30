@@ -41,7 +41,7 @@ done
 #SCRIPT_ARGS=${POSITIONAL_ARGS[@]}
 
 # bazelisk (renamed as bazel) is kept in C:\Tools
-export PATH=/c/Tools/bazel:/c/Program\ Files/Git:/c/Program\ Files/Git/cmd:/c/msys64:/c/msys64/usr/bin:/c/Windows/system32:/c/Windows:/c/Windows/System32/Wbem:/c/Windows/System32/OpenSSH:/C/Program\ Files/LLVM
+export PATH=/C/ProgramData/chocolatey/bin:/c/Program\ Files/Git:/c/Program\ Files/Git/cmd:/c/msys64:/c/msys64/usr/bin:/c/Windows/system32:/c/Windows:/c/Windows/System32/Wbem:/c/Windows/System32/OpenSSH:/C/Program\ Files/LLVM
 
 # Environment variables to be set by Jenkins before calling this script
 
@@ -67,10 +67,10 @@ export TMPDIR="${MYTFWS}-build" # used internally by TF build
 TMPDIR=C:/
 export MSYS_LOCATION='C:/msys64'
 export GIT_LOCATION='C:/Program Files/Git'
-export JAVA_LOCATION='C:/Program Files/Eclipse Adoptium/jdk-11.0.14.101-hotspot'
+export JAVA_LOCATION='C:/Program Files/Eclipse Adoptium/jdk-21.0.2.13-hotspot'
 export VS_LOCATION='C:/Program Files/Microsoft Visual Studio/2022/Community'
 export NATIVE_PYTHON_LOCATION="C:/Python${PYTHON_VERSION}"
-export BAZEL_VC_FULL_VERSION=14.40.33807
+export BAZEL_VC_FULL_VERSION=14.39.33519
 export LLVM_LOCATION='C:/Program Files/LLVM'
 
 
