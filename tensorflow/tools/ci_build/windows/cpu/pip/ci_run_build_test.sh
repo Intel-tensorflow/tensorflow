@@ -114,8 +114,9 @@ python --version
 
 # Install pip modules as per specs in tensorflow/tools/ci_build/release/requirements_common.txt
 python -m pip install -r $MYTFWS/tensorflow/tools/ci_build/release/requirements_common.txt
-
-
+python -m pip install scipy==1.13.1
+python -m pip install h5py==3.12.1
+python -m pip install ml_dtypes==0.4.0
 
 # set up other Variables required by bazel.
 export PYTHON_BIN_PATH="${PYTHON_DIRECTORY}"/Scripts/python.exe
