@@ -114,6 +114,9 @@ python --version
 
 # Install pip modules as per specs in tensorflow/tools/ci_build/release/requirements_common.txt
 python -m pip install -r $MYTFWS/tensorflow/tools/ci_build/release/requirements_common.txt
+python -m pip install scipy==1.13.1
+python -m pip install h5py==3.12.1
+python -m pip install ml_dtypes==0.4.0
 
 # set up other Variables required by bazel.
 export PYTHON_BIN_PATH="${PYTHON_DIRECTORY}"/Scripts/python.exe
@@ -140,7 +143,7 @@ set +e   # Unset so script continues even if commands fail, this is needed to co
 cd $MYTFWS
 
 bash "${MYTFWS}"/tensorflow/tools/ci_build/windows/cpu/pip/build_tf_windows_clang-cl.sh \
-   --extra_build_flags "--action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XBF_ARGS} --repo_env=TF_PYTHON_VERSION=${TF_PYTHON_VERSION} \
+   --extra_build_flags "--action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XBF_ARGS} --repo_env=HERMETIC_PYTHON_VERSION=${TF_PYTHON_VERSION} \
    --repo_env=WHEEL_NAME=tensorflow_cpu" --extra_test_flags "--action_env=TEMP=${TMP} --action_env=TMP=${TMP} ${XTF_ARGS}" \
    ${POSITIONAL_ARGS[@]}  > run.log 2>&1
 
