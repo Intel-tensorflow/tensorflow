@@ -14,6 +14,8 @@ package(
     default_visibility = internal_visibility([
         "//learning/brain/google/data:__subpackages__",
         "//learning/brain/google/monitoring:__subpackages__",
+        # copybara:uncomment "//third_party/neptune:__subpackages__",
+        # TODO(b/476497239): Remove the old JSV codebase once the migration is done.
         # copybara:uncomment "//learning/infra/mira/experimental/orbax_model:__subpackages__",
         # copybara:uncomment "//learning/pathways/util/platform:__subpackages__",
         # copybara:uncomment "//third_party/pathways/util/platform:__subpackages__",
@@ -53,8 +55,8 @@ cc_library(
         "//xla/tsl/platform:types",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/synchronization",
-        "@local_tsl//tsl/platform",
-        "@local_tsl//tsl/platform:thread_annotations",
+        "@tsl//tsl/platform",
+        "@tsl//tsl/platform:thread_annotations",
     ],
 )
 
@@ -70,8 +72,8 @@ cc_library(
         "//xla/tsl/platform:status",
         "//xla/tsl/platform:types",
         "@com_google_absl//absl/synchronization",
-        "@local_tsl//tsl/platform",
-        "@local_tsl//tsl/platform:thread_annotations",
+        "@tsl//tsl/platform",
+        "@tsl//tsl/platform:thread_annotations",
     ],
 )
 
@@ -113,8 +115,8 @@ cc_library(
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/synchronization",
-        "@local_tsl//tsl/platform",
-        "@local_tsl//tsl/platform:thread_annotations",
+        "@tsl//tsl/platform",
+        "@tsl//tsl/platform:thread_annotations",
     ],
 )
 
@@ -136,7 +138,7 @@ cc_library(
         ":types",
         "//xla/tsl/platform:types",
         "//xla/tsl/protobuf:histogram_proto_cc",
-        "@local_tsl//tsl/platform:stringpiece",
+        "@tsl//tsl/platform:stringpiece",
     ],
 )
 
@@ -155,9 +157,9 @@ cc_library(
         "//xla/tsl/platform:types",
         "//xla/tsl/protobuf:histogram_proto_cc",
         "@com_google_absl//absl/synchronization",
-        "@local_tsl//tsl/platform",
-        "@local_tsl//tsl/platform:stringpiece",
-        "@local_tsl//tsl/platform:thread_annotations",
+        "@tsl//tsl/platform",
+        "@tsl//tsl/platform:stringpiece",
+        "@tsl//tsl/platform:thread_annotations",
     ],
 )
 
@@ -238,8 +240,8 @@ cc_library(
         "//xla/tsl/platform:types",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/synchronization",
-        "@local_tsl//tsl/platform",
-        "@local_tsl//tsl/platform:thread_annotations",
+        "@tsl//tsl/platform",
+        "@tsl//tsl/platform:thread_annotations",
     ],
 )
 

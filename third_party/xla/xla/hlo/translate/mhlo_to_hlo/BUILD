@@ -229,11 +229,11 @@ cc_library(
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TensorDialect",
         "@llvm-project//mlir:TransformUtils",
-        "@local_tsl//tsl/platform:ml_dtypes",
         "@shardy//shardy/dialect/sdy/ir:dialect",
         "@stablehlo//:base",
         "@stablehlo//:stablehlo_ops",
         "@stablehlo//:stablehlo_passes",
+        "@tsl//tsl/platform:ml_dtypes",
     ],
 )
 
@@ -283,6 +283,18 @@ xla_cc_test(
         "@com_google_absl//absl/status:status_matchers",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Parser",
+    ],
+)
+
+xla_cc_test(
+    name = "stack_frame_index_builder_test",
+    srcs = ["stack_frame_index_builder_test.cc"],
+    deps = [
+        ":stack_frame_index_builder",
+        "//xla/service:hlo_proto_cc",
+        "//xla/tsl/platform:test",
+        "//xla/tsl/platform:test_main",
+        "@llvm-project//mlir:IR",
     ],
 )
 
@@ -370,7 +382,7 @@ xla_cc_test(
         "@com_google_googletest//:gtest",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
-        "@local_tsl//tsl/platform:protobuf",
         "@stablehlo//:stablehlo_ops",
+        "@tsl//tsl/platform:protobuf",
     ],
 )

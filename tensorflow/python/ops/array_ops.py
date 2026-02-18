@@ -5401,6 +5401,11 @@ def gather_nd(params, indices, name=None, batch_dims=0, bad_indices_policy=""):
   """
   batch_dims_ = tensor_util.constant_value(batch_dims)
   if batch_dims_ is not None:
+    batch_dims_ = (
+        batch_dims_.item()
+        if isinstance(batch_dims_, np.ndarray)
+        else batch_dims_
+    )
     batch_dims = int(batch_dims_)
   if batch_dims == 0 and bad_indices_policy not in ("", "DEFAULT"):
     # TODO(cylai): also support `bad_indices_policy` for resource variables.
@@ -6194,6 +6199,43 @@ def searchsorted(sorted_sequence,
 quantize.__doc__ = gen_array_ops.quantize_v2.__doc__
 
 
+def _get_int_list_attr(values, name):
+  """Converts a list of values to a list of Python integers for op attributes.
+
+  This function is used to convert the `sizes`, `strides`, and `rates`
+  parameters of `extract_image_patches` to compile-time constant integers.
+
+  Args:
+    values: A list or tuple of integers, or tensors representing integers.
+    name: The name of the attribute, used for error messages.
+
+  Returns:
+    A list of Python integers if `values` is a list or tuple, otherwise
+    returns `values` unchanged.
+
+  Raises:
+    TypeError: If any value is a tensor whose value cannot be determined at
+      graph construction time (e.g., symbolic tensors in XLA compilation).
+  """
+  if not isinstance(values, (list, tuple)):
+    return values
+  result = []
+  for i, s in enumerate(values):
+    if tensor_util.is_tf_type(s):
+      val = tensor_util.constant_value(s)
+      if val is None:
+        raise TypeError(
+            f"'{name}' must contain compile-time constant values when using "
+            f"XLA compilation (jit_compile=True), but element {i} is a "
+            f"dynamic tensor: {s}. Use Python integers or values that can be "
+            "evaluated at graph construction time."
+        )
+      result.append(int(val))
+    else:
+      result.append(s)
+  return result
+
+
 @tf_export("image.extract_patches")
 @dispatch.add_dispatch_support
 def extract_image_patches_v2(images, sizes, strides, rates, padding, name=None):
@@ -6312,21 +6354,9 @@ def extract_image_patches_v2(images, sizes, strides, rates, padding, name=None):
   Returns:
     A 4-D Tensor of the same type as the input.
   """
-  if isinstance(sizes, (list, tuple)):
-    sizes = [
-        tensor_util.constant_value(s) if tensor_util.is_tf_type(s) else s
-        for s in sizes
-    ]
-  if isinstance(strides, (list, tuple)):
-    strides = [
-        tensor_util.constant_value(s) if tensor_util.is_tf_type(s) else s
-        for s in strides
-    ]
-  if isinstance(rates, (list, tuple)):
-    rates = [
-        tensor_util.constant_value(s) if tensor_util.is_tf_type(s) else s
-        for s in rates
-    ]
+  sizes = _get_int_list_attr(sizes, "sizes")
+  strides = _get_int_list_attr(strides, "strides")
+  rates = _get_int_list_attr(rates, "rates")
 
   return gen_array_ops.extract_image_patches(
       images, sizes, strides, rates, padding, name
@@ -6375,21 +6405,9 @@ def extract_image_patches(  # pylint: disable=missing-docstring
   """
   ksizes = deprecation.deprecated_argument_lookup("sizes", sizes, "ksizes",
                                                   ksizes)
-  if isinstance(ksizes, (list, tuple)):
-    ksizes = [
-        tensor_util.constant_value(s) if tensor_util.is_tf_type(s) else s
-        for s in ksizes
-    ]
-  if isinstance(strides, (list, tuple)):
-    strides = [
-        tensor_util.constant_value(s) if tensor_util.is_tf_type(s) else s
-        for s in strides
-    ]
-  if isinstance(rates, (list, tuple)):
-    rates = [
-        tensor_util.constant_value(s) if tensor_util.is_tf_type(s) else s
-        for s in rates
-    ]
+  ksizes = _get_int_list_attr(ksizes, "sizes")
+  strides = _get_int_list_attr(strides, "strides")
+  rates = _get_int_list_attr(rates, "rates")
 
   return gen_array_ops.extract_image_patches(
       images, ksizes, strides, rates, padding, name

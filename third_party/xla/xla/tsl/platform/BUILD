@@ -62,7 +62,7 @@ exports_files(
     ],
     visibility = internal_visibility([
         "//tensorflow/core/platform:__subpackages__",
-        "@local_tsl//tsl:__subpackages__",
+        "@tsl//tsl:__subpackages__",
         "//xla/tsl:__subpackages__",
     ]),
 )
@@ -92,7 +92,7 @@ filegroup(
     ],
     compatible_with = get_compatible_with_portable(),
     visibility = internal_visibility([
-        "@local_tsl//tsl/platform:__pkg__",
+        "@tsl//tsl/platform:__pkg__",
         "//tensorflow/core:__pkg__",
         "//tensorflow/core/platform:__pkg__",
     ]),
@@ -106,7 +106,7 @@ filegroup(
     ],
     compatible_with = get_compatible_with_portable(),
     visibility = internal_visibility([
-        "@local_tsl//tsl/platform:__pkg__",
+        "@tsl//tsl/platform:__pkg__",
         "//tensorflow/core:__pkg__",
         "//tensorflow/core/platform:__pkg__",
     ]),
@@ -206,7 +206,7 @@ filegroup(
     srcs = [] + if_not_fuchsia(["subprocess.h"]),
     compatible_with = get_compatible_with_portable(),
     visibility = internal_visibility([
-        "@local_tsl//tsl/platform:__pkg__",
+        "@tsl//tsl/platform:__pkg__",
         "//tensorflow/core:__pkg__",
         "//tensorflow/core/platform:__pkg__",
     ]),
@@ -237,7 +237,7 @@ filegroup(
     ],
     compatible_with = get_compatible_with_portable(),
     visibility = internal_visibility([
-        "@local_tsl//tsl/platform:__pkg__",
+        "@tsl//tsl/platform:__pkg__",
         "//tensorflow/core:__pkg__",
     ]),
 )
@@ -253,7 +253,7 @@ filegroup(
     visibility = internal_visibility([
         "//tensorflow/core:__pkg__",
         "//tensorflow/core/platform:__pkg__",
-        "@local_tsl//tsl/platform:__pkg__",
+        "@tsl//tsl/platform:__pkg__",
     ]),
 )
 
@@ -266,7 +266,7 @@ filegroup(
     visibility = internal_visibility([
         "//tensorflow/core:__pkg__",
         "//tensorflow/core/lib/jpeg:__pkg__",
-        "@local_tsl//tsl/platform:__pkg__",
+        "@tsl//tsl/platform:__pkg__",
     ]),
 )
 
@@ -281,7 +281,7 @@ filegroup(
         "//tensorflow/core:__pkg__",
         "//tensorflow/core/lib/jpeg:__pkg__",
         "//tensorflow/core/platform:__pkg__",
-        "@local_tsl//tsl/platform:__pkg__",
+        "@tsl//tsl/platform:__pkg__",
     ]),
 )
 
@@ -296,7 +296,7 @@ filegroup(
         "//tensorflow/core:__pkg__",
         "//tensorflow/core/lib/gif:__pkg__",
         "//tensorflow/core/platform:__pkg__",
-        "@local_tsl//tsl/platform:__pkg__",
+        "@tsl//tsl/platform:__pkg__",
     ]),
 )
 
@@ -324,7 +324,7 @@ filegroup(
     compatible_with = get_compatible_with_portable(),
     visibility = internal_visibility([
         "//tensorflow/core:__pkg__",
-        "@local_tsl//tsl/platform:__pkg__",
+        "@tsl//tsl/platform:__pkg__",
     ]),
 )
 
@@ -341,7 +341,7 @@ cc_library(
     ],
     deps = tf_windows_aware_platform_deps("subprocess") + [
         ":types",
-        "@local_tsl//tsl/platform",
+        "@tsl//tsl/platform",
     ],
 )
 
@@ -350,19 +350,24 @@ tsl_cc_test(
     size = "small",
     srcs = ["subprocess_test.cc"],
     data = [
+        "//xla/tsl/platform/testdata:test_crash",
         "//xla/tsl/platform/testdata:test_echo",
         "//xla/tsl/platform/testdata:test_echo_argv_1",
         "//xla/tsl/platform/testdata:test_noop",
+        "//xla/tsl/platform/testdata:test_pwd",
         "//xla/tsl/platform/testdata:test_stderr",
     ],
-    tags = ["no_oss"],  # TODO(b/327036247): revisit after this moves to XLA
+    tags = ["no_windows"],
     deps = [
+        ":env",
         ":subprocess",
         ":test",
         "//xla/tsl/lib/core:status_test_util",
+        "@com_google_absl//absl/synchronization",
+        "@com_google_absl//absl/time",
         "@com_google_googletest//:gtest_main",
-        "@local_tsl//tsl/platform:path",
-        "@local_tsl//tsl/platform:strcat",
+        "@tsl//tsl/platform:path",
+        "@tsl//tsl/platform:strcat",
     ],
 )
 
@@ -399,11 +404,11 @@ cc_library(
         "@com_google_absl//absl/types:span",
         "@com_google_protobuf//:protobuf",
         "@com_google_protobuf//:protobuf_lite",
-        "@local_tsl//tsl/platform",
-        "@local_tsl//tsl/platform:cord",
-        "@local_tsl//tsl/platform:platform_port",
-        "@local_tsl//tsl/platform:protobuf",
-        "@local_tsl//tsl/platform:stringpiece",
+        "@tsl//tsl/platform",
+        "@tsl//tsl/platform:cord",
+        "@tsl//tsl/platform:platform_port",
+        "@tsl//tsl/platform:protobuf",
+        "@tsl//tsl/platform:stringpiece",
     ],
 )
 
@@ -417,9 +422,14 @@ tsl_cc_test(
     srcs = ["env_test.cc"],
     deps = [
         ":env",
+        "//xla/tsl/testing:temporary_directory",
+        "@com_google_absl//absl/status:status_matchers",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/time",
         "@com_google_googletest//:gtest_main",
+        "@tsl//tsl/platform:path",
     ],
 )
 
@@ -442,7 +452,7 @@ cc_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:cord",
-        "@local_tsl//tsl/platform:strcat",
+        "@tsl//tsl/platform:strcat",
     ],
 )
 
@@ -480,12 +490,12 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/types:span",
-        "@local_tsl//tsl/platform",
-        "@local_tsl//tsl/platform:cord",
-        "@local_tsl//tsl/platform:path",
-        "@local_tsl//tsl/platform:platform_port",
-        "@local_tsl//tsl/platform:str_util",
-        "@local_tsl//tsl/platform:stringpiece",
+        "@tsl//tsl/platform",
+        "@tsl//tsl/platform:cord",
+        "@tsl//tsl/platform:path",
+        "@tsl//tsl/platform:platform_port",
+        "@tsl//tsl/platform:str_util",
+        "@tsl//tsl/platform:stringpiece",
     ],
 )
 
@@ -555,8 +565,8 @@ tsl_cc_test(
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest",
-        "@local_tsl//tsl/platform:path",
-        "@local_tsl//tsl/platform:stacktrace_handler",
+        "@tsl//tsl/platform:path",
+        "@tsl//tsl/platform:stacktrace_handler",
     ],
 )
 
@@ -592,11 +602,11 @@ cc_library(
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/types:optional",
-        "@local_tsl//tsl/platform",
-        "@local_tsl//tsl/platform:stacktrace",
-        "@local_tsl//tsl/platform:str_util",
-        "@local_tsl//tsl/platform:strcat",
-        "@local_tsl//tsl/platform:thread_annotations",
+        "@tsl//tsl/platform",
+        "@tsl//tsl/platform:stacktrace",
+        "@tsl//tsl/platform:str_util",
+        "@tsl//tsl/platform:strcat",
+        "@tsl//tsl/platform:thread_annotations",
     ] + tf_platform_deps("status"),
 )
 
@@ -659,7 +669,7 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
-        "@local_tsl//tsl/platform",
+        "@tsl//tsl/platform",
     ] + tf_platform_deps("statusor"),
 )
 
@@ -689,9 +699,9 @@ cc_library(
         ":macros",
         ":types",
         "@com_google_googletest//:gtest_for_library",
-        "@local_tsl//tsl/platform",
-        "@local_tsl//tsl/platform:net",
-        "@local_tsl//tsl/platform:path",
+        "@tsl//tsl/platform",
+        "@tsl//tsl/platform:net",
+        "@tsl//tsl/platform:path",
     ],
 )
 
@@ -702,7 +712,7 @@ cc_library(
     compatible_with = get_compatible_with_portable(),
     deps = [
         "@com_google_benchmark//:benchmark",
-        "@local_tsl//tsl/platform",
+        "@tsl//tsl/platform",
     ],
 )
 
@@ -719,8 +729,8 @@ cc_library(
         ":test",
         ":test_benchmark",
         "@com_google_absl//absl/strings",
-        "@local_tsl//tsl/platform",
-        "@local_tsl//tsl/platform:stacktrace_handler",
+        "@tsl//tsl/platform",
+        "@tsl//tsl/platform:stacktrace_handler",
     ],
     alwayslink = 1,
 )
@@ -763,10 +773,10 @@ cc_library(
     compatible_with = get_compatible_with_portable(),
     deps = [
         "@com_google_absl//absl/base:core_headers",
-        "@local_tsl//tsl/platform",
-        "@local_tsl//tsl/platform:bfloat16",
-        "@local_tsl//tsl/platform:ml_dtypes",
-        "@local_tsl//tsl/platform:tstring",
+        "@tsl//tsl/platform",
+        "@tsl//tsl/platform:bfloat16",
+        "@tsl//tsl/platform:ml_dtypes",
+        "@tsl//tsl/platform:tstring",
     ] + tf_platform_deps("types"),
 )
 
@@ -791,7 +801,7 @@ cc_library(
     hdrs = ["crash_analysis.h"],
     compatible_with = get_compatible_with_portable(),
     deps = [
-        "@local_tsl//tsl/platform",
+        "@tsl//tsl/platform",
     ] + tf_platform_deps("crash_analysis"),
 )
 
@@ -828,7 +838,7 @@ tsl_cc_test(
         ":intrusive_ptr",
         ":test",
         ":test_main",
-        "@local_tsl//tsl/platform:refcount",
+        "@tsl//tsl/platform:refcount",
     ],
 )
 
@@ -852,7 +862,7 @@ cc_library(
     name = "resource",
     textual_hdrs = ["resource.h"],
     deps = [
-        "@local_tsl//tsl/platform:stringpiece",
+        "@tsl//tsl/platform:stringpiece",
     ] + tf_resource_deps(),
 )
 
@@ -867,8 +877,8 @@ cc_library(
     deps = [
         ":logging",
         ":test",
-        "@local_tsl//tsl/platform",
-        "@local_tsl//tsl/platform:path",
+        "@tsl//tsl/platform",
+        "@tsl//tsl/platform:path",
     ] + if_oss(["@bazel_tools//tools/cpp/runfiles"]),
 )
 
@@ -888,7 +898,7 @@ cc_library(
     name = "criticality",
     compatible_with = get_compatible_with_portable(),
     textual_hdrs = ["criticality.h"],
-    deps = tf_platform_deps("criticality") + ["@local_tsl//tsl/platform"],
+    deps = tf_platform_deps("criticality") + ["@tsl//tsl/platform"],
 )
 
 tsl_cc_test(
@@ -908,4 +918,35 @@ cc_library(
     name = "debug_me_context",
     hdrs = ["debug_me_context.h"],
     deps = ["@com_google_absl//absl/container:flat_hash_map"],
+)
+
+cc_library(
+    name = "ram_file_system",
+    hdrs = ["ram_file_system.h"],
+    deps = [
+        ":env",
+        ":errors",
+        ":file_statistics",
+        ":types",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:cord",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/synchronization",
+    ],
+)
+
+tsl_cc_test(
+    name = "ram_file_system_test",
+    srcs = ["ram_file_system_test.cc"],
+    deps = [
+        ":env",
+        ":ram_file_system",
+        "//xla/tsl/lib/core:status_test_util",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
 )

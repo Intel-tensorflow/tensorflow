@@ -24,6 +24,7 @@ limitations under the License.
 #include "absl/status/status.h"
 #include "absl/status/status_matchers.h"
 #include "absl/status/statusor.h"
+#include "tensorflow/compiler/mlir/tfrt/transforms/ifrt/ifrt_types.h"
 #include "xla/hlo/ir/hlo_sharding.h"
 #include "xla/python/ifrt/array.h"
 #include "xla/python/ifrt/client.h"
@@ -87,7 +88,8 @@ TEST(ShardingUtilsTest, ShardTensorToIfrtLoadedVariableNotFoundWrongName) {
 
   IfrtRestoreTensorRegistry::RestoredTensorInfo restored_tensor_info = {
       false,
-      GetDtypeAndShape(variable_handle.scalar<ResourceHandle>()()).value(),
+      tsl::Future<DtypeAndShape>(
+          GetDtypeAndShape(variable_handle.scalar<ResourceHandle>()()).value()),
       future};
   TF_ASSERT_OK(restored_tensor_registry.TryRegister("var_x_wrong",
                                                     restored_tensor_info));
@@ -95,7 +97,8 @@ TEST(ShardingUtilsTest, ShardTensorToIfrtLoadedVariableNotFoundWrongName) {
   EXPECT_THAT(
       AsyncLoadRestoredTensorAsIfrtLoadedVariable(
           "var_x", client, thread_pool, restored_tensor_registry,
-          loaded_variable_registry, restore_work_queue.get(), sharding_config),
+          loaded_variable_registry, restore_work_queue.get(), sharding_config,
+          /*xla_input_layout=*/nullptr, /*shape_on_device=*/nullptr),
       absl_testing::StatusIs(absl::StatusCode::kNotFound));
 }
 
@@ -131,14 +134,16 @@ TEST(ShardingUtilsTest, ShardTensorToIfrtLoadedVariableSucceed) {
 
   IfrtRestoreTensorRegistry::RestoredTensorInfo restored_tensor_info = {
       false,
-      GetDtypeAndShape(variable_handle.scalar<ResourceHandle>()()).value(),
+      tsl::Future<DtypeAndShape>(
+          GetDtypeAndShape(variable_handle.scalar<ResourceHandle>()()).value()),
       future};
 
   TF_ASSERT_OK(
       restored_tensor_registry.TryRegister("var_x", restored_tensor_info));
   TF_ASSERT_OK(AsyncLoadRestoredTensorAsIfrtLoadedVariable(
       "var_x", client, thread_pool, restored_tensor_registry,
-      loaded_variable_registry, restore_work_queue.get(), sharding_config));
+      loaded_variable_registry, restore_work_queue.get(), sharding_config,
+      /*xla_input_layout=*/nullptr, /*shape_on_device=*/nullptr));
   promise.Set(input_tensor);
   IfrtLoadedVariableRegistry::Key key{
       .device_ids = {0},

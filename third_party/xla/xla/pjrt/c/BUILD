@@ -3,6 +3,10 @@ load(
     "if_rocm_is_configured",
 )
 load(
+    "@local_config_sycl//sycl:build_defs.bzl",
+    "if_sycl_is_configured",
+)
+load(
     "//xla:xla.default.bzl",
     "xla_cc_binary",
     "xla_cc_test",
@@ -57,6 +61,42 @@ cc_library(
 cc_library(
     name = "pjrt_c_api_tpu_topology_extension_hdrs",
     hdrs = ["pjrt_c_api_tpu_topology_extension.h"],
+    deps = [":pjrt_c_api_hdrs"],
+)
+
+cc_library(
+    name = "pjrt_c_api_tpu_executable_extension_hdrs",
+    hdrs = ["pjrt_c_api_tpu_executable_extension.h"],
+    visibility = ["//visibility:public"],
+    deps = [":pjrt_c_api_hdrs"],
+)
+
+cc_library(
+    name = "pjrt_c_api_abi_version_extension_hdrs",
+    hdrs = ["pjrt_c_api_abi_version_extension.h"],
+    deps = [":pjrt_c_api_hdrs"],
+)
+
+cc_library(
+    name = "pjrt_c_api_abi_version_helpers",
+    srcs = ["pjrt_c_api_abi_version_helpers.cc"],
+    hdrs = ["pjrt_c_api_abi_version_helpers.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":pjrt_c_api_abi_version_extension_hdrs",
+        ":pjrt_c_api_hdrs",
+        ":pjrt_c_api_helpers",
+        "//xla/pjrt:pjrt_abi_version",
+        "//xla/pjrt/c_api_client:pjrt_c_api_client",
+        "//xla/pjrt/proto:pjrt_abi_version_proto_cc",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+    ],
+)
+
+cc_library(
+    name = "pjrt_c_api_megascale_extension_hdrs",
+    hdrs = ["pjrt_c_api_megascale_extension.h"],
     deps = [":pjrt_c_api_hdrs"],
 )
 
@@ -145,6 +185,7 @@ cc_library(
         ":pjrt_c_api_triton_extension_hdrs",
         ":pjrt_c_api_wrapper_impl",
         "//xla/pjrt:triton",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
@@ -218,7 +259,7 @@ cc_library(
         "//xla/tsl/platform:statusor",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
-        "@local_tsl//tsl/platform:casts",
+        "@tsl//tsl/platform:casts",
     ],
 )
 
@@ -250,6 +291,15 @@ cc_library(
 )
 
 cc_library(
+    name = "pjrt_c_api_shardings_extension_hdrs",
+    hdrs = ["pjrt_c_api_shardings_extension.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":pjrt_c_api_hdrs",
+    ],
+)
+
+cc_library(
     name = "pjrt_c_api_wrapper_impl",
     srcs = ["pjrt_c_api_wrapper_impl.cc"],
     hdrs = ["pjrt_c_api_wrapper_impl.h"],
@@ -259,6 +309,7 @@ cc_library(
         ":pjrt_c_api_helpers",
         ":pjrt_c_api_layouts_extension_hdrs",
         ":pjrt_c_api_memory_descriptions_extension_hdrs",
+        ":pjrt_c_api_shardings_extension_hdrs",
         "//xla:future",
         "//xla:literal",
         "//xla:shape_util",
@@ -304,8 +355,8 @@ cc_library(
         "@com_google_absl//absl/time",
         "@com_google_absl//absl/types:span",
         "@llvm-project//mlir:IR",
-        "@local_tsl//tsl/profiler/lib:connected_traceme",
-        "@local_tsl//tsl/profiler/lib:context_types_hdrs",
+        "@tsl//tsl/profiler/lib:connected_traceme",
+        "@tsl//tsl/profiler/lib:context_types_hdrs",
     ],
 )
 
@@ -344,9 +395,9 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
         "@com_google_absl//absl/types:span",
-        "@local_tsl//tsl/profiler/lib:connected_traceme",
-        "@local_tsl//tsl/profiler/lib:context_types_hdrs",
         "@stablehlo//:version",
+        "@tsl//tsl/profiler/lib:connected_traceme",
+        "@tsl//tsl/profiler/lib:context_types_hdrs",
     ],
 )
 
@@ -364,6 +415,7 @@ cc_library(
         ":pjrt_c_api_memory_descriptions_extension_hdrs",
         ":pjrt_c_api_phase_compile_extension_hdrs",
         ":pjrt_c_api_phase_compile_internal",
+        ":pjrt_c_api_shardings_extension_hdrs",
         ":pjrt_c_api_wrapper_impl",
         "//xla/pjrt:pjrt_client",
         "//xla/pjrt:pjrt_common",
@@ -423,7 +475,7 @@ cc_library(
     local_defines = (
         if_cuda_is_configured(["GOOGLE_CUDA=1"]) + if_rocm_is_configured([
             "TENSORFLOW_USE_ROCM=1",
-        ])
+        ]) + if_sycl_is_configured(["TENSORFLOW_USE_SYCL=1"])
     ),
     visibility = ["//visibility:public"],
     deps = [
@@ -436,6 +488,7 @@ cc_library(
         ":pjrt_c_api_layouts_extension_hdrs",
         ":pjrt_c_api_memory_descriptions_extension_hdrs",
         ":pjrt_c_api_profiler_extension_hdrs",
+        ":pjrt_c_api_shardings_extension_hdrs",
         ":pjrt_c_api_stream_extension_hdrs",
         ":pjrt_c_api_triton_extension_hdrs",
         ":pjrt_c_api_triton_internal",
@@ -484,7 +537,7 @@ cc_library(
         ":pjrt_c_api_macros",
         "@com_google_absl//absl/base",
         "@com_google_absl//absl/log:initialize",
-        "@local_tsl//tsl/platform",
+        "@tsl//tsl/platform",
     ],
     alwayslink = 1,
 )
@@ -596,7 +649,7 @@ xla_test(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
-        "@local_tsl//tsl/platform:platform_port",
+        "@tsl//tsl/platform:platform_port",
     ],
 )
 

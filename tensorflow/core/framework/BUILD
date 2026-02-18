@@ -31,7 +31,7 @@ default_visibility = [
     "//tensorflow/core:__subpackages__",
     "//tensorflow/security/fuzzing:__subpackages__",
     # TODO(pedaveeraiah): to be removed when summary.proto.h deps moves to TSL
-    "@local_xla//xla/tsl/lib:__subpackages__",
+    "@xla//xla/tsl/lib:__subpackages__",
     # copybara:uncomment "//learning/brain/tfrt/aot:__subpackages__",
     # copybara:uncomment "//platforms/xla/megascale/tensorflow:__subpackages__",
     # copybara:uncomment "//learning/brain/experimental/tfrt/native_lowering/graph_executor:__subpackages__",
@@ -44,11 +44,13 @@ default_visibility = [
     #internal headless cuj tests library,
     #internal nexus library tests,
     "//tensorflow/compiler/jit:__subpackages__",
-    #internal library,
+    #internal library 0,
     # TODO(matthurd): to be removed when summary.proto.h deps moves to TSL
     "@org_xprof//xprof:__subpackages__",
     "//tensorflow/cc/experimental/tfa:__subpackages__",
     "//tensorflow/compiler/mlir/utils:__subpackages__",
+    #internal library 2,
+    #internal library 1,
 ]
 
 package(
@@ -275,7 +277,7 @@ filegroup(
         "versions.h",
         "//tensorflow/core/framework/registration:options.h",
         "//tensorflow/core/framework/registration:registration.h",
-        "@local_xla//xla/tsl/framework:device_type.h",
+        "@xla//xla/tsl/framework:device_type.h",
     ],
 )
 
@@ -358,7 +360,7 @@ filegroup(
         "variant_op_registry.h",
         "variant_tensor_data.cc",
         "variant_tensor_data.h",
-        "@local_xla//xla/tsl/framework:device_type.h",
+        "@xla//xla/tsl/framework:device_type.h",
     ],
 )
 
@@ -508,7 +510,7 @@ cc_library(
         ":type_traits",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:optional",
-        "@local_xla//xla/tsl/framework:allocator",
+        "@xla//xla/tsl/framework:allocator",
     ] + if_static(
         extra_deps = [
             ":allocator_registry_impl",
@@ -539,7 +541,7 @@ cc_library(
     name = "allocator_registry_impl",
     visibility = ["//tensorflow/core:__subpackages__"],
     deps = [
-        "@local_xla//xla/tsl/framework:allocator_registry_impl",
+        "@xla//xla/tsl/framework:allocator_registry_impl",
     ],
     alwayslink = 1,
 )
@@ -673,7 +675,7 @@ cc_library(
     ],
     deps = [
         "//tensorflow/core/platform:types",
-        "@local_xla//xla/tsl/framework:numeric_types",
+        "@xla//xla/tsl/framework:numeric_types",
     ],
 )
 
@@ -820,7 +822,7 @@ cc_library(
     deps = [
         ":numeric_types",
         "//tensorflow/core/platform:types",
-        "@local_xla//xla/tsl/framework:type_traits",
+        "@xla//xla/tsl/framework:type_traits",
     ],
 )
 
@@ -893,9 +895,9 @@ tf_cuda_library(
         "@com_google_absl//absl/numeric:bits",
         "@com_google_absl//absl/strings",
         "@eigen_archive//:eigen3",
-        "@local_tsl//tsl/platform:ml_dtypes",
-        "@local_xla//xla/tsl/framework:device_type",
-        "@local_xla//xla/tsl/util:byte_swap_array",
+        "@tsl//tsl/platform:ml_dtypes",
+        "@xla//xla/tsl/framework:device_type",
+        "@xla//xla/tsl/util:byte_swap_array",
     ],
     alwayslink = 1,
 )
@@ -951,7 +953,7 @@ cc_library(
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
-        "@local_xla//xla/tsl/platform:errors",
+        "@xla//xla/tsl/platform:errors",
     ],
 )
 
@@ -1243,7 +1245,7 @@ tf_cc_test(
 
 tf_cc_test(
     name = "framework_run_handler_test",
-    size = "small",
+    size = "medium",
     srcs = ["run_handler_test.cc"],
     deps = [
         "//tensorflow/core:core_cpu",
@@ -1426,7 +1428,7 @@ tf_cc_tests(
         "@com_google_absl//absl/synchronization",
         "@com_google_googletest//:gtest",
         "@eigen_archive//:eigen3",
-        "@local_xla//xla/tsl/profiler/utils:xplane_utils",
+        "@xla//xla/tsl/profiler/utils:xplane_utils",
     ],
 )
 
@@ -1702,7 +1704,7 @@ tf_proto_library(
     srcs = ["attr_value.proto"],
     make_default_target_header_only = True,
     visibility = [
-        #internal library,
+        #internal library 0,
         "//tensorflow/core:__subpackages__",
         "//tensorflow/python:__pkg__",
         "//tensorflow/python/profiler/internal:__pkg__",
@@ -1841,13 +1843,13 @@ tf_proto_library(
     name = "summary_proto",
     srcs = ["summary.proto"],
     make_default_target_header_only = True,
-    exports = ["@local_xla//xla/tsl/protobuf:histogram_proto"],
+    exports = ["@xla//xla/tsl/protobuf:histogram_proto"],
     deps = [
         ":resource_handle_proto",
         ":tensor_proto",
         ":tensor_shape_proto",
         ":types_proto",
-        "@local_xla//xla/tsl/protobuf:histogram_proto",
+        "@xla//xla/tsl/protobuf:histogram_proto",
     ],
 )
 
@@ -1941,7 +1943,7 @@ tf_cc_fuzz_test(
     deps = [
         "//tensorflow/core:framework",
         "//tensorflow/security/fuzzing/cc/core/framework:tensor_shape_domains",
-        "@local_xla//xla/tsl/lib/core:status_test_util",
+        "@xla//xla/tsl/lib/core:status_test_util",
     ],
 )
 
@@ -1955,7 +1957,7 @@ tf_cc_fuzz_test(
         "//tensorflow/security/fuzzing/cc/core/framework:datatype_domains",
         "//tensorflow/security/fuzzing/cc/core/framework:tensor_domains",
         "//tensorflow/security/fuzzing/cc/core/framework:tensor_shape_domains",
-        "@local_xla//xla/tsl/lib/core:status_test_util",
+        "@xla//xla/tsl/lib/core:status_test_util",
     ],
 )
 
@@ -1967,5 +1969,19 @@ tf_cc_test(
         "//tensorflow/core:framework",
         "//tensorflow/core/lib/monitoring:cell_reader",
         "@com_google_googletest//:gtest_main",
+    ],
+)
+
+tf_cc_test(
+    name = "op_kernel_benchmark",
+    srcs = ["op_kernel_benchmark.cc"],
+    tags = ["benchmark"],
+    deps = [
+        "//tensorflow/core:framework",
+        "//tensorflow/core:framework_lite",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core/platform:test_benchmark",
+        "@com_google_absl//absl/log:check",
+        "@com_google_benchmark//:benchmark",
     ],
 )

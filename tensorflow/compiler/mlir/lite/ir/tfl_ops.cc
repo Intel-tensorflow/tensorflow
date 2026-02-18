@@ -4823,12 +4823,13 @@ OpFoldResult TransposeOp::fold(FoldAdaptor adaptor) {
 
   // Hold current ND index in input tensor when computing
   // permutation.
-  llvm::OwningArrayRef<uint64_t> current_input_index(
+  llvm::SmallVector<uint64_t> current_input_index(
       input_tensor.getType().getRank());
 
   // Allocate raw data and retrieve address of the first char in its raw
   // buffer.
-  llvm::OwningArrayRef<char> raw_output_arr(input_tensor.getRawData());
+  llvm::SmallVector<char> raw_output_arr(input_tensor.getRawData().begin(),
+                                         input_tensor.getRawData().end());
   char* raw_output = (char*)raw_output_arr.data();
 
   // Compute the result and write to `raw_output`.
@@ -4836,10 +4837,9 @@ OpFoldResult TransposeOp::fold(FoldAdaptor adaptor) {
                      /*current_axis=*/0, raw_output, current_input_index,
                      input_tensor.getType());
 
-  bool detected_splat = false;
   const bool valid_output_buffer = DenseElementsAttr::isValidRawBuffer(
-      input_tensor.getType(), raw_output_arr, detected_splat);
-  if (!valid_output_buffer || detected_splat) return nullptr;
+      input_tensor.getType(), raw_output_arr);
+  if (!valid_output_buffer) return nullptr;
 
   auto result_type =
       RankedTensorType::get(output_shape, input_tensor.getElementType());
@@ -4983,7 +4983,7 @@ void IfOp::getSuccessorRegions(RegionBranchPoint point,
                                SmallVectorImpl<RegionSuccessor>& regions) {
   // The `then` and the `else` region branch back to the parent operation.
   if (!point.isParent()) {
-    regions.push_back(RegionSuccessor(getOperation(), getResults()));
+    regions.push_back(RegionSuccessor::parent());
     return;
   }
 
@@ -5016,6 +5016,10 @@ void IfOp::getEntrySuccessorRegions(ArrayRef<Attribute> operands,
     if (else_reg) regions.push_back(RegionSuccessor(else_reg));
     return;
   }
+}
+
+mlir::ValueRange IfOp::getSuccessorInputs(RegionSuccessor successor) {
+  return successor.isParent() ? getOperation()->getResults() : ValueRange();
 }
 
 //===----------------------------------------------------------------------===//

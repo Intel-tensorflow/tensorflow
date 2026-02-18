@@ -32,7 +32,7 @@ cc_library(
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/time",
-        "@local_tsl//tsl/platform:env",
+        "@tsl//tsl/platform:env",
     ],
 )
 
@@ -65,6 +65,7 @@ cc_library(
     deps = [
         ":key_value_store_interface",
         "//xla/pjrt/distributed/coordination:coordination_client",
+        "//xla/pjrt/distributed/coordination:coordination_service",
         "//xla/pjrt/distributed/coordination:coordination_service_agent",
         "//xla/pjrt/distributed/coordination:grpc_coordination_client",
         "//xla/runtime:device_id",
